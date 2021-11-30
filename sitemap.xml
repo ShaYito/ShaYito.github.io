@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
-    <loc>https://shayito.github.io/links/</loc>
+    <loc>https://shayito.github.io/2021/11/29/Volume-Rendering/</loc>
     
     <lastmod>2021-11-30</lastmod>
     
@@ -13,7 +13,16 @@
   <url>
     <loc>https://shayito.github.io/2021/11/30/Differentiable/</loc>
     
-    <lastmod>2021-11-29</lastmod>
+    <lastmod>2021-11-30</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/links/</loc>
+    
+    <lastmod>2021-11-30</lastmod>
     
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
@@ -30,15 +39,6 @@
   
   <url>
     <loc>https://shayito.github.io/about/</loc>
-    
-    <lastmod>2021-11-29</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/11/29/Volume-Rendering/</loc>
     
     <lastmod>2021-11-29</lastmod>
     
@@ -66,6 +66,20 @@
   
   <url>
     <loc>https://shayito.github.io/tags/rendering/</loc>
+    <lastmod>2021-11-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/differentiable/</loc>
+    <lastmod>2021-11-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/neural/</loc>
     <lastmod>2021-11-30</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>

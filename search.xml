@@ -29,6 +29,8 @@
             
             <tag> rendering </tag>
             
+            <tag> differentiable </tag>
+            
         </tags>
       
     </entry>
@@ -47,6 +49,8 @@
         <tags>
             
             <tag> rendering </tag>
+            
+            <tag> neural </tag>
             
         </tags>
       
