@@ -6,10 +6,34 @@
   <link href="https://shayito.github.io/atom.xml" rel="self"/>
   
   <link href="https://shayito.github.io/"/>
-  <updated>2021-11-30T07:05:09.916Z</updated>
+  <updated>2021-11-30T05:48:53.663Z</updated>
   <id>https://shayito.github.io/</id>
   
   <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>hexo laTex math support for any theme 数学公式支持 任意主题</title>
+    <link href="https://shayito.github.io/2021/11/30/zzz-laTex/"/>
+    <id>https://shayito.github.io/2021/11/30/zzz-laTex/</id>
+    <published>2021-11-30T05:32:04.000Z</published>
+    <updated>2021-11-30T05:48:53.663Z</updated>
+    
+    <content type="html"><![CDATA[<p>credit to <a href="https://github.com/next-theme/hexo-filter-mathjax">this link</a></p><h3 id="installation">installation</h3><p>in your blog directory, "Git Bash Here", then</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ npm install hexo-filter-mathjax</span><br><span class="line">$ npm install hexo-renderer-pandoc</span><br><span class="line">$ hexo clean</span><br></pre></td></tr></table></figure><p>in your blog directory, open _config.yml, add</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">mathjax:</span><br><span class="line">  tags: none # or &#x27;ams&#x27; or &#x27;all&#x27;</span><br><span class="line">  single_dollars: true # enable single dollar signs as in-line math delimiters</span><br><span class="line">  cjk_width: 0.9 # relative CJK char width</span><br><span class="line">  normal_width: 0.6 # relative normal (monospace) width</span><br><span class="line">  append_css: true # add CSS to pages rendered by MathJax</span><br><span class="line">  every_page: false # if true, every page will be rendered by MathJax regardless the `mathjax` setting in Front-matter</span><br><span class="line">  extension_options: &#123;&#125;</span><br><span class="line">    # you can put your extension options here</span><br><span class="line">    # see http://docs.mathjax.org/en/latest/options/input/tex.html#tex-extension-options for more detail</span><br></pre></td></tr></table></figure><h3 id="usage">usage</h3><p>in _posts/xxx.md</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">---</span><br><span class="line">title: On the Electrodynamics of Moving Bodies</span><br><span class="line">categories: Physics</span><br><span class="line">date: 1905-06-30 12:00:00</span><br><span class="line">mathjax: true</span><br><span class="line">---</span><br></pre></td></tr></table></figure><h3 id="basics">basics</h3><p>generate &amp; deploy</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ hexo g</span><br><span class="line">$ hexo d</span><br></pre></td></tr></table></figure><p>server</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo s</span><br></pre></td></tr></table></figure>]]></content>
+    
+    
+      
+      
+    <summary type="html">&lt;p&gt;credit to &lt;a href=&quot;https://github.com/next-theme/hexo-filter-mathjax&quot;&gt;this link&lt;/a&gt;&lt;/p&gt;
+&lt;h3 id=&quot;installation&quot;&gt;installation&lt;/h3&gt;
+&lt;p&gt;in y</summary>
+      
+    
+    
+    
+    
+    <category term="tutorial" scheme="https://shayito.github.io/tags/tutorial/"/>
+    
+  </entry>
   
   <entry>
     <title>markdown</title>
@@ -31,6 +55,32 @@
     
     
     <category term="tutorial" scheme="https://shayito.github.io/tags/tutorial/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Differentiable</title>
+    <link href="https://shayito.github.io/2021/11/30/Differentiable/"/>
+    <id>https://shayito.github.io/2021/11/30/Differentiable/</id>
+    <published>2021-11-29T16:35:16.000Z</published>
+    <updated>2021-11-30T03:43:09.962Z</updated>
+    
+    <content type="html"><![CDATA[<p>可微：</p><p>Differentiable Rendering</p>]]></content>
+    
+    
+      
+      
+    <summary type="html">&lt;p&gt;可微：&lt;/p&gt;
+&lt;p&gt;Differentiable Rendering&lt;/p&gt;
+</summary>
+      
+    
+    
+    
+    
+    <category term="rendering" scheme="https://shayito.github.io/tags/rendering/"/>
+    
+    <category term="differentiable" scheme="https://shayito.github.io/tags/differentiable/"/>
     
   </entry>
   
