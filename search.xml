@@ -4,11 +4,34 @@
   
     
     <entry>
-      <title>test</title>
-      <link href="/2021/11/30/test/"/>
-      <url>/2021/11/30/test/</url>
+      <title>NeRF</title>
+      <link href="/2021/11/30/NeRF/"/>
+      <url>/2021/11/30/NeRF/</url>
       
-        <content type="html"><![CDATA[<p>hh</p><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;glad/glad.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;GLFW/glfw3.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stb/stb_image.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;glm/glm.hpp&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;glm/gtc/matrix_transform.hpp&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;glm/gtc/type_ptr.hpp&gt;</span></span></span><br></pre></td></tr></table></figure>]]></content>
+        <content type="html"><![CDATA[<h1 id="nerf-representing-scenes-as-neural-radiance-fields-for-view-synthesis">NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis</h1><p><a href="https://github.com/yenchenlin/awesome-NeRF">NeRF repository</a></p><h2 id="contributions">contributions</h2><h3 id="neural-radiance-fields">neural radiance fields</h3><p>network <span class="math inline">\(f_{\theta}: (xyz\theta\phi)\rightarrow(\sigma RGB)\)</span></p><p>​ or <span class="math inline">\((\pmb x \pmb d)\rightarrow(\sigma \pmb c)\)</span>，where <span class="math inline">\(\sigma\)</span> only relies on <span class="math inline">\(xyz\)</span></p><h3 id="volume-rendering">volume rendering:</h3><p>color <span class="math inline">\(C(r)=\int_{t_n}^{t_f} T(t) \sigma (\pmb r(t)) \pmb c(\mathbf r(t),\pmb d) dt\)</span></p>]]></content>
+      
+      
+      
+        <tags>
+            
+            <tag> paper </tag>
+            
+            <tag> 2020 </tag>
+            
+            <tag> ECCV </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    
+    
+    <entry>
+      <title>test</title>
+      <link href="/2021/11/30/markdown/"/>
+      <url>/2021/11/30/markdown/</url>
+      
+        <content type="html"><![CDATA[<p>公式内加粗：</p><p>定积分：_{t_n}^{t_f}</p>]]></content>
       
       
       
@@ -42,7 +65,7 @@
       <link href="/2021/11/29/Volume-Rendering/"/>
       <url>/2021/11/29/Volume-Rendering/</url>
       
-        <content type="html"><![CDATA[<p>体渲染：由 ECCV 2020上的 <a href="https://arxiv.org/abs/2003.08934">NeRF</a> 带来热度</p>]]></content>
+        <content type="html"><![CDATA[<p>体渲染：</p><ol type="1"><li>由 ECCV 2020上的 <a href="https://arxiv.org/abs/2003.08934">NeRF</a> 带来热度</li><li></li></ol>]]></content>
       
       
       

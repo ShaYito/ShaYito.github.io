@@ -6,25 +6,52 @@
   <link href="https://shayito.github.io/atom.xml" rel="self"/>
   
   <link href="https://shayito.github.io/"/>
-  <updated>2021-11-29T16:38:49.382Z</updated>
+  <updated>2021-11-30T04:35:25.571Z</updated>
   <id>https://shayito.github.io/</id>
   
   <generator uri="https://hexo.io/">Hexo</generator>
   
   <entry>
+    <title>NeRF</title>
+    <link href="https://shayito.github.io/2021/11/30/NeRF/"/>
+    <id>https://shayito.github.io/2021/11/30/NeRF/</id>
+    <published>2021-11-30T03:46:43.839Z</published>
+    <updated>2021-11-30T04:35:25.571Z</updated>
+    
+    <content type="html"><![CDATA[<h1 id="nerf-representing-scenes-as-neural-radiance-fields-for-view-synthesis">NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis</h1><p><a href="https://github.com/yenchenlin/awesome-NeRF">NeRF repository</a></p><h2 id="contributions">contributions</h2><h3 id="neural-radiance-fields">neural radiance fields</h3><p>network <span class="math inline">\(f_{\theta}: (xyz\theta\phi)\rightarrow(\sigma RGB)\)</span></p><p>​ or <span class="math inline">\((\pmb x \pmb d)\rightarrow(\sigma \pmb c)\)</span>，where <span class="math inline">\(\sigma\)</span> only relies on <span class="math inline">\(xyz\)</span></p><h3 id="volume-rendering">volume rendering:</h3><p>color <span class="math inline">\(C(r)=\int_{t_n}^{t_f} T(t) \sigma (\pmb r(t)) \pmb c(\mathbf r(t),\pmb d) dt\)</span></p>]]></content>
+    
+    
+      
+      
+    <summary type="html">&lt;h1 id=&quot;nerf-representing-scenes-as-neural-radiance-fields-for-view-synthesis&quot;&gt;NeRF: Representing Scenes as Neural Radiance Fields for View </summary>
+      
+    
+    
+    
+    
+    <category term="paper" scheme="https://shayito.github.io/tags/paper/"/>
+    
+    <category term="2020" scheme="https://shayito.github.io/tags/2020/"/>
+    
+    <category term="ECCV" scheme="https://shayito.github.io/tags/ECCV/"/>
+    
+  </entry>
+  
+  <entry>
     <title>test</title>
-    <link href="https://shayito.github.io/2021/11/30/test/"/>
-    <id>https://shayito.github.io/2021/11/30/test/</id>
+    <link href="https://shayito.github.io/2021/11/30/markdown/"/>
+    <id>https://shayito.github.io/2021/11/30/markdown/</id>
     <published>2021-11-29T16:38:06.000Z</published>
-    <updated>2021-11-29T16:38:49.382Z</updated>
+    <updated>2021-11-30T04:27:10.972Z</updated>
     
-    <content type="html"><![CDATA[<p>hh</p><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;glad/glad.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;GLFW/glfw3.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stb/stb_image.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;glm/glm.hpp&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;glm/gtc/matrix_transform.hpp&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;glm/gtc/type_ptr.hpp&gt;</span></span></span><br></pre></td></tr></table></figure>]]></content>
+    <content type="html"><![CDATA[<p>公式内加粗：</p><p>定积分：_{t_n}^{t_f}</p>]]></content>
     
     
       
       
-    <summary type="html">&lt;p&gt;hh&lt;/p&gt;
-&lt;figure class=&quot;highlight c++&quot;&gt;&lt;table&gt;&lt;tr&gt;&lt;td class=&quot;gutter&quot;&gt;&lt;pre&gt;&lt;span class=&quot;line&quot;&gt;1&lt;/span&gt;&lt;br&gt;&lt;span class=&quot;line&quot;&gt;2&lt;/span&gt;&lt;br&gt;&lt;sp</summary>
+    <summary type="html">&lt;p&gt;公式内加粗：&lt;/p&gt;
+&lt;p&gt;定积分：_{t_n}^{t_f}&lt;/p&gt;
+</summary>
       
     
     
@@ -63,14 +90,18 @@
     <link href="https://shayito.github.io/2021/11/29/Volume-Rendering/"/>
     <id>https://shayito.github.io/2021/11/29/Volume-Rendering/</id>
     <published>2021-11-29T12:42:26.000Z</published>
-    <updated>2021-11-30T03:43:27.476Z</updated>
+    <updated>2021-11-30T03:46:23.668Z</updated>
     
-    <content type="html"><![CDATA[<p>体渲染：由 ECCV 2020上的 <a href="https://arxiv.org/abs/2003.08934">NeRF</a> 带来热度</p>]]></content>
+    <content type="html"><![CDATA[<p>体渲染：</p><ol type="1"><li>由 ECCV 2020上的 <a href="https://arxiv.org/abs/2003.08934">NeRF</a> 带来热度</li><li></li></ol>]]></content>
     
     
       
       
-    <summary type="html">&lt;p&gt;体渲染：由 ECCV 2020上的 &lt;a href=&quot;https://arxiv.org/abs/2003.08934&quot;&gt;NeRF&lt;/a&gt; 带来热度&lt;/p&gt;
+    <summary type="html">&lt;p&gt;体渲染：&lt;/p&gt;
+&lt;ol type=&quot;1&quot;&gt;
+&lt;li&gt;由 ECCV 2020上的 &lt;a href=&quot;https://arxiv.org/abs/2003.08934&quot;&gt;NeRF&lt;/a&gt; 带来热度&lt;/li&gt;
+&lt;li&gt;&lt;/li&gt;
+&lt;/ol&gt;
 </summary>
       
     
