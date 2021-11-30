@@ -42,6 +42,27 @@
     </entry>
     
     
+    
+    <entry>
+      <title>Volume_Rendering</title>
+      <link href="/2021/11/29/Volume-Rendering/"/>
+      <url>/2021/11/29/Volume-Rendering/</url>
+      
+        <content type="html"><![CDATA[<h2 id="in-nerf-2020">in NeRF-2020</h2><p>color <span class="math inline">\(C(\pmb r)=\int_{t_n}^{t_f} T(t) \sigma (\pmb r(t)) \pmb c(\mathbf r(t),\pmb d) dt\)</span>, where transmittance <span class="math inline">\(T(t)=exp(-\int_{t_n}^{t_f} \sigma (\pmb r(s))ds)\)</span>, ray <span class="math inline">\(\pmb r(t)=\pmb o+t \pmb d\)</span>.</p><p>radiance field 指 <span class="math inline">\(c(\mathbf r(t),\pmb d)\)</span></p><p>stratified sampling for integral estimation:</p><ul><li><p>do <strong>random uniform sample</strong> in each even partition <span class="math inline">\([t_n, t_f]\)</span>. 即 <span class="math inline">\(t_i \sim U[t_n+\frac{i-1}{N}(t_f-t_N), t_n+\frac{i}{N}(t_f-t_N)]\)</span>, <span class="math inline">\(N\)</span> is the number of partitions.</p></li><li><p>color <span class="math inline">\(\hat C (\pmb r)=\sum _{i=1}^{N} T_i (1-exp(-\sigma _i \delta _i)) \pmb c_i\)</span>, where <span class="math inline">\(T_i=exp(-\sum _{j=1}^{i-1} \sigma_j \delta_j)\)</span>, <span class="math inline">\(\delta_i=t_{i+1}-t_{i}\)</span>.</p></li></ul><p>注：<span class="math inline">\(\sigma (\pmb r(t))\)</span>采样后换成了<span class="math inline">\(1-exp(-\sigma _i \delta _i)\)</span>，利用<span class="math inline">\(exp(-x)\rightarrow 1-x (x\rightarrow 0)\)</span>；</p><p>注：在<span class="math inline">\(T_i\)</span>表达式中，采样值<span class="math inline">\(\sigma_j\)</span>乘区间长度<span class="math inline">\(\delta_i\)</span>代替了积分。</p><h2 id="in-volume-rendering-of-neural-implicit-surfaces-2021-yariv">in Volume Rendering of Neural Implicit Surfaces-2021-Yariv</h2><p><a href="https://dvelopery0115.github.io/2021/07/06/VolSDF.html">paper page</a></p><p>" In essence, volume rendering is all about approximating the integrated light radiance along this ray reaching the camera. "</p><p>" 体渲染的本质：估计积分 "</p><p>transparency <span class="math inline">\(T(t)=exp(-\int_{t_n}^{t_f} \sigma (\pmb r(s))ds)\)</span> (same as NeRF)</p><p>opacity <span class="math inline">\(O(t)=1-T(t)\)</span>, <span class="math inline">\(O(0)=0\)</span>, <span class="math inline">\(O(\infty)=1\)</span>, and it is monotonic increasing.</p><p>thus <span class="math inline">\(\tau (t)=\frac{dO(t)}{dt}=\sigma(\pmb x(t))T(t)\)</span> is a PDF (Probability Density Function)</p><p>light <span class="math inline">\(I(\pmb r)=\int _0 ^\infty L(\pmb r(t), \pmb n(t),\pmb d)\tau(t) dt\)</span>, where <span class="math inline">\(L(\pmb r(t), \pmb n(t),\pmb d)\)</span> is radiance field</p><p>注：这里的 <span class="math inline">\(L(\pmb r(t), \pmb n(t),\pmb d)\)</span> 相当于NeRF里的 <span class="math inline">\(c(\mathbf r(t),\pmb d)\)</span>，只是增加了对边界法向量 <span class="math inline">\(\pmb n(t)\)</span> 的依赖。</p><p>"NeRF is heavily affected by the sampled point during intensity calculation."</p><p>采样方法的问题：</p><ul><li>NeRF的 "<strong>random uniform sample</strong>" 会造成 artifacts；</li><li>若改成 "fixed uniform sample" 会造成另一种 artifacts；</li></ul><h2 id="in-neural-volumes-learning-dynamic-renderable-volumes-from-images-2019-lombardi">in Neural Volumes: Learning Dynamic Renderable Volumes from Images-2019-Lombardi</h2><p>*最早把volume rendering用于view synthesis</p><p>from Section 6.1</p>]]></content>
+      
+      
+      
+        <tags>
+            
+            <tag> rendering </tag>
+            
+            <tag> neural </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    
   
   
 </search>
