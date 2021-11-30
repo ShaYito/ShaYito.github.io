@@ -31,7 +31,7 @@
       <link href="/2021/11/30/markdown/"/>
       <url>/2021/11/30/markdown/</url>
       
-        <content type="html"><![CDATA[<p>公式内加粗：</p><p>定积分：_{t_n}^{t_f}</p>]]></content>
+        <content type="html"><![CDATA[<p>公式内加粗：</p><p>定积分：_{t_n}^{t_f}</p><p><span class="math display">\[\begin{equation} \label{eq3}\begin{aligned}a &amp;= b + c \\  &amp;= d + e + f + g \\  &amp;= h + i\end{aligned}\end{equation}\]</span></p>]]></content>
       
       
       

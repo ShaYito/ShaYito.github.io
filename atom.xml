@@ -6,7 +6,7 @@
   <link href="https://shayito.github.io/atom.xml" rel="self"/>
   
   <link href="https://shayito.github.io/"/>
-  <updated>2021-11-30T04:35:25.571Z</updated>
+  <updated>2021-11-30T05:02:13.576Z</updated>
   <id>https://shayito.github.io/</id>
   
   <generator uri="https://hexo.io/">Hexo</generator>
@@ -16,7 +16,7 @@
     <link href="https://shayito.github.io/2021/11/30/NeRF/"/>
     <id>https://shayito.github.io/2021/11/30/NeRF/</id>
     <published>2021-11-30T03:46:43.839Z</published>
-    <updated>2021-11-30T04:35:25.571Z</updated>
+    <updated>2021-11-30T05:02:13.576Z</updated>
     
     <content type="html"><![CDATA[<h1 id="nerf-representing-scenes-as-neural-radiance-fields-for-view-synthesis">NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis</h1><p><a href="https://github.com/yenchenlin/awesome-NeRF">NeRF repository</a></p><h2 id="contributions">contributions</h2><h3 id="neural-radiance-fields">neural radiance fields</h3><p>network <span class="math inline">\(f_{\theta}: (xyz\theta\phi)\rightarrow(\sigma RGB)\)</span></p><p>​ or <span class="math inline">\((\pmb x \pmb d)\rightarrow(\sigma \pmb c)\)</span>，where <span class="math inline">\(\sigma\)</span> only relies on <span class="math inline">\(xyz\)</span></p><h3 id="volume-rendering">volume rendering:</h3><p>color <span class="math inline">\(C(r)=\int_{t_n}^{t_f} T(t) \sigma (\pmb r(t)) \pmb c(\mathbf r(t),\pmb d) dt\)</span></p>]]></content>
     
@@ -42,16 +42,19 @@
     <link href="https://shayito.github.io/2021/11/30/markdown/"/>
     <id>https://shayito.github.io/2021/11/30/markdown/</id>
     <published>2021-11-29T16:38:06.000Z</published>
-    <updated>2021-11-30T04:27:10.972Z</updated>
+    <updated>2021-11-30T05:10:31.313Z</updated>
     
-    <content type="html"><![CDATA[<p>公式内加粗：</p><p>定积分：_{t_n}^{t_f}</p>]]></content>
+    <content type="html"><![CDATA[<p>公式内加粗：</p><p>定积分：_{t_n}^{t_f}</p><p><span class="math display">\[\begin{equation} \label{eq3}\begin{aligned}a &amp;= b + c \\  &amp;= d + e + f + g \\  &amp;= h + i\end{aligned}\end{equation}\]</span></p>]]></content>
     
     
       
       
     <summary type="html">&lt;p&gt;公式内加粗：&lt;/p&gt;
 &lt;p&gt;定积分：_{t_n}^{t_f}&lt;/p&gt;
-</summary>
+&lt;p&gt;&lt;span class=&quot;math display&quot;&gt;\[\begin{equation} \label{eq3}
+\begin{aligned}
+a &amp;amp;= b + c \\
+  </summary>
       
     
     
