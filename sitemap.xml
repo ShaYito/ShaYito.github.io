@@ -2,18 +2,18 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
-    <loc>https://shayito.github.io/2021/11/30/Rendering/</loc>
+    <loc>https://shayito.github.io/2021/11/30/applications/</loc>
     
-    <lastmod>2021-11-30</lastmod>
+    <lastmod>2021-12-01</lastmod>
     
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   
   <url>
-    <loc>https://shayito.github.io/2021/11/30/applications/</loc>
+    <loc>https://shayito.github.io/2021/11/30/Differentiable/</loc>
     
-    <lastmod>2021-11-30</lastmod>
+    <lastmod>2021-12-01</lastmod>
     
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
@@ -21,6 +21,15 @@
   
   <url>
     <loc>https://shayito.github.io/2021/11/29/Volume-Rendering/</loc>
+    
+    <lastmod>2021-12-01</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/2021/11/30/Rendering/</loc>
     
     <lastmod>2021-11-30</lastmod>
     
@@ -48,15 +57,6 @@
   
   <url>
     <loc>https://shayito.github.io/2021/11/30/zzz-laTex/</loc>
-    
-    <lastmod>2021-11-30</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/11/30/Differentiable/</loc>
     
     <lastmod>2021-11-30</lastmod>
     
@@ -94,57 +94,57 @@
 
   <url>
     <loc>https://shayito.github.io/</loc>
-    <lastmod>2021-11-30</lastmod>
+    <lastmod>2021-12-01</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
 
   
   <url>
-    <loc>https://shayito.github.io/tags/rendering/</loc>
-    <lastmod>2021-11-30</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/differentiable/</loc>
-    <lastmod>2021-11-30</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
     <loc>https://shayito.github.io/tags/paper/</loc>
-    <lastmod>2021-11-30</lastmod>
+    <lastmod>2021-12-01</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://shayito.github.io/tags/2020/</loc>
-    <lastmod>2021-11-30</lastmod>
+    <lastmod>2021-12-01</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://shayito.github.io/tags/ECCV/</loc>
-    <lastmod>2021-11-30</lastmod>
+    <lastmod>2021-12-01</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/neural/</loc>
-    <lastmod>2021-11-30</lastmod>
+    <loc>https://shayito.github.io/tags/rendering/</loc>
+    <lastmod>2021-12-01</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/differentiable/</loc>
+    <lastmod>2021-12-01</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://shayito.github.io/tags/tutorial/</loc>
-    <lastmod>2021-11-30</lastmod>
+    <lastmod>2021-12-01</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/neural/</loc>
+    <lastmod>2021-12-01</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
