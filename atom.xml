@@ -6,10 +6,53 @@
   <link href="https://shayito.github.io/atom.xml" rel="self"/>
   
   <link href="https://shayito.github.io/"/>
-  <updated>2021-12-01T06:45:24.978Z</updated>
+  <updated>2021-12-06T13:05:14.948Z</updated>
   <id>https://shayito.github.io/</id>
   
   <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>Material_Point_Method(MPM)</title>
+    <link href="https://shayito.github.io/2021/12/06/Material-Point-Method-MPM/"/>
+    <id>https://shayito.github.io/2021/12/06/Material-Point-Method-MPM/</id>
+    <published>2021-12-06T13:02:23.000Z</published>
+    <updated>2021-12-06T13:05:14.948Z</updated>
+    
+    <content type="html"><![CDATA[<p>MPM</p><h3 id="definition">Definition</h3><p>a hybrid Lagrangian/Eulerian discretization scheme for solid mechanics (<a href="https://yuanming.taichi.graphics/publication/2018-mlsmpm/">MLS-2018-Hu</a>)</p>]]></content>
+    
+    
+      
+      
+    <summary type="html">&lt;p&gt;MPM&lt;/p&gt;
+&lt;h3 id=&quot;definition&quot;&gt;Definition&lt;/h3&gt;
+&lt;p&gt;a hybrid Lagrangian/Eulerian discretization scheme for solid mechanics (&lt;a href=&quot;https:/</summary>
+      
+    
+    
+    
+    
+  </entry>
+  
+  <entry>
+    <title>Material_Point_Method(MPM)</title>
+    <link href="https://shayito.github.io/2021/12/06/MPM/"/>
+    <id>https://shayito.github.io/2021/12/06/MPM/</id>
+    <published>2021-12-06T13:02:23.000Z</published>
+    <updated>2021-12-06T13:02:23.370Z</updated>
+    
+    <content type="html"><![CDATA[]]></content>
+    
+    
+      
+      
+    <summary type="html">
+</summary>
+      
+    
+    
+    
+    
+  </entry>
   
   <entry>
     <title>applications</title>

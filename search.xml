@@ -4,6 +4,32 @@
   
     
     <entry>
+      <title>Material_Point_Method(MPM)</title>
+      <link href="/2021/12/06/Material-Point-Method-MPM/"/>
+      <url>/2021/12/06/Material-Point-Method-MPM/</url>
+      
+        <content type="html"><![CDATA[<p>MPM</p><h3 id="definition">Definition</h3><p>a hybrid Lagrangian/Eulerian discretization scheme for solid mechanics (<a href="https://yuanming.taichi.graphics/publication/2018-mlsmpm/">MLS-2018-Hu</a>)</p>]]></content>
+      
+      
+      
+    </entry>
+    
+    
+    
+    <entry>
+      <title>Material_Point_Method(MPM)</title>
+      <link href="/2021/12/06/MPM/"/>
+      <url>/2021/12/06/MPM/</url>
+      
+        <content type="html"><![CDATA[]]></content>
+      
+      
+      
+    </entry>
+    
+    
+    
+    <entry>
       <title>applications</title>
       <link href="/2021/11/30/applications/"/>
       <url>/2021/11/30/applications/</url>
