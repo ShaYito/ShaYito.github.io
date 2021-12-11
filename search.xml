@@ -4,6 +4,19 @@
   
     
     <entry>
+      <title>Implicit Geometric Regularization</title>
+      <link href="/2021/12/11/Implicit-Geometric-Regularization/"/>
+      <url>/2021/12/11/Implicit-Geometric-Regularization/</url>
+      
+        <content type="html"><![CDATA[<p>I looked into the paper 'Implicit Geometric Regularization for Learning Shapes' and did a presentation on it.</p><p><div class="row">    <embed src="pdf/20211126_IGR.pdf" width="100%" height="550" type="application/pdf"></div></p>]]></content>
+      
+      
+      
+    </entry>
+    
+    
+    
+    <entry>
       <title>rigid body collision</title>
       <link href="/2021/12/11/rigid-body-collision/"/>
       <url>/2021/12/11/rigid-body-collision/</url>
