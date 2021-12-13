@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
-    <loc>https://shayito.github.io/2021/12/13/time-integration/</loc>
+    <loc>https://shayito.github.io/2021/11/30/zzz-markdown/</loc>
     
     <lastmod>2021-12-13</lastmod>
     
@@ -11,25 +11,7 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/2021/12/11/rigid-body-collision/</loc>
-    
-    <lastmod>2021-12-13</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/12/12/cloth-simulation/</loc>
-    
-    <lastmod>2021-12-13</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/12/06/Material-Point-Method-MPM/</loc>
+    <loc>https://shayito.github.io/2021/11/30/zzz-laTex/</loc>
     
     <lastmod>2021-12-13</lastmod>
     
@@ -65,27 +47,9 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/2021/12/07/collision-simulation/</loc>
-    
-    <lastmod>2021-12-07</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
     <loc>https://shayito.github.io/2021/11/30/NeRF/</loc>
     
     <lastmod>2021-12-06</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/11/30/applications/</loc>
-    
-    <lastmod>2021-12-01</lastmod>
     
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
@@ -111,24 +75,6 @@
   
   <url>
     <loc>https://shayito.github.io/2021/11/30/Rendering/</loc>
-    
-    <lastmod>2021-11-30</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/11/30/zzz-markdown/</loc>
-    
-    <lastmod>2021-11-30</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/11/30/zzz-laTex/</loc>
     
     <lastmod>2021-11-30</lastmod>
     
@@ -169,6 +115,13 @@
   </url>
   
   <url>
+    <loc>https://shayito.github.io/tags/neural/</loc>
+    <lastmod>2021-12-13</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
     <loc>https://shayito.github.io/tags/paper/</loc>
     <lastmod>2021-12-13</lastmod>
     <changefreq>weekly</changefreq>
@@ -190,14 +143,7 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/neural/</loc>
-    <lastmod>2021-12-13</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/tutorial/</loc>
+    <loc>https://shayito.github.io/tags/tips/</loc>
     <lastmod>2021-12-13</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
