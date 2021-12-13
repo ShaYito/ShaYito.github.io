@@ -4,6 +4,19 @@
   
     
     <entry>
+      <title>cloth simulation</title>
+      <link href="/2021/12/12/cloth-simulation/"/>
+      <url>/2021/12/12/cloth-simulation/</url>
+      
+        <content type="html"><![CDATA[<figure><img src="\images\ball_cloth_collision.gif" alt="ball_cloth_collision" /><figcaption aria-hidden="true">ball_cloth_collision</figcaption></figure><h3 id="method-1-newtons-method-jacobi-method-with-chebyshev-acceleration">Method 1: Newton's Method + Jacobi Method with Chebyshev Acceleration</h3><p>Newton's method is also called backward Euler or implicit Euler</p><figure><img src="\images\newton.png" alt="newton" /><figcaption aria-hidden="true">newton</figcaption></figure><figure><img src="\images\jacobi.png" alt="jacobi" /><figcaption aria-hidden="true">jacobi</figcaption></figure><figure><img src="\images\chebyshev_acceleration.png" alt="chebyshev_acceleration" /><figcaption aria-hidden="true">chebyshev_acceleration</figcaption></figure><h3 id="method-2-position-based-dynamics-a-jacobi-approach">Method 2: Position Based Dynamics + a Jacobi Approach</h3><p>To avoid bias of Gauss-Seidel Approach, we adopt Jacobi Approach.</p><figure><img src="\images\gauss-seidel.png" alt="gauss-seidel" /><figcaption aria-hidden="true">gauss-seidel</figcaption></figure><figure><img src="\images\jacobi_multi_springs.png" alt="jacobi_multi_springs" /><figcaption aria-hidden="true">jacobi_multi_springs</figcaption></figure><figure><img src="\images\PBD.png" alt="PBD" /><figcaption aria-hidden="true">PBD</figcaption></figure>]]></content>
+      
+      
+      
+    </entry>
+    
+    
+    
+    <entry>
       <title>Implicit Geometric Regularization</title>
       <link href="/2021/12/11/Implicit-Geometric-Regularization/"/>
       <url>/2021/12/11/Implicit-Geometric-Regularization/</url>
@@ -47,7 +60,7 @@
       <link href="/2021/12/06/Material-Point-Method-MPM/"/>
       <url>/2021/12/06/Material-Point-Method-MPM/</url>
       
-        <content type="html"><![CDATA[<h3 id="definition">Definition</h3><p>a hybrid Lagrangian/Eulerian discretization scheme for solid mechanics (<a href="https://yuanming.taichi.graphics/publication/2018-mlsmpm/">MLS-2018-Hu</a>)</p>]]></content>
+        <content type="html"><![CDATA[<h3 id="mpm---definition">MPM - Definition</h3><ul><li><p>a hybrid Lagrangian/Eulerian discretization scheme for solid mechanics (<a href="https://yuanming.taichi.graphics/publication/2018-mlsmpm/">MLS-2018-Hu</a>)</p></li><li><p>the generalization of Particle In Cell (PIC) and Fluid Implicit Particle Method (FLIP) to solid mechanics.(<a href="https://www.math.ucla.edu/~cffjiang/research/mpmcourse/mpmcourse.pdf">MPM course-2016-Jiang</a>)</p></li></ul><h3 id="mpm---features">MPM - Features</h3><p>(<a href="https://www.math.ucla.edu/~cffjiang/research/mpmcourse/mpmcourse.pdf">MPM course-2016-Jiang</a>)</p><ul><li><p>combine Lagrangian material particles (points) with Eulerian Cartesian grids.</p></li><li><p>no inherent need for Lagrangian connectivity.</p></li><li><p>implicitly handle self-collision and fracture with the background Eulerian grid.</p></li></ul><h3 id="continuum-theory">Continuum Theory</h3><p>(<a href="https://www.math.ucla.edu/~cffjiang/research/mpmcourse/mpmcourse.pdf">MPM course-2016-Jiang</a>)</p><p>Continuum assumption can be made for almost all solids and liquids, including deformable (elastic and plastic)objects, muscle, flesh, cloth, hair, liquid, smoke, gas, granular materials (sand, snow, mud, soil, etc.).</p><p>A continuum body defines quantities such as density, velocity and force as continuous functions of position.</p><p>The main focus of continuum kinematics/motion is the deformation, either locally or globally in different coordinate systems of interests.</p><p>Luckily in most cases, we can describe kinematics without introducing the meaning of force, stress or even mass.</p>]]></content>
       
       
       
