@@ -6,10 +6,32 @@
   <link href="https://shayito.github.io/atom.xml" rel="self"/>
   
   <link href="https://shayito.github.io/"/>
-  <updated>2021-12-13T06:27:49.830Z</updated>
+  <updated>2021-12-13T06:39:55.125Z</updated>
   <id>https://shayito.github.io/</id>
   
   <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>time integration</title>
+    <link href="https://shayito.github.io/2021/12/13/time-integration/"/>
+    <id>https://shayito.github.io/2021/12/13/time-integration/</id>
+    <published>2021-12-13T06:32:50.000Z</published>
+    <updated>2021-12-13T06:39:55.125Z</updated>
+    
+    <content type="html"><![CDATA[<ol type="1"><li><p>Forward Euler (explicit)</p><p><span class="math inline">\(\pmb v_{t+1}=\pmb v_t+\Delta t \frac{\pmb f_t}{m}\)</span></p><p><span class="math inline">\(\pmb x_{t+1}=\pmb x_t+\Delta t \pmb v_t\)</span></p></li><li><p>Semi-implicit Euler</p><p><span class="math inline">\(\pmb v_{t+1}=\pmb v_t+\Delta t \frac{\pmb f_t}{m}\)</span></p><p><span class="math inline">\(\pmb x_{t+1}=\pmb x_t+\Delta t \pmb v_{t+1}\)</span></p></li><li><p>Backward Euler (implicit)</p><p><span class="math inline">\(\pmb v_{t+1}=\pmb v_t+\Delta t \frac{\pmb f_{t+1}}{m}\)</span></p><p><span class="math inline">\(\pmb x_{t+1}=\pmb x_t+\Delta t \pmb v_{t+1}\)</span></p></li></ol>]]></content>
+    
+    
+      
+      
+    <summary type="html">&lt;ol type=&quot;1&quot;&gt;
+&lt;li&gt;&lt;p&gt;Forward Euler (explicit)&lt;/p&gt;
+&lt;p&gt;&lt;span class=&quot;math inline&quot;&gt;\(\pmb v_{t+1}=\pmb v_t+\Delta t \frac{\pmb f_t}{m}\)&lt;/span</summary>
+      
+    
+    
+    
+    
+  </entry>
   
   <entry>
     <title>cloth simulation</title>
