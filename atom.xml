@@ -6,10 +6,34 @@
   <link href="https://shayito.github.io/atom.xml" rel="self"/>
   
   <link href="https://shayito.github.io/"/>
-  <updated>2021-12-18T06:16:01.468Z</updated>
+  <updated>2021-12-20T03:30:01.515Z</updated>
   <id>https://shayito.github.io/</id>
   
   <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>approaches &amp; methods</title>
+    <link href="https://shayito.github.io/2021/12/20/approaches/"/>
+    <id>https://shayito.github.io/2021/12/20/approaches/</id>
+    <published>2021-12-20T03:13:44.000Z</published>
+    <updated>2021-12-20T03:30:01.515Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="iteration-methods">iteration methods</h2><p>Newton's: iterate to get Hessian</p><h2 id="workflow-designs">workflow designs</h2><p>Position Based Dynamics (PBD):</p><p>Projective Dynamics:</p><h2 id="linear-solvers">linear solvers</h2><p>Gauss-Seidel</p><p>Jacobi</p>]]></content>
+    
+    
+      
+      
+    <summary type="html">&lt;h2 id=&quot;iteration-methods&quot;&gt;iteration methods&lt;/h2&gt;
+&lt;p&gt;Newton&#39;s: iterate to get Hessian&lt;/p&gt;
+&lt;h2 id=&quot;workflow-designs&quot;&gt;workflow designs&lt;/h2&gt;</summary>
+      
+    
+    
+    
+    
+    <category term="simualtion" scheme="https://shayito.github.io/tags/simualtion/"/>
+    
+  </entry>
   
   <entry>
     <title>elastic simulation</title>
@@ -29,9 +53,9 @@
     
     
     
-    <category term="simulation" scheme="https://shayito.github.io/tags/simulation/"/>
-    
     <category term="elastic" scheme="https://shayito.github.io/tags/elastic/"/>
+    
+    <category term="simulation" scheme="https://shayito.github.io/tags/simulation/"/>
     
   </entry>
   
@@ -108,9 +132,9 @@
     
     
     
-    <category term="simulation" scheme="https://shayito.github.io/tags/simulation/"/>
-    
     <category term="elastic" scheme="https://shayito.github.io/tags/elastic/"/>
+    
+    <category term="simulation" scheme="https://shayito.github.io/tags/simulation/"/>
     
     <category term="cloth" scheme="https://shayito.github.io/tags/cloth/"/>
     
@@ -222,9 +246,9 @@
     
     
     
-    <category term="simulation" scheme="https://shayito.github.io/tags/simulation/"/>
-    
     <category term="elastic" scheme="https://shayito.github.io/tags/elastic/"/>
+    
+    <category term="simulation" scheme="https://shayito.github.io/tags/simulation/"/>
     
     <category term="method" scheme="https://shayito.github.io/tags/method/"/>
     

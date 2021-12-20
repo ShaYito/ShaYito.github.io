@@ -4,6 +4,25 @@
   
     
     <entry>
+      <title>approaches &amp; methods</title>
+      <link href="/2021/12/20/approaches/"/>
+      <url>/2021/12/20/approaches/</url>
+      
+        <content type="html"><![CDATA[<h2 id="iteration-methods">iteration methods</h2><p>Newton's: iterate to get Hessian</p><h2 id="workflow-designs">workflow designs</h2><p>Position Based Dynamics (PBD):</p><p>Projective Dynamics:</p><h2 id="linear-solvers">linear solvers</h2><p>Gauss-Seidel</p><p>Jacobi</p>]]></content>
+      
+      
+      
+        <tags>
+            
+            <tag> simualtion </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    
+    
+    <entry>
       <title>elastic simulation</title>
       <link href="/2021/12/15/elastic-simulation/"/>
       <url>/2021/12/15/elastic-simulation/</url>
@@ -14,9 +33,9 @@
       
         <tags>
             
-            <tag> simulation </tag>
-            
             <tag> elastic </tag>
+            
+            <tag> simulation </tag>
             
         </tags>
       
@@ -79,9 +98,9 @@
       
         <tags>
             
-            <tag> simulation </tag>
-            
             <tag> elastic </tag>
+            
+            <tag> simulation </tag>
             
             <tag> cloth </tag>
             
@@ -167,9 +186,9 @@
       
         <tags>
             
-            <tag> simulation </tag>
-            
             <tag> elastic </tag>
+            
+            <tag> simulation </tag>
             
             <tag> method </tag>
             
