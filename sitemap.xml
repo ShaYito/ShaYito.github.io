@@ -2,9 +2,36 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
-    <loc>https://shayito.github.io/2021/12/15/elastic-simulation/</loc>
+    <loc>https://shayito.github.io/2021/12/12/cloth-simulation/</loc>
     
-    <lastmod>2021-12-22</lastmod>
+    <lastmod>2021-12-23</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/2021/12/23/Descent-Optimization/</loc>
+    
+    <lastmod>2021-12-23</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/2021/12/11/rigid-body-collision/</loc>
+    
+    <lastmod>2021-12-23</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/2021/12/13/linear-solver/</loc>
+    
+    <lastmod>2021-12-23</lastmod>
     
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
@@ -13,16 +40,25 @@
   <url>
     <loc>https://shayito.github.io/2021/12/20/approaches/</loc>
     
-    <lastmod>2021-12-20</lastmod>
+    <lastmod>2021-12-23</lastmod>
     
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   
   <url>
-    <loc>https://shayito.github.io/2021/12/12/cloth-simulation/</loc>
+    <loc>https://shayito.github.io/2021/12/11/Implicit-Geometric-Regularization/</loc>
     
-    <lastmod>2021-12-20</lastmod>
+    <lastmod>2021-12-23</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/2021/12/15/elastic-simulation/</loc>
+    
+    <lastmod>2021-12-22</lastmod>
     
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
@@ -56,24 +92,6 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/2021/12/13/linear-solver/</loc>
-    
-    <lastmod>2021-12-13</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/12/11/rigid-body-collision/</loc>
-    
-    <lastmod>2021-12-13</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
     <loc>https://shayito.github.io/2021/12/07/collision-simulation/</loc>
     
     <lastmod>2021-12-13</lastmod>
@@ -93,15 +111,6 @@
   
   <url>
     <loc>https://shayito.github.io/links/</loc>
-    
-    <lastmod>2021-12-11</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/12/11/Implicit-Geometric-Regularization/</loc>
     
     <lastmod>2021-12-11</lastmod>
     
@@ -135,6 +144,34 @@
     <priority>1.0</priority>
   </url>
 
+  
+  <url>
+    <loc>https://shayito.github.io/tags/presentation/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/Newton/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/gradient/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/iterative/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
   
   <url>
     <loc>https://shayito.github.io/tags/elastic/</loc>
@@ -200,14 +237,14 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/cloth/</loc>
+    <loc>https://shayito.github.io/tags/sum-up/</loc>
     <lastmod>2021-12-23</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/Newton/</loc>
+    <loc>https://shayito.github.io/tags/cloth/</loc>
     <lastmod>2021-12-23</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
