@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
-    <loc>https://shayito.github.io/2021/12/12/cloth-simulation/</loc>
+    <loc>https://shayito.github.io/2021/12/23/Descent-Optimization/</loc>
     
     <lastmod>2021-12-23</lastmod>
     
@@ -11,7 +11,16 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/2021/12/23/Descent-Optimization/</loc>
+    <loc>https://shayito.github.io/2021/12/20/approaches/</loc>
+    
+    <lastmod>2021-12-23</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/2021/12/12/cloth-simulation/</loc>
     
     <lastmod>2021-12-23</lastmod>
     
@@ -30,15 +39,6 @@
   
   <url>
     <loc>https://shayito.github.io/2021/12/13/linear-solver/</loc>
-    
-    <lastmod>2021-12-23</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/12/20/approaches/</loc>
     
     <lastmod>2021-12-23</lastmod>
     
@@ -146,34 +146,6 @@
 
   
   <url>
-    <loc>https://shayito.github.io/tags/presentation/</loc>
-    <lastmod>2021-12-23</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/Newton/</loc>
-    <lastmod>2021-12-23</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/gradient/</loc>
-    <lastmod>2021-12-23</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/iterative/</loc>
-    <lastmod>2021-12-23</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
     <loc>https://shayito.github.io/tags/elastic/</loc>
     <lastmod>2021-12-23</lastmod>
     <changefreq>weekly</changefreq>
@@ -202,6 +174,34 @@
   </url>
   
   <url>
+    <loc>https://shayito.github.io/tags/Newton/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/gradient/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/iterative/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/presentation/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
     <loc>https://shayito.github.io/tags/paper/</loc>
     <lastmod>2021-12-23</lastmod>
     <changefreq>weekly</changefreq>
@@ -223,6 +223,13 @@
   </url>
   
   <url>
+    <loc>https://shayito.github.io/tags/sum-up/</loc>
+    <lastmod>2021-12-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
     <loc>https://shayito.github.io/tags/rendering/</loc>
     <lastmod>2021-12-23</lastmod>
     <changefreq>weekly</changefreq>
@@ -231,13 +238,6 @@
   
   <url>
     <loc>https://shayito.github.io/tags/neural/</loc>
-    <lastmod>2021-12-23</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/sum-up/</loc>
     <lastmod>2021-12-23</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
