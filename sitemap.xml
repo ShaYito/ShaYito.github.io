@@ -2,6 +2,24 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
+    <loc>https://shayito.github.io/2021/12/27/CUDA10-2-VS2019-win10-configuration/</loc>
+    
+    <lastmod>2021-12-27</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/2021/12/26/my-FEM-elastic-simulation-with-Unity/</loc>
+    
+    <lastmod>2021-12-27</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
     <loc>https://shayito.github.io/2021/11/29/Volume-Rendering/</loc>
     
     <lastmod>2021-12-27</lastmod>
@@ -29,15 +47,6 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/2021/12/26/my-FEM-elastic-simulation-with-Unity/</loc>
-    
-    <lastmod>2021-12-27</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
     <loc>https://shayito.github.io/2021/12/13/linear-solver/</loc>
     
     <lastmod>2021-12-27</lastmod>
@@ -57,15 +66,6 @@
   
   <url>
     <loc>https://shayito.github.io/2021/12/12/cloth-simulation/</loc>
-    
-    <lastmod>2021-12-27</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/2021/12/27/CUDA10-2-VS2019-win10-configuration/</loc>
     
     <lastmod>2021-12-27</lastmod>
     
@@ -171,6 +171,13 @@
   </url>
   
   <url>
+    <loc>https://shayito.github.io/tags/presentation/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
     <loc>https://shayito.github.io/tags/Newton/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
@@ -186,13 +193,6 @@
   
   <url>
     <loc>https://shayito.github.io/tags/iterative/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/presentation/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -227,35 +227,7 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/paper/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/2020/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/ECCV/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/rendering/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/neural/</loc>
+    <loc>https://shayito.github.io/tags/sum-up/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -297,14 +269,42 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/sum-up/</loc>
+    <loc>https://shayito.github.io/tags/collision/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/collision/</loc>
+    <loc>https://shayito.github.io/tags/paper/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/2020/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/ECCV/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/rendering/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/neural/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -318,14 +318,14 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/rigid/</loc>
+    <loc>https://shayito.github.io/tags/implicit/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/implicit/</loc>
+    <loc>https://shayito.github.io/tags/rigid/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
