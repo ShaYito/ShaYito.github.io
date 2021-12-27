@@ -171,13 +171,6 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/presentation/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
     <loc>https://shayito.github.io/tags/Newton/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
@@ -193,6 +186,13 @@
   
   <url>
     <loc>https://shayito.github.io/tags/iterative/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/presentation/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -221,55 +221,6 @@
   
   <url>
     <loc>https://shayito.github.io/tags/mpm/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/sum-up/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/cloth/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/PBD/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/Jacobi/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/Chebyshev/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/Gauss-Seidel/</loc>
-    <lastmod>2021-12-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/collision/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -311,6 +262,13 @@
   </url>
   
   <url>
+    <loc>https://shayito.github.io/tags/sum-up/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
     <loc>https://shayito.github.io/tags/math/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
@@ -318,7 +276,42 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/implicit/</loc>
+    <loc>https://shayito.github.io/tags/collision/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/cloth/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/PBD/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/Jacobi/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/Chebyshev/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/Gauss-Seidel/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -326,6 +319,13 @@
   
   <url>
     <loc>https://shayito.github.io/tags/rigid/</loc>
+    <lastmod>2021-12-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/implicit/</loc>
     <lastmod>2021-12-27</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
