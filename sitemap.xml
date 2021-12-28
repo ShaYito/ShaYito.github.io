@@ -11,15 +11,6 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/2021/12/27/CUDA-learn/</loc>
-    
-    <lastmod>2021-12-28</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
     <loc>https://shayito.github.io/2021/12/26/my-FEM-elastic-simulation-with-Unity/</loc>
     
     <lastmod>2021-12-27</lastmod>
@@ -173,6 +164,27 @@
 
   
   <url>
+    <loc>https://shayito.github.io/tags/Newton/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/gradient/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/iterative/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
     <loc>https://shayito.github.io/tags/tutorial/</loc>
     <lastmod>2021-12-28</lastmod>
     <changefreq>weekly</changefreq>
@@ -181,34 +193,6 @@
   
   <url>
     <loc>https://shayito.github.io/tags/presentation/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/elastic/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/simulation/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/method/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/mpm/</loc>
     <lastmod>2021-12-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -236,21 +220,7 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/Newton/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/gradient/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/iterative/</loc>
+    <loc>https://shayito.github.io/tags/simulation/</loc>
     <lastmod>2021-12-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -258,6 +228,41 @@
   
   <url>
     <loc>https://shayito.github.io/tags/sum-up/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/rendering/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/neural/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/elastic/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/method/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/mpm/</loc>
     <lastmod>2021-12-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
@@ -299,28 +304,14 @@
   </url>
   
   <url>
-    <loc>https://shayito.github.io/tags/collision/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/rendering/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
-    <loc>https://shayito.github.io/tags/neural/</loc>
-    <lastmod>2021-12-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  
-  <url>
     <loc>https://shayito.github.io/tags/math/</loc>
+    <lastmod>2021-12-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>https://shayito.github.io/tags/collision/</loc>
     <lastmod>2021-12-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
