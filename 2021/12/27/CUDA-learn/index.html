@@ -1,0 +1,67 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="X-UA-Compatible" content="IE=edge"><meta name="author" content="Yintong Shang"><title>CUDA learn · Yito's Corner</title><meta name="description" content="Important Notes
+CUDA是异步的，代码分别在CPU和GPU同时执行
+CUDA Functions
+cudaMalloc
+分配size字节的GPU内存到devPtr指针。对应的，malloc()释放CPU内存。
+1cudaError_t cudaMalloc(void** d"><meta name="keywords" content="animation, simulation, rendering"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="renderer" content="webkit"><link rel="shortcut icon" type="image/x-icon" href="/images/cute.png"><link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/blog_basic.css"><link rel="stylesheet" href="/css/font-awesome.min.css"><link rel="stylesheet" href="/css/insight.css"><link rel="stylesheet" href="/css/search.css"><link rel="alternate" type="application/atom+xml" title="ATOM 1.0" href="/atom.xml"><script src="/js/jquery.js"></script><meta name="generator" content="Hexo 5.4.0"></head><body><div class="page-top animated fadeInDown"><div class="nav"><li> <a href="/">Home</a></li><li> <a href="/archives">Archives</a></li><li> <a href="/tags">Tags</a></li><li> <a href="/about">About</a></li><li> <a href="/links">Links</a></li></div><div class="information"><div class="nav_right_btn"><li><a class="fa fa-chevron-left" onclick="window.history.go(-1)"> </a></li><li><a class="fa fa-search" onclick="openWindow();"></a></li></div><div class="avatar"><img src="/images/syt.jpg"></div></div></div><div class="sidebar animated fadeInDown"><div class="sidebar-top"><div class="logo-title"><div class="title"><img src="/images/syt.jpg" style="width:200px;" alt="favicon"><h3 title=""><a href="/">Yito's Corner</a></h3><div class="description"><p>to deposit knowledge about computer graphics</p></div></div><ul class="social-links"><li><a target="_blank" rel="noopener" href="https://github.com/ShaYito"><i class="fa fa-github"></i></a></li><li><a href="mailto:shayito_@outlook.com"><i class="fa fa-envelope"></i></a></li><li><a target="_blank" rel="noopener" href="https://www.zhihu.com/people/shang-yin-tong"><i class="fa fa-mortar-board"></i></a></li><li><a target="_blank" rel="noopener" href="https://twitter.com/tori_yito_sha"><i class="fa fa-twitter"></i></a></li></ul></div></div><div class="footer"><div class="p"> <span>  </span><i class="fa fa-star"></i><span> Yintong Shang</span></div><div class="by_farbox"><span>Powered by </span><a href="https://hexo.io/zh-cn/" target="_blank">Hexo </a><span> & </span><span>Anatolo </span></div><div class="beian"></div></div></div><div class="main"><div class="autopagerize_page_element"><div class="content"><div class="post-page"><div class="post animated fadeInDown"><div class="post-title"><h3><a>CUDA learn</a></h3></div><div class="post-content"><p><h2 id="important-notes">Important Notes</h2>
+<p>CUDA是异步的，代码分别在CPU和GPU同时执行</p>
+<h2 id="cuda-functions">CUDA Functions</h2>
+<h4 id="cudamalloc">cudaMalloc</h4>
+<p>分配size字节的GPU内存到devPtr指针。对应的，<code>malloc()</code>释放CPU内存。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">cudaError_t <span class="title">cudaMalloc</span><span class="params">(<span class="keyword">void</span>** devPtr, <span class="keyword">size_t</span> size)</span></span></span><br></pre></td></tr></table></figure>
+<p>用法：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">int</span> nElem = <span class="number">32</span>;</span><br><span class="line"><span class="keyword">size_t</span> nBytes = nElem * <span class="built_in"><span class="keyword">sizeof</span></span>(<span class="keyword">float</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">float</span>* d_A;  <span class="comment">// d_: device</span></span><br><span class="line"><span class="built_in">cudaMalloc</span>((<span class="keyword">float</span>**)&amp;d_A, nBytes);</span><br><span class="line"></span><br><span class="line"><span class="keyword">float</span>* h_A;  <span class="comment">// h_: host</span></span><br><span class="line">h_A = (<span class="keyword">float</span>*)<span class="built_in">malloc</span>(nBytes);</span><br></pre></td></tr></table></figure>
+<h4 id="cudamemcpy">cudaMemcpy</h4>
+<p>从src到dst，复制count个kind类型的内存内容。对应的，<code>memcpy()</code>释放CPU内存。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">cudaError_t <span class="title">cudaMemcpy</span><span class="params">(<span class="keyword">void</span>* dst, <span class="keyword">const</span> <span class="keyword">void</span>* src, <span class="keyword">size_t</span> count, cudaMemcpyKind kind)</span></span></span><br><span class="line"><span class="function">    <span class="comment">// kind: </span></span></span><br><span class="line"><span class="function">    <span class="comment">// cudaMemcpyHostToHost, cudaMemcpyHostToDevice, </span></span></span><br><span class="line"><span class="function">    <span class="comment">// cudaMemcpyDeviceToHost, cudaMemcpyDeviceToDevice;</span></span></span><br></pre></td></tr></table></figure>
+<p>用法：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cudaMemcpy</span>(d_A, h_A, nBytes, cudaMemcpyHostToDevice);</span><br></pre></td></tr></table></figure>
+<h4 id="cudamemset">cudaMemset</h4>
+<p>内存置零。对应的，<code>memset()</code></p>
+<h4 id="cudafree">cudaFree</h4>
+<p>释放GPU内存。对应的，<code>free()</code>释放CPU内存。</p>
+<p>用法：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">cudaFree(d_A);</span><br><span class="line">free(h_A);</span><br></pre></td></tr></table></figure>
+<h4 id="cudageterrorstring">cudaGetErrorString</h4>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">char</span>* <span class="title">cudaGetErrorString</span><span class="params">(cudaError_t error)</span></span></span><br></pre></td></tr></table></figure>
+<h4 id="cudadevicesynchronize">cudaDeviceSynchronize</h4>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">cudaError_t <span class="title">cudaDeviceSynchronize</span><span class="params">(<span class="keyword">void</span>)</span></span></span><br></pre></td></tr></table></figure>
+<p>显示同步：强制host等待所有kernel执行结束</p>
+<h2 id="cuda-kernel">CUDA Kernel</h2>
+<p>函数类型限定符</p>
+<table>
+<thead>
+<tr class="header">
+<th>限定符</th>
+<th>执行</th>
+<th>调用</th>
+<th>note</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>__global__</code></td>
+<td>at device</td>
+<td>host或计算力为3的device</td>
+<td>必须返回void</td>
+</tr>
+<tr class="even">
+<td><code>__device__</code></td>
+<td>at device</td>
+<td>仅device</td>
+<td>可与<code>__host__</code>一起用</td>
+</tr>
+<tr class="odd">
+<td><code>__host__</code></td>
+<td>at host</td>
+<td>仅host</td>
+<td>可省略</td>
+</tr>
+</tbody>
+</table>
+<p>验证核函数代码：把执行参数设置为&lt;&lt;&lt;1,1&gt;&gt;&gt;，模拟串行程序。</p>
+<p>错误处理：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> CHECK(call)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">const</span> cudaError_t error = call;</span><br><span class="line">	<span class="keyword">if</span>(error!=cudaSuccess)</span><br><span class="line">    &#123;</span><br><span class="line">        cout&lt;&lt;<span class="string">&quot;Error: &quot;</span>&lt;&lt;__FILE__&lt;&lt;__LINE__&lt;&lt;endl;</span><br><span class="line">        cout&lt;&lt;<span class="string">&quot;code:&quot;</span>&lt;&lt;error&lt;&lt;<span class="string">&quot;reason&quot;</span>&lt;&lt;<span class="built_in">cudaGetErrorString</span>(error)&lt;&lt;endl;</span><br><span class="line">        <span class="built_in">exit</span>(<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// usage_1</span></span><br><span class="line"><span class="comment">// CHECK(cudaMemcpy(d_C, gpuRef, nBytes, cudaGetErrorString(error)));</span></span><br><span class="line"><span class="comment">// usage_2</span></span><br><span class="line"><span class="comment">// kernel_function&lt;&lt;&lt;grid, block&gt;&gt;&gt;(argument list);</span></span><br><span class="line"><span class="comment">// CHECK(cudaDeviceSynchronize);  // 会阻塞host，直到device端任务全部完成（仅用于debug，最终代码中应删去）</span></span><br></pre></td></tr></table></figure>
+<h2 id="cuda-memory">CUDA Memory</h2>
+<p>SM，Streaming Multiprocessor，流式多处理器</p>
+</p></div><div class="post-footer"><div class="meta"><div class="info"><i class="fa fa-sun-o"></i><span class="date">2021-12-27</span><i class="fa fa-tag"></i><a class="tag" href="/tags/tutorial/" title="tutorial">tutorial </a><span class="leancloud_visitors"></span><span>About 412 words, 1 min 22 sec  read</span></div></div></div></div><div class="share"><div class="evernote"><a class="fa fa-bookmark" href="" onclick="javascript:join_favorite()" ref="sidebar"></a></div><div class="weibo"><a class="fa fa-weibo" href="javascript:void((function(s,d,e){try{}catch(e){}var f='http://service.weibo.com/share/share.php?',u=d.location.href,p=['url=',e(u),'&amp;title=',e(d.title),'&amp;appkey=2924220432'].join('');function a(){if(!window.open([f,p].join(''),'mb',['toolbar=0,status=0,resizable=1,width=620,height=450,left=',(s.width-620)/2,',top=',(s.height-450)/2].join('')))u.href=[f,p].join('');};if(/Firefox/.test(navigator.userAgent)){setTimeout(a,0)}else{a()}})(screen,document,encodeURIComponent));"></a></div><div class="twitter"><a class="fa fa-twitter" target="_blank" rel="noopener" href="http://twitter.com/home?status=,https://shayito.github.io/2021/12/27/CUDA-learn/,Yito's Corner,CUDA learn,;"></a></div></div><div class="pagination"><ul class="clearfix"><li class="next pagbuttons"><a class="btn" role="navigation" href="/2021/12/27/CUDA10-2-VS2019-win10-configuration/" title="CUDA10.2+VS2019+win10 configuration">Next</a></li></ul></div><script src="/js/visitors.js"></script></div></div></div></div><script src="/js/jquery-migrate-1.2.1.min.js"></script><script src="/js/jquery.appear.js"></script><script src="/js/add-bookmark.js"></script><script>(function(window){var INSIGHT_CONFIG={TRANSLATION:{POSTS:"Posts",PAGES:"Pages",CATEGORIES:"Categories",TAGS:"Tags",UNTITLED:"(Untitled)",},CONTENT_URL:"/content.json",};window.INSIGHT_CONFIG=INSIGHT_CONFIG})(window);</script><script src="/js/insight.js" defer></script><div class="searchbox ins-search"><div class="searchbox-container ins-search-container"><div class="searchbox-input-wrapper"><input class="searchbox-input ins-search-input" type="text" placeholder="Search..."><span class="searchbox-close"><a class="fa fa-times-circle" onclick="closeWindow();"></a></span></div><div class="searchbox-result-wrapper ins-section-wrapper"><div class="ins-section-container"><p>Seraching...</p></div></div></div></div></body></html>
