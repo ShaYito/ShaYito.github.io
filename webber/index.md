@@ -1,7 +1,7 @@
 ---
 layout: project_page
 permalink: /webber/
-
+exclude_from_nav: true
 title: On Computable Numbers, with an Application to the Entscheidungsproblem
 authors:
     A. M. Turing
