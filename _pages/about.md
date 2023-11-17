@@ -3,7 +3,7 @@ layout: about
 title: about
 permalink: /
 subtitle: Yintong Shang
-
+cv_pdf: Yito_CV_3_0.pdf
 profile:
   align: right
   image: me.jpg
