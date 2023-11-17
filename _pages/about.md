@@ -2,15 +2,14 @@
 layout: about
 title: about
 permalink: /
-subtitle: <a href='#'>Affiliations</a>. Address. Contacts. Moto. Etc.
+subtitle: Yintong Shang
 
 profile:
   align: right
   image: me.jpg
   image_circular: false # crops the image to make it circular
   more_info: >
-    <p>50 Central Campus Dr</p>
-    <p>Salt Lake City, Utah 84112</p>
+    <p></p>
 
 news: true  # includes a list of news items
 latest_posts: true  # includes a list of the newest posts
