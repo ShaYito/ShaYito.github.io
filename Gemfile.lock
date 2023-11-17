@@ -171,7 +171,6 @@ GEM
       execjs (>= 0.3.0, < 3)
     unicode-display_width (2.5.0)
     unicode_utils (1.4.0)
-    wdm (0.1.1)
     webrick (1.8.1)
 
 PLATFORMS
@@ -200,7 +199,6 @@ DEPENDENCIES
   jemoji
   kramdown-parser-gfm
   unicode_utils
-  wdm (>= 0.1.0)
   webrick
 
 BUNDLED WITH
