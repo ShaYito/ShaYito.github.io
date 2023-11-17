@@ -2,7 +2,7 @@
 # Site settings
 # -----------------------------------------------------------------------------
 
-title: Yito's Corner # the website title (if blank, full name will be used instead)
+title:  # the website title (if blank, full name will be used instead)
 first_name: Yintong
 middle_name: 
 last_name: Shang
@@ -11,8 +11,6 @@ description: > # the ">" symbol means to ignore newlines until "footer_text:"
   A graphics fan.   
 footer_text: >
   Powered by <a href="https://jekyllrb.com/" target="_blank">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio">al-folio</a> theme.
-  Hosted by <a href="https://pages.github.com/" target="_blank">GitHub Pages</a>.
-  Photos from <a href="https://unsplash.com" target="_blank">Unsplash</a>.
 keywords: 
 
 lang: en # the language of your site (for example: en, fr, cn, ru, etc.)
@@ -51,7 +49,7 @@ navbar_fixed: true
 footer_fixed: true
 
 # Dimensions
-max_width: 800px
+max_width: 1000px
 
 # TODO: add layout settings (single page vs. multi-page)
 
@@ -67,11 +65,11 @@ og_image: # The site-wide (default for all links) Open Graph preview image
 # Social integration
 # -----------------------------------------------------------------------------
 
-github_username: # your GitHub user name
+github_username: ShaYito # your GitHub user name
 gitlab_username: # your GitLab user name
-twitter_username: # your Twitter handle
+twitter_username: yintong_piper # your Twitter handle
 mastodon_username: # your mastodon instance+username in the format instance.tld/@username
-linkedin_username: # your LinkedIn user name
+linkedin_username: Yintong Shang # your LinkedIn user name
 telegram_username: # your Telegram user name
 scholar_userid: # your Google Scholar ID
 semanticscholar_id: # your Semantic Scholar ID
@@ -104,7 +102,7 @@ zotero_username: # your zotero username
 wechat_qr: # filename of your wechat qr-code saved as an image (e.g., wechat-qr.png if saved to assets/img/wechat-qr.png)
 
 contact_note: >
-  You can even add a little note about which of these is the best way to reach you.
+  Please contact me by email.
 
 # -----------------------------------------------------------------------------
 # Analytics and search engine verification
@@ -120,9 +118,9 @@ bing_site_verification:  # out your bing-site-verification ID (Bing Webmaster)
 # Blog
 # -----------------------------------------------------------------------------
 
-blog_name: al-folio # blog_name will be displayed in your blog page
+blog_name: Yito's Corner # blog_name will be displayed in your blog page
 blog_nav_title: blog # your blog must have a title for it to be displayed in the nav bar
-blog_description: a simple whitespace theme for academics
+blog_description: To deposit my knowledge on computer graphics.
 permalink: /blog/:year/:title/
 
 # Pagination
@@ -155,8 +153,8 @@ disqus_shortname: al-folio # put your disqus shortname
 # If you have blog posts published on medium.com or other external sources,
 # you can display them in your blog by adding a link to the RSS feed.
 external_sources:
-  - name: medium.com
-    rss_url: https://medium.com/@al-folio/feed
+  - name: yito's notion
+    rss_url: https://fifth-lemon-135.notion.site/Yito-s-corner-125a7e3dcc6b4636b127e064dca81ef0?pvs=4
 
 # -----------------------------------------------------------------------------
 # Collections
@@ -200,7 +198,7 @@ kramdown:
       start_line: 1
 
 # Includes & excludes
-include: ['_pages']
+include: ['_pages', 'webber']
 exclude:
   - bin
   - Gemfile
@@ -267,36 +265,36 @@ jekyll-archives:
 display_tags: ['formatting', 'images', 'links', 'math', 'code'] # these tags will be displayed on the front page of your blog
 display_categories: ['blockquotes'] # these categories will be displayed on the front page of your blog
 
-# -----------------------------------------------------------------------------
-# Jekyll Scholar
-# -----------------------------------------------------------------------------
+# # -----------------------------------------------------------------------------
+# # Jekyll Scholar
+# # -----------------------------------------------------------------------------
 
-scholar:
+# scholar:
 
-  last_name: [Einstein]
-  first_name: [Albert, A.]
+#   last_name: [Einstein]
+#   first_name: [Albert, A.]
 
-  style: apa
-  locale: en
+#   style: apa
+#   locale: en
 
-  source: /_bibliography/
-  bibliography: papers.bib
-  bibliography_template: bib
-  # Note: if you have latex math in your bibtex, the latex filter
-  # preprocessing may conflict with MathJAX if the latter is enabled.
-  # See https://github.com/alshedivat/al-folio/issues/357.
-  bibtex_filters: [latex, smallcaps, superscript]
+#   source: /_bibliography/
+#   bibliography: papers.bib
+#   bibliography_template: bib
+#   # Note: if you have latex math in your bibtex, the latex filter
+#   # preprocessing may conflict with MathJAX if the latter is enabled.
+#   # See https://github.com/alshedivat/al-folio/issues/357.
+#   bibtex_filters: [latex, smallcaps, superscript]
 
-  replace_strings: true
-  join_strings: true
+#   replace_strings: true
+#   join_strings: true
 
-  details_dir: bibliography
-  details_layout: bibtex.html
-  details_link: Details
+#   details_dir: bibliography
+#   details_layout: bibtex.html
+#   details_link: Details
 
-  query: "@*"
-  group_by: year
-  group_order: descending
+#   query: "@*"
+#   group_by: year
+#   group_order: descending
 
 # Display different badges withs stats for your publications
 enable_publication_badges:
