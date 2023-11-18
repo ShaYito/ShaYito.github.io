@@ -21,7 +21,7 @@ I am a PhD student on computer graphics advised by [Prof. Yin Yang](https://yang
 
 I want to be a technical artist, making animations and games. 
 
-I love cat, bouldering, vintage stuff and casual photography. 
+I love cat, bouldering, and photography. 
 
 I love Nanachi and Terraria.
 
