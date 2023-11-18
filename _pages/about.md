@@ -34,7 +34,7 @@ My name Yintong is pronounced as "inn-tone",  or you can call my English name Pi
 
 PhD in Computing at University of Utah, 2022-2027(expected) 
 
-Bachelor of Engineering in Electronic Science and Technology at University of Science and Technology of China, 2018-2022  
+Bachelor of Electronic Engineering at University of Science and Technology of China, 2018-2022  
 
 
 
