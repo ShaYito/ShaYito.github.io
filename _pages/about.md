@@ -21,11 +21,13 @@ I am a PhD student on computer graphics advised by [Prof. Yin Yang](https://yang
 
 I want to be a technical artist, making animations and games. 
 
-I love cat, bouldering, and photography. 
-
-I love Nanachi and Terraria.
-
 My name Yintong is pronounced as "inn-tone",  or you can call my English name Piper.
+
+
+
+### Publication
+
+[PIE-NeRF](http://fytalon.github.io/pienerf)
 
 
 
