@@ -2,7 +2,7 @@
 # Site settings
 # -----------------------------------------------------------------------------
 
-title: Yitos Corner # the website title (if blank, full name will be used instead)
+title: Yito's Corner # the website title (if blank, full name will be used instead)
 first_name: Yintong
 middle_name: 
 last_name: Shang
@@ -187,7 +187,7 @@ kramdown:
       start_line: 1
 
 # Includes & excludes
-include: ['_pages', 'webber']
+include: ['pages', 'webber']
 exclude:
   - bin
   - Gemfile
@@ -219,10 +219,18 @@ plugins:
 
 # Sitemap settings
 defaults:
+  # - scope:
+  #     path: "assets"
+  #   values:
+  #     sitemap: false
   - scope:
-      path: "assets"
+      path: "" # An empty string here means all files in the project
     values:
-      sitemap: false
+      layout: "default" # The default layout for pages
+  - scope:
+      path: "pages" # Specifically for files in the 'pages' directory
+    values:
+      output: true # Ensures files in 'pages' are processed
 
 sass:
   style: compressed
@@ -351,13 +359,10 @@ enable_google_verification: false  # enables google site verification
 enable_bing_verification:   false  # enables bing site verification
 enable_masonry:             true   # enables automatic project cards arrangement
 enable_math:                true   # enables math typesetting (uses MathJax)
-enable_tooltips:            false  # enables automatic tooltip links generated
-                                   # for each section titles on pages and posts
+enable_tooltips:            false  # enables automatic tooltip links generated for each section titles on pages and posts
 enable_darkmode:            true   # enables switching between light/dark modes
-enable_navbar_social:       false  # enables displaying social links in the
-                                   # navbar on the about page
-enable_project_categories:  true   # enables categorization of projects into
-                                   # multiple categories
+enable_navbar_social:       false  # enables displaying social links in the navbar on the about page
+enable_project_categories:  true   # enables categorization of projects into multiple categories
 enable_medium_zoom:         true   # enables image zoom feature (as on medium.com)
 enable_progressbar:         true   # enables a horizontal progress bar linked to the vertical scroll position
 
