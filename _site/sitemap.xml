@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
-<loc>http://localhost:4000/</loc>
+<loc>https://shayito.github.io/</loc>
 </url>
 <url>
-<loc>http://localhost:4000/webber/</loc>
+<loc>https://shayito.github.io/webber/</loc>
 </url>
 <url>
-<loc>http://localhost:4000/projects/</loc>
+<loc>https://shayito.github.io/projects/</loc>
 </url>
 <url>
-<loc>http://localhost:4000/publications/</loc>
+<loc>https://shayito.github.io/publications/</loc>
 </url>
 <url>
-<loc>http://localhost:4000/assets/pdf/Yito_CV_4_0.pdf</loc>
+<loc>https://shayito.github.io/assets/pdf/Yito_CV_4_0.pdf</loc>
 <lastmod>2023-11-30T14:30:28-07:00</lastmod>
 </url>
 <url>
-<loc>http://localhost:4000/assets/plotly/demo.html</loc>
+<loc>https://shayito.github.io/assets/plotly/demo.html</loc>
 <lastmod>2023-11-14T09:08:10-07:00</lastmod>
 </url>
 </urlset>
