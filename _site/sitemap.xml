@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
-<loc>https://shayito.github.io/</loc>
+<loc>http://localhost:4000/</loc>
 </url>
 <url>
-<loc>https://shayito.github.io/webber/</loc>
+<loc>http://localhost:4000/webber/</loc>
 </url>
 <url>
-<loc>https://shayito.github.io/assets/pdf/Yito_CV_6_0.pdf</loc>
-<lastmod>2024-09-07T17:10:41-06:00</lastmod>
+<loc>http://localhost:4000/assets/pdf/yintongshang_resume.pdf</loc>
+<lastmod>2024-09-08T23:13:08-06:00</lastmod>
 </url>
 <url>
-<loc>https://shayito.github.io/assets/plotly/demo.html</loc>
+<loc>http://localhost:4000/assets/plotly/demo.html</loc>
 <lastmod>2024-05-20T17:51:22-06:00</lastmod>
 </url>
 </urlset>
