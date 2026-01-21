@@ -17,8 +17,7 @@
             }
             #clock {
                 color: black;
-                white-space: nowrap;
-                line-height: 1;
+                font-size: 30vw;  
             }
             #controls {
                 display: none;
@@ -43,24 +42,6 @@
             var offset = 0;
             var hideTimer;
             var lastTap = 0;
-
-            function fitText() {
-                var clock = document.getElementById('clock');
-                var targetWidth = window.innerWidth * 0.95;
-                var fontSize = 10;
-                
-                clock.style.fontSize = fontSize + 'px';
-                
-                while (clock.offsetWidth < targetWidth && fontSize < 1000) {
-                    fontSize += 10;
-                    clock.style.fontSize = fontSize + 'px';
-                }
-                
-                while (clock.offsetWidth > targetWidth && fontSize > 10) {
-                    fontSize -= 1;
-                    clock.style.fontSize = fontSize + 'px';
-                }
-            }
 
             function updateClock() {
                 var now = new Date();
@@ -96,9 +77,7 @@
             });
 
             updateClock();
-            fitText();
             setInterval(updateClock, 1000);
-            window.addEventListener('resize', fitText);
 
         </script>
     </body>
