@@ -21,14 +21,20 @@
             }
             #controls {
                 display: none;
-                font-size: 8vw;
-                margin-top: 20px;
+                font-size: 4vw;
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
             }
             #controls button {
-                font-size: 8vw;
-                margin: 0 20px;
-                padding: 10px 30px;
+                font-size: 4vw;
+                margin: 0 10px;
+                padding: 5px 15px;
             }
+            .rotate-0 { transform: rotate(0deg); }
+            .rotate-90 { transform: rotate(90deg); }
+            .rotate-180 { transform: rotate(180deg); }
+            .rotate-270 { transform: rotate(270deg); }
         </style>
     </head>
 
@@ -37,11 +43,14 @@
         <div id="controls">
             <button onclick="adjustHour(-1)">-</button>
             <button onclick="adjustHour(1)">+</button>
+            <button onclick="rotateText()">↻</button>
         </div>
         <script>
             var offset = 0;
             var hideTimer;
             var lastTap = 0;
+            var rotation = 0;
+            var rotations = [0, 90, 180, 270];
 
             function updateClock() {
                 var now = new Date();
@@ -65,6 +74,14 @@
                 hideTimer = setTimeout(function() {
                     document.getElementById('controls').style.display = 'none';
                 }, 10000);
+            }
+
+            function rotateText() {
+                var currentIndex = rotations.indexOf(rotation);
+                rotation = rotations[(currentIndex + 1) % 4];
+                var clock = document.getElementById('clock');
+                clock.className = 'rotate-' + rotation;
+                resetHideTimer();
             }
 
             document.body.addEventListener('click', function() {

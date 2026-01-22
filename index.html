@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>About - Your Name</title>
+    <title>Yintong Shang</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <nav>
         <div class="nav-container">
             <ul>
-                <li><a href="kindle-clock">Kindle Clock</a></li>
+                <li><a href="Tools">Tools</a></li>
                 <li><a href="" class="active">About</a></li>
             </ul>
         </div>
@@ -220,6 +220,31 @@
             </section>
 
         </div>
+
+        <!-- Back to Top Button -->
+        <button id="backToTop" class="back-to-top" title="Back to top">
+            <img src="asset/top.svg" alt="Top">
+        </button>
+        <script>
+            const backToTopButton = document.getElementById('backToTop');
+            
+            window.addEventListener('scroll', () => {
+                if (window.scrollY > 300) {
+                    backToTopButton.classList.add('show');
+                } else {
+                    backToTopButton.classList.remove('show');
+                }
+            });
+            
+            backToTopButton.addEventListener('click', () => {
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            });
+        </script>
     </div>
+
+
 </body>
 </html>
