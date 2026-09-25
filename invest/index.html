@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>量化研究看板</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <b>量化研究看板</b>
+    <span id="meta-line" class="muted">加载中…</span>
+  </div>
+  <nav id="nav">
+    <a href="#/overview" data-page="overview">总览</a>
+    <a href="#/matrix" data-page="matrix">评分矩阵</a>
+    <a href="#/news" data-page="news">新闻与产业链</a>
+    <a href="#/signal-news" data-page="signal-news">信号 × 新闻</a>
+    <a href="#/stock" data-page="stock">个股</a>
+    <a href="#/performance" data-page="performance">相对表现</a>
+    <a href="#/risk" data-page="risk">风险与集中度</a>
+    <a href="#/backtest" data-page="backtest">回测与实盘</a>
+  </nav>
+  <button id="theme-toggle" class="ghost" type="button" title="切换浅色 / 深色">◐</button>
+</header>
+<main id="app"></main>
+<footer class="foot muted" id="footer">仅为量化研究信号，不构成投资建议。</footer>
+</body>
+</html>
