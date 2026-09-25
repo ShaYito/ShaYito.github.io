@@ -121,7 +121,16 @@ async function route() {
 // ---------------- 1. 总览 ----------------
 PAGES.overview = async () => {
   const o = await load("overview.json");
-  if (!o.available) { app().innerHTML = card("总览", empty("尚无周报存档：首份周报（周六自动运行）生成后显示配置与表现。")); return; }
+  if (!o.available) {
+    app().innerHTML = `<h2>总览</h2>${card("当前配置", empty("尚无正式周报存档：首份周报（周六自动运行）生成后显示当前配置、调仓与穿透暴露。"))}
+      ${card("过去 26 周的配置变化（回测模拟）", o.allocation_history ? chartDiv("c-ahist") : empty("暂无"))}
+      ${card("Regime 历史（总分与状态）", o.regimes ? chartDiv("c-regime", "short") : empty("暂无"))}
+      ${card("策略净值（回测；对数坐标）", o.nav ? chartDiv("c-nav") : empty("暂无"))}`;
+    if (o.allocation_history) allocHistoryChart(byId("c-ahist"), o.allocation_history, []);
+    if (o.regimes) regimeChart(byId("c-regime"), o.regimes);
+    if (o.nav) navChart(byId("c-nav"), o.nav, true);
+    return;
+  }
   const d = o.regime_detail || {};
   const warnings = (o.lookthrough?.warnings || []).map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("");
   app().innerHTML = `
@@ -139,6 +148,7 @@ PAGES.overview = async () => {
       ${card("穿透暴露：个股（直接 + 经 SPY）", o.lookthrough ? chartDiv("c-lt") : empty("暂无"))}
       ${card("穿透暴露：主题", o.lookthrough ? chartDiv("c-lt-theme", "short") : empty("暂无"))}
     </div>
+    ${card("过去 26 周的配置变化（卫星按主题汇总；背景色 = 回测模拟区间，首份正式周报之前）", o.allocation_history ? chartDiv("c-ahist") : empty("暂无"))}
     ${card("Regime 历史（总分与状态）", o.regimes ? chartDiv("c-regime", "short") : empty("暂无"))}
     ${card("策略净值（回测，含最新数据；对数坐标）", o.nav ? chartDiv("c-nav") : empty("暂无"))}
     ${card("实盘跟踪", trackingTable(o.tracking))}`;
@@ -196,7 +206,29 @@ PAGES.overview = async () => {
   }
   if (o.regimes) regimeChart(byId("c-regime"), o.regimes);
   if (o.nav) navChart(byId("c-nav"), o.nav, true);
+  if (o.allocation_history) allocHistoryChart(byId("c-ahist"), o.allocation_history, o.real_signal_dates || []);
 };
+
+function allocHistoryChart(el, h, realDates) {
+  const groups = [{ key: "core", name: "核心 SPY", color: palette()[6], match: (t) => t === "SPY" },
+    ...META.themes.map((th) => ({ key: th.key, name: `卫星·${th.name}`, color: themeColor(th.key), match: (t) => themeOf(t) === th.key })),
+    { key: "hedge", name: "对冲 GLD", color: palette()[4], match: (t) => t === "GLD" },
+    { key: "cash", name: "现金", color: BENCH_GRAY(), match: (t) => t === "SPAXX" }];
+  const firstReal = realDates.length ? [...realDates].sort()[0] : null;
+  const simEnd = h.dates.filter((d) => !firstReal || d < firstReal).pop();
+  const series = groups.map((g) => ({ name: g.name, type: "line", stack: "w", areaStyle: { opacity: 0.85 }, showSymbol: false,
+    lineStyle: { width: 0 }, color: g.color,
+    data: h.weights.map((w) => Object.entries(w).filter(([t]) => g.match(t)).reduce((a, [, v]) => a + v, 0)) }));
+  if (simEnd) series[0].markArea = { silent: true, itemStyle: { color: css("--chip"), opacity: 0.5 }, label: { show: true, formatter: "回测模拟", color: css("--muted") },
+    data: [[{ xAxis: h.dates[0] }, { xAxis: simEnd }]] };
+  mkChart(el, { tooltip: { trigger: "axis", formatter: (ps) => {
+      const i = ps[0].dataIndex, w = h.weights[i];
+      const sat = Object.entries(w).filter(([t]) => !["SPY", "GLD", "SPAXX"].includes(t)).sort((a, b) => b[1] - a[1]).map(([t, v]) => `${t} ${pct(v, 1)}`).join("，");
+      return `${h.dates[i]}${firstReal && h.dates[i] < firstReal ? "（回测模拟）" : ""}<br>${ps.map((p) => `${p.marker}${p.seriesName} ${pct(p.value, 1)}`).join("<br>")}<br><span style="opacity:.7">卫星：${sat || "–"}</span>`;
+    } },
+    legend: { top: 0, type: "scroll" }, grid: { left: 50, right: 20, top: 40, bottom: 30 },
+    xAxis: { type: "category", data: h.dates, boundaryGap: false }, yAxis: { type: "value", max: 1, axisLabel: { formatter: (v) => pct(v, 0) } }, series });
+}
 
 function regimeChart(el, r) {
   // 把连续相同 regime 的区间画成背景色带
@@ -249,33 +281,48 @@ function trackingTable(t) {
 
 // ---------------- 2. 评分矩阵 ----------------
 PAGES.matrix = async (r) => {
-  const m = await load("matrix.json");
+  const [m, h] = await Promise.all([load("matrix.json"), load("matrix_history.json").catch(() => null)]);
   const dims = m.dimensions;
   const sortKey = r.query.sort || "composite";
   const theme = r.query.theme || "";
-  let rows = m.rows.filter((x) => !theme || x.theme === theme);
+  const date = r.query.date || m.asof;
+  const hist = date !== m.asof && h ? h : null;
+  let rows = m.rows;
+  if (hist) {
+    const di = hist.dates.indexOf(date);
+    rows = di < 0 ? [] : hist.tickers.map((t, ti) => ({ ticker: t, theme: themeOf(t), weight: 0, raw: null,
+      scores: Object.fromEntries(hist.dimensions.map((k, ki) => [k, hist.values[di][ti][ki]])) }));
+  }
+  rows = rows.filter((x) => !theme || x.theme === theme);
   rows.sort((a, b) => (b.scores[sortKey] ?? -1) - (a.scores[sortKey] ?? -1));
+  const q = (o) => { const p = new URLSearchParams({ sort: sortKey, ...(theme ? { theme } : {}), ...(date !== m.asof ? { date } : {}), ...o }); for (const [k, v] of [...p]) if (!v) p.delete(k); return `#/matrix?${p}`; };
   const opts = dims.map((d) => `<option value="${d.key}" ${d.key === sortKey ? "selected" : ""}>${esc(d.name)}</option>`).join("");
   const themeOpts = `<option value="">全部主题</option>` + META.themes.map((t) => `<option value="${t.key}" ${t.key === theme ? "selected" : ""}>${esc(t.name)}</option>`).join("");
+  const dates = h ? [...h.dates].reverse().filter((d) => d !== m.asof) : [];
+  const dateOpts = `<option value="">${esc(m.asof)}（最新周报）</option>` + dates.map((d) => `<option value="${d}" ${d === date ? "selected" : ""}>${d}</option>`).join("");
   app().innerHTML = `
-    <h2>评分矩阵 <span class="muted">截至信号日 ${esc(m.asof)} · 分位 0–100，越高越好 · ● 持仓 ★ 关注列表</span></h2>
+    <h2>评分矩阵 <span class="muted">信号日 ${esc(date)} · 分位 0–100，越高越好 · ● 持仓 ★ 关注列表${hist ? " · 历史周：综合信号为 A/B/C ensemble 分位，估值 / 情绪仅在有存档时显示" : ""}</span></h2>
     <section class="card"><div class="row">
+      <label>日期 <select id="m-date">${dateOpts}</select></label>
       <label>排序 <select id="m-sort">${opts}</select></label>
       <label>主题 <select id="m-theme">${themeOpts}</select></label>
       <span class="muted">点击单元格查看个股详情</span></div>
-      <div id="c-matrix" class="chart" style="height:${Math.max(360, rows.length * 30 + 90)}px"></div>
+      ${rows.length ? `<div id="c-matrix" class="chart" style="height:${Math.max(360, rows.length * 30 + 90)}px"></div>` : empty("该日期无数据")}
     </section>
     ${card("口径说明", `<ul class="muted">${Object.entries(m.notes).map(([k, v]) => `<li><b>${esc(dims.find((d) => d.key === k)?.name || k)}</b>：${esc(v)}</li>`).join("")}
       <li>其余维度为对应因子在选股池内的截面分位均值：动量（12-1、26 周、12 周）、趋势（相对 MA200、MA50/MA200、MA200 斜率）、相对强弱（相对主题基准与 SPY）、低波动（60 日波动与下行波动取反）</li></ul>`)}`;
-  byId("m-sort").onchange = (e) => { location.hash = `#/matrix?sort=${e.target.value}${theme ? `&theme=${theme}` : ""}`; };
-  byId("m-theme").onchange = (e) => { location.hash = `#/matrix?sort=${sortKey}${e.target.value ? `&theme=${e.target.value}` : ""}`; };
+  byId("m-date").onchange = (e) => { location.hash = q({ date: e.target.value }); };
+  byId("m-sort").onchange = (e) => { location.hash = q({ sort: e.target.value }); };
+  byId("m-theme").onchange = (e) => { location.hash = q({ theme: e.target.value }); };
+  if (!rows.length) return;
   const data = [];
   rows.forEach((row, yi) => dims.forEach((d, xi) => data.push([xi, yi, isNum(row.scores[d.key]) ? Math.round(row.scores[d.key]) : "-"])));
   const c = mkChart(byId("c-matrix"), {
     tooltip: { trigger: "item", formatter: (p) => {
       const row = rows[p.value[1]], raw = row.raw, d = dims[p.value[0]];
-      return `<b>${esc(row.ticker)}</b>（${esc(themeName(row.theme))}）${row.weight ? ` · 权重 ${pct(row.weight, 1)}` : ""}<br>${esc(d.name)}：<b>${p.value[2]}</b><br>
-        <span style="opacity:.75">信号分 ${num(raw.score, 3)} · 12-1 动量 ${pct(raw.mom_12_1, 1)} · 相对 MA200 ${pct(raw.px_ma200, 1, true)}<br>
+      const head = `<b>${esc(row.ticker)}</b>（${esc(themeName(row.theme))}）${row.weight ? ` · 权重 ${pct(row.weight, 1)}` : ""}<br>${esc(d.name)}：<b>${p.value[2]}</b>`;
+      if (!raw) return head;
+      return `${head}<br><span style="opacity:.75">信号分 ${num(raw.score, 3)} · 12-1 动量 ${pct(raw.mom_12_1, 1)} · 相对 MA200 ${pct(raw.px_ma200, 1, true)}<br>
         12 周相对 SPY ${pct(raw.rs_spy_12w, 1, true)} · 60 日波动 ${pct(raw.vol_60d, 0)} · Forward PE ${num(raw.forward_pe, 1)}<br>
         7 日新闻情绪 ${num(raw.news_sentiment, 2, true)}（${raw.news_count} 条）· 距财报 ${raw.days_to_earnings ?? "–"} 个交易日</span>`;
     } },
@@ -295,38 +342,51 @@ PAGES.matrix = async (r) => {
 PAGES.news = async (r) => {
   const idx = await load("news/index.json");
   const days = idx.days;
-  if (!days.length) { app().innerHTML = card("新闻与产业链", empty("尚无每日新闻存档（每日 09:00 美西时间推送后生成）。")) + graphCard(); await drawGraph(idx.graph, null); return; }
-  const latest = days[days.length - 1].date;
-  const date = r.query.date || "week";
-  const weekStart = (() => { const d = new Date(`${latest}T12:00:00Z`); const wd = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - wd); return d.toISOString().slice(0, 10); })();
-  const pick = date === "week" ? days.filter((d) => d.date >= weekStart) : days.filter((d) => d.date === date);
-  const recs = await Promise.all(pick.map((d) => load(`news/${d.date}.json`)));
+  const weeks = idx.weeks || [];
+  if (!days.length && !weeks.length) { app().innerHTML = card("新闻与产业链", empty("尚无新闻存档。")) + graphCard(); await drawGraph(idx.graph, null); return; }
+  const latest = days.length ? days[days.length - 1].date : weeks[weeks.length - 1].week_end;
+  const weekOf = (d) => { const x = new Date(`${d}T12:00:00Z`); const wd = (x.getUTCDay() + 6) % 7; x.setUTCDate(x.getUTCDate() - wd); return x.toISOString().slice(0, 10); };
+  const plusDays = (d, n) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const curWeek = weekOf(latest);
+  // 选择：date=具体某天；week=某一周（默认本周）
+  const week = r.query.date ? null : (r.query.week || curWeek);
+  const pickDays = week ? days.filter((d) => d.date >= week && d.date <= plusDays(week, 6)) : days.filter((d) => d.date === r.query.date);
+  const [recs, digest] = await Promise.all([
+    Promise.all(pickDays.map((d) => load(`news/${d.date}.json`))),
+    week && weeks.some((w) => w.week_start === week) ? load(`news/weeks/${week}.json`) : Promise.resolve(null),
+  ]);
   const ticker = r.query.ticker || "";
-  let events = recs.flatMap((rec) => (rec.events || []).map((e) => ({ ...e, date: rec.date })));
+  let events = [...(digest?.events || []).map((e) => ({ ...e, date: (e.sources?.[0]?.date) || week })),
+    ...recs.flatMap((rec) => (rec.events || []).map((e) => ({ ...e, date: rec.date })))];
   let briefs = recs.flatMap((rec) => (rec.briefs || []).map((b) => ({ ...b, date: rec.date })));
   let articles = recs.flatMap((rec) => rec.articles || []);
   if (ticker) {
     const hit = (e) => (e.tickers || []).includes(ticker) || (e.propagation || []).some((p) => p.node === ticker) || (e.direct_impacts || []).some((p) => p.node === ticker);
     events = events.filter(hit); briefs = briefs.filter((b) => (b.tickers || []).includes(ticker)); articles = articles.filter((a) => (a.tickers || []).includes(ticker));
   }
-  events.sort((a, b) => (b.date.localeCompare(a.date)) || (b.importance - a.importance));
-  const dateOpts = `<option value="week" ${date === "week" ? "selected" : ""}>本周（${weekStart} 起）</option>` +
-    [...days].reverse().map((d) => `<option value="${d.date}" ${d.date === date ? "selected" : ""}>${d.date}${d.mode === "weekend" ? "（周末汇总）" : ""} · ${d.events} 个事件</option>`).join("");
+  events.sort((a, b) => (b.date.localeCompare(a.date)) || ((b.importance || 0) - (a.importance || 0)));
+  briefs.sort((a, b) => b.date.localeCompare(a.date));
+  const allWeeks = [...new Set([curWeek, ...weeks.map((w) => w.week_start), ...days.map((d) => weekOf(d.date))])].sort().reverse();
+  const weekOpts = allWeeks.map((w) => `<option value="w:${w}" ${week === w ? "selected" : ""}>${w === curWeek ? "本周" : "周"} ${w} – ${plusDays(w, 6).slice(5)}${weeks.some((x) => x.week_start === w) ? " · 有周摘要" : ""}</option>`).join("");
+  const dayOpts = [...days].reverse().slice(0, 21).map((d) => `<option value="d:${d.date}" ${r.query.date === d.date ? "selected" : ""}>${d.date}${d.mode === "weekend" ? "（周末汇总）" : d.mode === "backfill" ? "（回补）" : ""}</option>`).join("");
   const tickOpts = `<option value="">全部股票</option>` + META.universe.map((u) => `<option ${u.ticker === ticker ? "selected" : ""}>${u.ticker}</option>`).join("");
+  const digestHtml = digest?.digest ? card(`本周摘要（${digest.week_start} – ${digest.week_end}${digest.holdings_source === "backtest_simulated" ? "；组合含义基于回测模拟配置" : ""}）`,
+    `<p>${esc(digest.digest.summary)}</p><ul>${digest.digest.highlights.map((h) => `<li>${esc(h.text)} <span class="src">${srcLinks(h.sources, 2)}</span></li>`).join("")}</ul>`) : "";
   app().innerHTML = `
     <h2>新闻与产业链</h2>
     <section class="card"><div class="row">
-      <label>日期 <select id="n-date">${dateOpts}</select></label>
+      <label>范围 <select id="n-range"><optgroup label="按周">${weekOpts}</optgroup><optgroup label="按天（最近 21 天）">${dayOpts}</optgroup></select></label>
       <label>股票 <select id="n-ticker">${tickOpts}</select></label>
-      <span class="muted">事件 ${events.length} · 其他要闻 ${briefs.length} · 相关报道 ${articles.length}</span></div></section>
+      <span class="muted">深度事件 ${events.length} · 其他要闻 ${briefs.length} · 相关报道 ${articles.length}</span></div>
+      <p class="muted">历史回补的新闻：情绪由 FinBERT 判断；每周仅对最重要的 2–3 个事件做 LLM 深度分析。</p></section>
+    ${digestHtml}
     <div class="grid" style="grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start;">
       <section class="card"><h3>深度分析（点击事件，在右侧产业链图中查看传导）</h3>${events.map(eventCard).join("") || empty("该范围内没有深度分析事件")}</section>
-      <div>${graphCard()}${card("其他要闻", briefs.map((b) => `<p>• <span class="chip">${esc(b.date.slice(5))}</span>${esc((b.tickers || []).join("/") || "行业")}：${esc(b.text)} <span class="src">${srcLinks(b.sources, 1)}</span></p>`).join("") || empty("无"))}
-      ${card(`相关报道（${Math.min(articles.length, 60)} / ${articles.length}）`, `<div class="table-wrap"><table><tbody>${articles.slice(0, 60).map((a) => `<tr><td class="num ${cls(a.sentiment)}">${num(a.sentiment, 2, true)}</td><td class="wrap"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a> <span class="muted">${esc(a.publisher || "")} · ${esc((a.published || "").slice(5, 16).replace("T", " "))}</span></td></tr>`).join("")}</tbody></table></div>`)}</div>
+      <div>${graphCard()}${card("其他要闻", briefs.slice(0, 40).map((b) => `<p>• <span class="chip">${esc(b.date.slice(5))}</span>${esc((b.tickers || []).join("/") || "行业")}：${esc(b.text)} <span class="src">${srcLinks(b.sources, 1)}</span></p>`).join("") || empty("无"))}
+      ${card(`相关报道（${Math.min(articles.length, 80)} / ${articles.length}）`, `<div class="table-wrap"><table><tbody>${articles.slice(0, 80).map((a) => `<tr><td class="num ${cls(a.sentiment)}">${num(a.sentiment, 2, true)}</td><td class="wrap"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a> <span class="muted">${esc(a.publisher || "")} · ${esc((a.published || "").slice(5, 16).replace("T", " "))}</span></td></tr>`).join("")}</tbody></table></div>`)}</div>
     </div>`;
-  const go = (d, t) => { location.hash = `#/news?date=${d}${t ? `&ticker=${t}` : ""}`; };
-  byId("n-date").onchange = (e) => go(e.target.value, ticker);
-  byId("n-ticker").onchange = (e) => go(date, e.target.value);
+  byId("n-range").onchange = (e) => { const [k, v] = e.target.value.split(":"); location.hash = `#/news?${k === "w" ? "week" : "date"}=${v}${ticker ? `&ticker=${ticker}` : ""}`; };
+  byId("n-ticker").onchange = (e) => { location.hash = `#/news?${week ? `week=${week}` : `date=${r.query.date}`}${e.target.value ? `&ticker=${e.target.value}` : ""}`; };
   const selected = events.find((e) => e.event_id === r.query.event) || events[0] || null;
   const chart = await drawGraph(idx.graph, selected);
   document.querySelectorAll(".event").forEach((el) => {
@@ -407,16 +467,23 @@ async function drawGraph(g, ev) {
 }
 
 // ---------------- 4. 信号 × 新闻 ----------------
-PAGES["signal-news"] = async () => {
+PAGES["signal-news"] = async (r) => {
   const s = await load("signal_news.json");
-  const pts = s.points.filter((p) => isNum(p.quant_pct) && isNum(p.sent_pct));
+  const snaps = s.snapshots || [];
+  const wk = r.query.week || "";
+  const snap = snaps.find((x) => x.date === wk);
+  const points = snap ? snap.points : s.points;
+  const pts = points.filter((p) => isNum(p.quant_pct) && isNum(p.sent_pct));
+  const weekOpts = `<option value="">${esc(s.signal_date || "最新")}（最新周报）</option>` + [...snaps].reverse().map((x) => `<option value="${x.date}" ${x.date === wk ? "selected" : ""}>${x.date}</option>`).join("");
   app().innerHTML = `
-    <h2>信号 × 新闻 <span class="muted">量化信号为 ${esc(s.signal_date || "–")} 周报（新闻前的 A/B/C ensemble）；新闻情绪为最近 7 天</span></h2>
+    <h2>信号 × 新闻 <span class="muted">量化信号为该周 A/B/C ensemble 分位；新闻情绪为该周信号日前 7 天</span></h2>
+    <section class="card"><label>周 <select id="sn-week">${weekOpts}</select></label> <span class="muted">历史周的量化信号来自回测（首份正式周报之前为模拟）</span></section>
     ${card("量化分位 vs 新闻情绪分位（气泡大小 = 新闻数；点击查看相关新闻）", pts.length ? `<p class="muted">右上 = 一致看多 · 左下 = 一致看空 · 左上 = 新闻正面但信号弱（冲突）· 右下 = 信号强但新闻负面（冲突）</p>${chartDiv("c-sn", "tall")}` : empty("数据不足：需要周报存档与每日新闻"))}
     ${card("明细", `<div class="table-wrap"><table><thead><tr><th>股票</th><th>主题</th><th class="num">量化分位</th><th class="num">情绪分位</th><th class="num">7 日情绪</th><th class="num">新闻数</th><th class="num">权重</th><th>判断</th></tr></thead><tbody>${
-      [...s.points].sort((a, b) => (b.quant_pct ?? -1) - (a.quant_pct ?? -1)).map((p) => `<tr><td><a href="#/news?ticker=${p.ticker}">${esc(tickerLabel(p.ticker))}</a></td><td>${esc(themeName(p.theme))}</td>
+      [...points].sort((a, b) => (b.quant_pct ?? -1) - (a.quant_pct ?? -1)).map((p) => `<tr><td><a href="#/news?ticker=${p.ticker}">${esc(tickerLabel(p.ticker))}</a></td><td>${esc(themeName(p.theme))}</td>
       <td class="num">${num(p.quant_pct, 0)}</td><td class="num">${num(p.sent_pct, 0)}</td><td class="num ${cls(p.sentiment)}">${num(p.sentiment, 2, true)}</td><td class="num">${p.news_count}</td><td class="num">${p.weight ? pct(p.weight, 1) : ""}</td>
       <td>${p.label === "冲突" ? '<b class="neg">冲突</b>' : p.label === "一致" ? '<b class="pos">一致</b>' : esc(p.label)}</td></tr>`).join("")}</tbody></table></div>`)}`;
+  byId("sn-week").onchange = (e) => { location.hash = `#/signal-news${e.target.value ? `?week=${e.target.value}` : ""}`; };
   if (!pts.length) return;
   const byTheme = {};
   for (const p of pts) (byTheme[p.theme] ||= []).push(p);
@@ -447,7 +514,8 @@ PAGES.stock = async (r) => {
   const dimChips = m ? Object.entries(m.scores).map(([k, v]) => `<span class="chip">${esc({ composite: "综合", momentum: "动量", trend: "趋势", relative: "相对强弱", low_vol: "低波动", valuation: "估值", sentiment: "情绪", event_risk: "事件风险低" }[k] || k)} ${num(v, 0)}</span>`).join("") : "";
   app().innerHTML = `
     <h2>个股 <select id="s-pick">${opts}</select> <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}</span></h2>
-    <section class="card"><div>${dimChips}</div><p class="muted">K 线为复权价格；标记：新闻事件（绿 利好 / 红 利空 / 灰 中性或不一，点击查看分析）；竖线：财报日</p>${chartDiv("c-k", "tall")}</section>
+    <section class="card"><div>${dimChips}</div><p class="muted">K 线为复权价格。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
+    <section class="card" id="tp-card"><h3>转折点详情</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid">
       ${card("每日新闻情绪（均值，−1 ~ 1）", Object.keys(s.sentiment).length ? chartDiv("c-sent", "short") : empty("近期无相关新闻"))}
       ${card("综合信号分位历史（周）", s.score_history.values?.length ? chartDiv("c-hist", "short") : empty("暂无"))}
@@ -465,17 +533,30 @@ PAGES.stock = async (r) => {
     dataZoom: [{ type: "inside", start: 40, end: 100 }, { type: "slider", start: 40, end: 100, height: 18, bottom: 10 }],
     series: [
       { name: t, type: "candlestick", data: s.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") },
-        markPoint: { symbol: "pin", symbolSize: 26, label: { show: false },
-          data: s.events.map((e) => ({ name: e.headline, coord: [nearest(e.date), closeOn[nearest(e.date)]], id: e.id, date: e.date,
-            itemStyle: { color: dirColor[e.direction] || "#898781" } })),
-          tooltip: { formatter: (p) => `${esc(p.data.date)}<br>${esc(p.data.name)}` } },
+        markPoint: { label: { show: false },
+          data: [
+            ...s.events.map((e) => ({ symbol: "pin", symbolSize: 24, name: e.headline, coord: [nearest(e.date), closeOn[nearest(e.date)]], id: e.id, date: e.date,
+              kind: "event", week: e.week, itemStyle: { color: dirColor[e.direction] || "#898781" } })),
+            ...(s.turning || []).filter((tp) => tp.date >= s.dates[0]).map((tp, i) => ({ kind: "turning", idx: i, name: tp.category_zh, date: tp.date,
+              coord: [nearest(tp.date), closeOn[nearest(tp.date)]],
+              symbol: tp.category === "company" ? "diamond" : tp.category === "market" ? "triangle" : "emptyCircle",
+              symbolSize: tp.category === "company" ? 16 : tp.category === "market" ? 12 : 9,
+              symbolOffset: [0, tp.kind === "peak" || tp.kind === "gap_down" ? -14 : 14],
+              itemStyle: { color: tp.category === "unclear" ? "#898781" : tp.move >= 0 ? dirColor.positive : dirColor.negative, borderColor: css("--surface"), borderWidth: 1 } })),
+          ],
+          tooltip: { formatter: (p) => p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
+            : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
           data: s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d) })) } },
       { name: "MA50", type: "line", showSymbol: false, data: s.ma50, color: palette()[0], lineStyle: { width: 1.4 } },
       { name: "MA200", type: "line", showSymbol: false, data: s.ma200, color: palette()[1], lineStyle: { width: 1.4 } },
     ],
   });
-  k?.on("click", (p) => { if (p.componentType === "markPoint") location.hash = `#/news?date=${p.data.date}&event=${p.data.id}`; });
+  k?.on("click", (p) => {
+    if (p.componentType !== "markPoint") return;
+    if (p.data.kind === "turning") { byId("tp-detail").innerHTML = turningDetail(s.turning[p.data.idx], s.benchmark); byId("tp-card").scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
+    location.hash = p.data.week ? `#/news?week=${p.data.week}&event=${p.data.id}` : `#/news?date=${p.data.date}&event=${p.data.id}`;
+  });
   if (Object.keys(s.sentiment).length) {
     const ds = Object.keys(s.sentiment).sort();
     mkChart(byId("c-sent"), { legend: { show: false }, tooltip: { trigger: "axis", formatter: (ps) => `${ps[0].axisValue}<br>情绪 ${num(ps[0].value, 2, true)}（${s.sentiment[ps[0].axisValue].count} 条）` },
@@ -495,6 +576,29 @@ PAGES.stock = async (r) => {
       series: [{ type: "bar", barMaxWidth: 14, data: ks.map((x) => ({ value: s.contributions[x], itemStyle: { color: s.contributions[x] >= 0 ? css("--pos") : css("--neg"), borderRadius: 3 } })) }] });
   }
 };
+
+const TP_KIND_ZH = { trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" };
+function turningSummary(list) {
+  if (!list.length) return empty("近半年没有识别出转折点");
+  const cnt = (c) => list.filter((x) => x.category === c).length;
+  const rows = [...list].reverse().map((tp) => `<tr><td>${esc(tp.date)}</td><td>${esc(TP_KIND_ZH[tp.kind])}</td><td class="num ${cls(tp.move)}">${pct(tp.move, 1, true)}</td>
+    <td class="num">${pct(tp.market_part, 1, true)}</td><td class="num">${pct(tp.sector_part, 1, true)}</td><td class="num ${cls(tp.idio)}">${pct(tp.idio, 1, true)}</td>
+    <td>${esc(tp.category_zh)}${tp.confidence && tp.category === "company" ? `（置信度${LEVEL_ZH[tp.confidence]}）` : ""}</td><td class="wrap muted">${esc(tp.explanation || tp.reason || "")}</td></tr>`).join("");
+  return `<p class="muted">近半年共 ${list.length} 个：公司事件驱动 ${cnt("company")} · 市场/板块驱动 ${cnt("market")} · 证据不足 ${cnt("unclear")}。点击 K 线上的标记查看新闻与归因。</p>
+    <div class="table-wrap"><table><thead><tr><th>日期</th><th>类型</th><th class="num">区间涨跌</th><th class="num">大盘</th><th class="num">板块</th><th class="num">个股特有</th><th>判断</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function turningDetail(tp, bench) {
+  const news = (tp.news || []).map((n) => `<li><span class="chip">${esc(n.date)}</span><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a> <span class="muted">${esc(n.publisher || "")}</span> <span class="${cls(n.sentiment)}">${num(n.sentiment, 2, true)}</span></li>`).join("");
+  const drivers = (tp.drivers || []).map((d) => `<li>${esc(d.text)} <span class="src">${srcLinks(d.sources, 2)}</span></li>`).join("");
+  return `<h4 style="margin:4px 0">${esc(tp.date)} ${esc(TP_KIND_ZH[tp.kind])} · 区间 ${esc(tp.window[0])} → ${esc(tp.window[1])} · ${pct(tp.move, 1, true)}</h4>
+    <p>拆分：大盘（SPY）${pct(tp.market_part, 1, true)} · 板块（${esc(bench)}）${pct(tp.sector_part, 1, true)} · 个股特有 <b>${pct(tp.idio, 1, true)}</b>（占比 ${pct(tp.idio_share, 0)}）</p>
+    <p><b>判断：${esc(tp.category_zh)}</b>${tp.category === "company" ? `（置信度${LEVEL_ZH[tp.confidence] || "–"}，${esc(TIER_ZH[tp.tier] || tp.tier || "")}；推断，非因果证明）` : ""}</p>
+    ${tp.explanation ? `<p>${esc(tp.explanation)}</p>` : ""}${tp.reason ? `<p class="muted">未给出归因的原因：${esc(tp.reason)}</p>` : ""}
+    ${drivers ? `<b>归因依据</b><ul>${drivers}</ul>` : ""}
+    <p class="muted">新闻证据：直接相关报道 ${tp.evidence?.n_direct ?? 0} 篇 · 高影响事件 ${tp.evidence?.high_impact ? "有" : "无"} · 情绪方向与涨跌${tp.evidence?.agreement ? "一致" : "不一致或不明"} · 窗口内财报 ${tp.evidence?.earnings_in_window ? "有" : "无"} · 可解释度 ${num(tp.score, 2)}</p>
+    ${news ? `<b>窗口内相关新闻</b><ul>${news}</ul>` : '<p class="muted">窗口内没有相关新闻</p>'}
+    <p><a href="#" onclick="document.getElementById('tp-detail').innerHTML='';return false;">收起</a></p>`;
+}
 
 // ---------------- 6. 相对表现 ----------------
 const PERIODS = { "1W": 5, "1M": 21, "3M": 63, YTD: "ytd", "1Y": 252 };
@@ -540,7 +644,19 @@ PAGES.risk = async () => {
   app().innerHTML = `
     <h2>风险与集中度 <span class="muted">截至 ${esc(k.asof)} · 同期 SPY 3 个月收益 ${pct(k.spy_3m, 1, true)}</span></h2>
     ${card("风险 vs 收益：60 日年化波动（横）× 3 个月超额收益（纵）；气泡大小 = 当前权重", chartDiv("c-rr", "tall"))}
+    <div class="grid two">${card("滚动 60 日年化波动（周；● 持仓为粗线）", k.history ? chartDiv("c-rvol") : empty("暂无"))}
+      ${card("选股池平均两两相关性（滚动 60 日；越高越同涨同跌，分散效果越差）", k.history ? chartDiv("c-rcorr") : empty("暂无"))}</div>
     ${card("60 日日收益相关性（越蓝越正相关，持仓过度同质时整体偏蓝）", `<div id="c-corr" class="chart" style="height:${Math.max(420, k.corr.tickers.length * 24 + 100)}px"></div>`)}`;
+  if (k.history) {
+    const hd = k.history.dates;
+    mkChart(byId("c-rvol"), { tooltip: { trigger: "axis", valueFormatter: (v) => pct(v, 0) }, legend: { type: "scroll", top: 0 }, grid: { left: 48, right: 16, top: 40, bottom: 30 },
+      xAxis: { type: "category", data: hd, boundaryGap: false }, yAxis: { type: "value", axisLabel: { formatter: (v) => pct(v, 0) } },
+      series: META.universe.map((u) => ({ name: tickerLabel(u.ticker), type: "line", showSymbol: false, color: themeColor(u.theme),
+        lineStyle: { width: u.held ? 2.4 : 1, opacity: u.held ? 1 : 0.35 }, emphasis: { focus: "series" }, data: k.history.vol[u.ticker] })) });
+    mkChart(byId("c-rcorr"), { legend: { show: false }, tooltip: { trigger: "axis", valueFormatter: (v) => num(v, 2) }, grid: { left: 48, right: 16, top: 16, bottom: 30 },
+      xAxis: { type: "category", data: hd, boundaryGap: false }, yAxis: { type: "value", scale: true },
+      series: [{ type: "line", showSymbol: false, color: palette()[0], data: k.history.avg_corr, areaStyle: { opacity: 0.12 } }] });
+  }
   const byTheme = {};
   for (const p of k.points) if (isNum(p.vol_60d) && isNum(p.excess_3m)) (byTheme[p.theme] ||= []).push(p);
   const c = mkChart(byId("c-rr"), {
