@@ -531,14 +531,14 @@ PAGES.news = async (r) => {
   byId("n-range").onchange = (e) => { const [k, v] = e.target.value.split(":"); location.hash = `#/news?${k === "w" ? "week" : "date"}=${v}${ticker ? `&ticker=${ticker}` : ""}`; };
   byId("n-ticker").onchange = (e) => { location.hash = `#/news?${week ? `week=${week}` : `date=${r.query.date}`}${e.target.value ? `&ticker=${e.target.value}` : ""}`; };
   const selected = events.find((e) => e.event_id === r.query.event) || events[0] || null;
-  const chart = await drawGraph(idx.graph, selected);
+  const chart = await drawGraph(idx.graph, selected, r.query.g);
   document.querySelectorAll(".event").forEach((el) => {
     if (selected && el.dataset.id === selected.event_id) el.classList.add("selected");
     el.addEventListener("click", () => {
       document.querySelectorAll(".event").forEach((x) => x.classList.remove("selected"));
       el.classList.add("selected");
       const ev = events.find((e) => e.event_id === el.dataset.id);
-      if (chart) chart.setOption(graphOption(idx.graph, ev), true);
+      if (chart) chart.showEvent(ev);
     });
   });
   if (r.query.event) document.querySelector(`.event[data-id="${CSS.escape(r.query.event)}"]`)?.scrollIntoView({ block: "center" });
@@ -587,47 +587,127 @@ function eventCard(e) {
     <p><b>与量化信号：</b>${esc(e.signal_consistency)}</p>
     <p class="src">来源：${srcLinks(e.sources, 5)}</p></article>`;
 }
-function graphCard() { return card("产业链图谱（选中事件的影响：绿 = 利好，红 = 利空，黄 = 不一）", chartDiv("c-graph", "tall")); }
-function graphOption(g, ev) {
+function graphCard() {
+  return `<section class="card"><h3>产业链图谱（选中事件的影响：绿 = 利好，红 = 利空，黄 = 不一）${badges(["model"])}</h3>
+    <div class="row"><div class="seg" id="g-mode"><button type="button" data-m="company" class="on">公司</button><button type="button" data-m="segment">业务</button></div>
+    <span class="muted" id="g-hint">实线箭头 = 供应（上游 → 下游），虚线 = 竞争，绿线 = 合作；点击公司查看个股页。</span></div>${chartDiv("c-graph", "tall")}</section>`;
+}
+const G_HINT = {
+  company: "实线箭头 = 供应（上游 → 下游），虚线 = 竞争，绿线 = 合作；点击公司查看个股页。",
+  segment: "业务视图：自动展开事件涉及的公司；点击公司展开 / 收起其业务，点击业务节点查看个股页。节点大小 = 该业务占公司收入的比例（最新财报），连线粗细随业务占比加粗。",
+};
+function eventImpact(ev) {
   const impact = {};
   if (ev) {
     for (const d of ev.direct_impacts || []) impact[d.node] = d.direction;
     for (const p of ev.propagation || []) if (!(p.node in impact)) impact[p.node] = p.direction;
   }
+  return impact;
+}
+function graphOption(g, ev, mode = "company", expanded = new Set()) {
+  const impact = eventImpact(ev);
   const dirColor = { positive: "#0ca30c", negative: "#d03b3b", mixed: "#fab219", neutral: "#898781" };
   const hasEv = !!ev;
-  const nodes = g.nodes.map((n) => {
-    const touched = n.id in impact;
-    return { id: n.id, name: n.id, value: n.name,
-      symbolSize: n.in_universe ? 26 : 18, symbol: n.kind === "segment" ? "roundRect" : "circle",
-      itemStyle: { color: touched ? dirColor[impact[n.id]] : n.theme ? themeColor(n.theme) : BENCH_GRAY(),
-        opacity: hasEv && !touched ? 0.35 : 1, borderColor: css("--surface"), borderWidth: 2 },
-      label: { show: true, color: css("--ink-2"), fontSize: 11, opacity: hasEv && !touched ? 0.5 : 1 } };
-  });
+  const segs = (mode === "segment" && g.segments?.nodes) || {};
+  const exp = new Set([...expanded].filter((t) => segs[t]));
+  const nodeColor = (id, theme) => (id in impact ? dirColor[impact[id]] : theme ? themeColor(theme) : BENCH_GRAY());
+  const nodes = [];
+  for (const n of g.nodes) {
+    const touched = n.id in impact, hub = exp.has(n.id);
+    nodes.push({ id: n.id, name: n.id, value: n.name, kind: "company",
+      symbolSize: hub ? 14 : n.in_universe ? 26 : 18, symbol: n.kind === "segment" ? "roundRect" : hub ? "diamond" : "circle",
+      itemStyle: { color: nodeColor(n.id, n.theme), opacity: hasEv && !touched ? 0.35 : 1, borderColor: css("--surface"), borderWidth: 2 },
+      label: { show: true, color: css("--ink-2"), fontSize: hub ? 12 : 11, fontWeight: hub ? "bold" : "normal", opacity: hasEv && !touched ? 0.5 : 1 } });
+  }
+  const segShare = {};
+  const belong = [];
+  for (const t of exp) {
+    const theme = g.nodes.find((n) => n.id === t)?.theme;
+    for (const sg of segs[t]) {
+      const id = `${t}:${sg.key}`;
+      segShare[id] = sg.share;
+      nodes.push({ id, name: `${t}·${sg.name.split("（")[0]}`, value: sg.name, kind: "segment", ticker: t, share: sg.share, period: sg.period,
+        symbolSize: 10 + 34 * Math.sqrt(Math.max(sg.share || 0, 0)), symbol: "circle",
+        itemStyle: { color: nodeColor(t, theme), opacity: hasEv && !(t in impact) ? 0.4 : 0.85, borderColor: css("--surface"), borderWidth: 1.5 },
+        label: { show: true, color: css("--ink"), fontSize: 10, formatter: `${t} ${sg.name.split("（")[0]} ${pct(sg.share, 0)}` } });
+      belong.push({ source: t, target: id, relation: "belong", lineStyle: { color: BENCH_GRAY(), type: "dotted", width: 1, opacity: 0.6, curveness: 0 }, symbol: ["none", "none"] });
+    }
+  }
   const edgeColor = { supplier: palette()[0], competitor: palette()[7], partner: palette()[2], investor: palette()[6] };
-  const links = g.edges.map((e) => {
-    const on = hasEv && (e.source in impact || e.target in impact) && (e.source in impact && e.target in impact);
-    return { source: e.source, target: e.target, value: e.note, relation: e.type,
-      symbol: e.type === "supplier" || e.type === "investor" ? ["none", "arrow"] : ["none", "none"], symbolSize: 6,
-      lineStyle: { color: edgeColor[e.type], width: on ? 2.2 : 1, opacity: hasEv ? (on ? 0.9 : 0.12) : 0.45, curveness: 0.1,
-        type: e.type === "competitor" ? "dashed" : "solid" } };
-  });
+  const refined = {};
+  for (const lk of g.segments?.links || []) {
+    const a = lk.source.split(":")[0], b = lk.target.split(":")[0];
+    (refined[`${lk.type}|${a}|${b}`] ||= []).push(lk);
+  }
+  const findRefs = (e) => refined[`${e.type}|${e.source}|${e.target}`] || (e.type === "competitor" || e.type === "partner" ? refined[`${e.type}|${e.target}|${e.source}`] : null);
+  const endpoint = (ep) => { const [t, k] = ep.split(":"); return k && exp.has(t) ? ep : t; };
+  const links = [];
+  const seen = new Set();
+  for (const e of g.edges) {
+    const refs = mode === "segment" ? findRefs(e) : null;
+    const list = refs && (exp.has(e.source) || exp.has(e.target))
+      ? refs.map((lk) => ({ source: endpoint(lk.source), target: endpoint(lk.target), note: lk.note, type: lk.type }))
+      : [{ source: e.source, target: e.target, note: e.note, type: e.type }];
+    for (const l of list) {
+      const key = `${l.type}|${l.source}|${l.target}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const ca = l.source.split(":")[0], cb = l.target.split(":")[0];
+      const on = hasEv && ca in impact && cb in impact;
+      const w = Math.max(segShare[l.source] || 0, segShare[l.target] || 0);
+      links.push({ source: l.source, target: l.target, value: l.note, relation: l.type,
+        symbol: l.type === "supplier" || l.type === "investor" ? ["none", "arrow"] : ["none", "none"], symbolSize: 6,
+        lineStyle: { color: edgeColor[l.type], width: (on ? 2.2 : 1) + 3 * w, opacity: hasEv ? (on ? 0.9 : 0.12) : 0.45, curveness: 0.1,
+          type: l.type === "competitor" ? "dashed" : "solid" } });
+    }
+  }
+  const nameOf = (id) => { const [t, k] = id.split(":"); return k ? `${t} ${(segs[t] || []).find((x) => x.key === k)?.name || k}` : id; };
   return baseOption({
-    tooltip: { trigger: "item", formatter: (p) => p.dataType === "edge"
-      ? `${esc(p.data.source)} → ${esc(p.data.target)}<br>${{ supplier: "供应", competitor: "竞争", partner: "合作", investor: "持股" }[p.data.relation]}：${esc(p.data.value)}`
-      : `<b>${esc(p.data.name)}</b> ${esc(p.data.value)}${impact[p.data.id] ? `<br>本事件：${DIR_ZH[impact[p.data.id]]}` : ""}` },
+    tooltip: { trigger: "item", formatter: (p) => {
+      if (p.dataType === "edge") return p.data.relation === "belong" ? "" : `${esc(nameOf(p.data.source))} → ${esc(nameOf(p.data.target))}<br>${{ supplier: "供应", competitor: "竞争", partner: "合作", investor: "持股" }[p.data.relation]}：${esc(p.data.value)}`;
+      if (p.data.kind === "segment") return `<b>${esc(p.data.value)}</b><br>占 ${esc(p.data.ticker)} 收入 ${pct(p.data.share, 1)}（${esc(p.data.period)}，公司财报）`;
+      return `<b>${esc(p.data.name)}</b> ${esc(p.data.value)}${impact[p.data.id] ? `<br>本事件：${DIR_ZH[impact[p.data.id]]}` : ""}${segs[p.data.id] ? `<br><span style="opacity:.7">点击${exp.has(p.data.id) ? "收起" : "展开"}业务</span>` : ""}`;
+    } },
     legend: { show: false },
-    series: [{ type: "graph", layout: "force", roam: true, draggable: true, data: nodes, links,
-      force: { repulsion: 220, edgeLength: [50, 120], gravity: 0.08 }, emphasis: { focus: "adjacency" } }],
+    series: [{ type: "graph", layout: "force", roam: true, draggable: true, data: nodes, links: [...links, ...belong],
+      force: { repulsion: mode === "segment" ? 180 : 220, edgeLength: [40, 120], gravity: 0.08 }, emphasis: { focus: "adjacency" } }],
   });
 }
-async function drawGraph(g, ev) {
+async function drawGraph(g, ev, initialMode = "company") {
   const el = byId("c-graph");
   if (!el || !window.echarts) return null;
   const c = echarts.init(el);
-  c.setOption(graphOption(g, ev));
   charts.push(c);
-  c.on("click", (p) => { if (p.dataType === "node" && META.universe.some((u) => u.ticker === p.data.id)) location.hash = `#/stock/${p.data.id}`; });
+  const state = { mode: initialMode === "segment" ? "segment" : "company", ev, on: new Set(), off: new Set() };
+  const expanded = () => {
+    const auto = Object.keys(eventImpact(state.ev)).filter((t) => g.segments?.nodes?.[t]);
+    return new Set([...auto, ...state.on].filter((t) => !state.off.has(t)));
+  };
+  const render = () => c.setOption(graphOption(g, state.ev, state.mode, expanded()), true);
+  const syncButtons = () => {
+    document.querySelectorAll("#g-mode button").forEach((x) => x.classList.toggle("on", x.dataset.m === state.mode));
+    if (byId("g-hint")) byId("g-hint").textContent = G_HINT[state.mode];
+  };
+  syncButtons();
+  render();
+  c.on("click", (p) => {
+    if (p.dataType !== "node") return;
+    if (p.data.kind === "segment") { location.hash = `#/stock/${p.data.ticker}`; return; }
+    if (state.mode === "segment" && g.segments?.nodes?.[p.data.id]) {
+      const t = p.data.id;
+      if (expanded().has(t)) { state.on.delete(t); state.off.add(t); } else { state.off.delete(t); state.on.add(t); }
+      render();
+      return;
+    }
+    if (META.universe.some((u) => u.ticker === p.data.id)) location.hash = `#/stock/${p.data.id}`;
+  });
+  document.querySelectorAll("#g-mode button").forEach((b) => (b.onclick = () => {
+    state.mode = b.dataset.m;
+    syncButtons();
+    render();
+  }));
+  if (!g.segments?.nodes || !Object.keys(g.segments.nodes).length) byId("g-mode")?.remove();
+  c.showEvent = (e) => { state.ev = e; state.on.clear(); state.off.clear(); render(); };
   return c;
 }
 
@@ -702,6 +782,7 @@ PAGES["signal-news"] = async (r) => {
 const STOCK_HOWTO = [
   "K 线：每根柱子是一天的开盘到收盘，绿色 = 当天上涨，红色 = 下跌；蓝线和橙线是 50 日与 200 日[[ma|均线]]，价格在橙线之上通常表示长期向上。",
   "📍 标记是 AI 分析过的新闻事件；◆ ▲ ○ 是系统识别的[[turning_point|转折点]]：◆ 公司自身事件驱动（附 AI 归因，属推断），▲ 主要由大盘或板块带动（按 [[beta|β]] 计算），○ 证据不足、不做解释。点击任一标记查看详情。",
+  "“收入结构”来自公司财报：[[segment_revenue|分业务收入]]看公司靠什么赚钱，[[geo_revenue|分地区收入]]看钱从哪里来；可切换“占比 / 金额”，下表给出最新一期的[[yoy|同比]]和[[share_change|占比变化]]。",
   "下方小图分别是每日新闻[[sentiment|情绪]]（AI 打分）、[[composite|综合信号]]分位历史（模型）、各模型对当前分数的贡献。",
 ];
 function stockInsights(s, t) {
@@ -736,17 +817,113 @@ function stockInsights(s, t) {
   return out;
 }
 
+
+// ---------------- 业务 / 地区收入（SEC 财报） ----------------
+const REGION_COLOR = { us: "#2a78d6", americas: "#5b9be6", americas_other: "#9cc3f0", china: "#e34948", taiwan: "#eb6834",
+  japan: "#1baf7a", korea: "#0e8a5f", singapore: "#6fd0a8", asia_pacific: "#eda100", asia_other: "#f3c75a",
+  europe: "#4a3aa7", non_us: "#a9a7a0", other: "#c9c7c0" };
+const CUR_ZH = { USD: "十亿美元", TWD: "十亿新台币", EUR: "十亿欧元" };
+const OTHER_GRAY = () => (isDark() ? "#55544f" : "#d3d1ca");
+const periodLabel = (p, freq) => (freq === "annual" ? `${p.slice(0, 4)} 财年` : p.slice(0, 7));
+const ppText = (v) => (isNum(v) ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}` : "–");
+function segChart(el, g, kind, mode, currency) {
+  const colors = g.meta.map((m, i) => (kind === "geography" ? REGION_COLOR[m.key] : palette()[i % 8]) || BENCH_GRAY());
+  const val = (v, i) => (v == null ? null : mode === "share" ? (g.total[i] ? (v / g.total[i]) * 100 : null) : v / 1e9);
+  const series = g.meta.map((m, i) => ({ name: m.name, type: "bar", stack: "s", barMaxWidth: 30, color: colors[i],
+    itemStyle: { borderColor: css("--surface"), borderWidth: 1 }, data: g.items[m.key].map(val) }));
+  if (g.other.some((v) => v != null)) series.push({ name: "其他 / 未归类", type: "bar", stack: "s", barMaxWidth: 30, color: OTHER_GRAY(),
+    itemStyle: { borderColor: css("--surface"), borderWidth: 1 }, data: g.other.map(val) });
+  return mkChart(el, {
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => (v == null ? "–" : mode === "share" ? `${v.toFixed(1)}%` : v.toFixed(2)) },
+    legend: { type: "scroll", top: 0 }, grid: { left: 52, right: 16, top: 44, bottom: 30 },
+    xAxis: { type: "category", data: g.periods.map((p) => periodLabel(p, g.frequency)) },
+    yAxis: { type: "value", max: mode === "share" ? 100 : null, name: mode === "share" ? "" : CUR_ZH[currency] || currency,
+      axisLabel: { formatter: (v) => (mode === "share" ? `${v}%` : v) } },
+    series });
+}
+function segTable(c) {
+  const block = (g, label) => g ? g.latest.map((r, i) => `<tr><td>${i === 0 ? label : ""}</td><td>${esc(r.name)}</td>
+    <td class="num">${isNum(r.value) ? num(r.value / 1e9, 2) : "–"}</td><td class="num">${pct(r.share, 1)}</td>
+    <td class="num ${cls(r.yoy)}">${pct(r.yoy, 0, true)}</td><td class="num ${cls(r.share_chg)}">${ppText(r.share_chg)}</td></tr>`).join("") : "";
+  const b = c.business, g = c.geography;
+  const head = [b && `业务：${periodLabel(b.periods.at(-1), b.frequency)}${b.year_ago ? ` 对比 ${periodLabel(b.year_ago, b.frequency)}` : ""}`,
+    g && `地区：${periodLabel(g.periods.at(-1), g.frequency)}${g.year_ago ? ` 对比 ${periodLabel(g.year_ago, g.frequency)}` : ""}`].filter(Boolean).join("；");
+  return `<p class="muted">${esc(head)}。收入单位：${esc(CUR_ZH[c.currency] || c.currency)}；占比变化单位：个百分点。</p>
+    <div class="table-wrap"><table><thead><tr><th></th><th>项目</th><th class="num">收入</th><th class="num">占比</th><th class="num">${term("yoy", "同比")}</th><th class="num">${term("share_change", "占比变化")}</th></tr></thead>
+    <tbody>${block(b, "业务")}${block(g, "地区")}</tbody></table></div>`;
+}
+function segSection(c, t) {
+  if (!c) return card("收入结构（公司财报）", empty(`${t} 暂无分业务 / 分地区收入数据`), "", ["fact"]);
+  const notes = [c.note, c.business?.note && `业务：${c.business.note}`, c.geography?.note && `地区：${c.geography.note}`].filter(Boolean);
+  const freqNote = [c.business, c.geography].some((g) => g?.frequency === "annual") ? "标注“财年”的为年度数据（该公司季报未披露此拆分）。" : "";
+  return `<section class="card" id="seg-card"><h3>收入结构（公司财报） ${badge("fact")}${badge("derived")}</h3>
+    <p class="muted">收入金额来自公司向 SEC 提交的季报 / 年报（${term("fact", "事实")}）；占比、同比为${term("derived", "计算")}；业务名称已映射为统一分类。横轴为各期截止日期（${term("fiscal_quarter", "财季")}）。${freqNote}</p>
+    ${notes.length ? `<p class="muted">${notes.map(esc).join("<br>")}</p>` : ""}
+    <div class="seg" id="seg-mode"><button type="button" data-m="share" class="on">占比</button><button type="button" data-m="amount">金额</button></div>
+    <div class="grid two">
+      <div><h4>${term("segment_revenue", "分业务收入")}</h4>${c.business ? chartDiv("c-segb") : empty("未披露或暂无数据")}</div>
+      <div><h4>${term("geo_revenue", "分地区收入")}</h4>${c.geography ? chartDiv("c-segg") : empty("未披露或暂无数据")}</div>
+    </div>${segTable(c)}</section>`;
+}
+function drawSeg(c, mode) {
+  for (const [id, kind] of [["c-segb", "business"], ["c-segg", "geography"]]) {
+    const el = byId(id);
+    if (!el || !c[kind]) continue;
+    const old = window.echarts?.getInstanceByDom(el);
+    if (old) { charts = charts.filter((x) => x !== old); old.dispose(); }
+    segChart(el, c[kind], kind, mode, c.currency);
+  }
+  document.querySelectorAll("#seg-mode button").forEach((b) => b.classList.toggle("on", b.dataset.m === mode));
+}
+function segInsights(c, t) {
+  const out = [];
+  if (!c) return out;
+  const b = c.business?.latest.filter((r) => r.key !== "_rest") || [];
+  const top = [...b].sort((x, y) => (y.share ?? 0) - (x.share ?? 0))[0];
+  if (top && top.share >= 0.6 && b.length > 1) out.push({ level: "info", kind: "fact", target: "seg-card",
+    text: `收入高度集中：「${top.name}」占 ${pct(top.share, 0)}${isNum(top.yoy) ? `，[[yoy|同比]] ${pct(top.yoy, 0, true)}` : ""}，相关新闻对 ${t} 影响最大。` });
+  const mover = b.filter((r) => isNum(r.share_chg)).sort((x, y) => Math.abs(y.share_chg) - Math.abs(x.share_chg))[0];
+  if (mover && Math.abs(mover.share_chg) >= 0.03) out.push({ level: "medium", kind: "derived", target: "seg-card",
+    text: `业务结构在变化：「${mover.name}」占比一年内${mover.share_chg > 0 ? "上升" : "下降"} ${Math.abs(mover.share_chg * 100).toFixed(1)} 个百分点（[[share_change|占比变化]]）${isNum(mover.yoy) ? `，同比 ${pct(mover.yoy, 0, true)}` : ""}。` });
+  const fall = b.filter((r) => isNum(r.yoy) && r.yoy <= -0.1 && r.share >= 0.1);
+  for (const r of fall.slice(0, 1)) out.push({ level: "medium", kind: "fact", target: "seg-card", text: `「${r.name}」收入同比下降 ${pct(-r.yoy, 0)}，且占总收入 ${pct(r.share, 0)}。` });
+  const cn = c.geography?.latest.find((r) => r.key === "china");
+  if (cn && cn.share >= 0.15) out.push({ level: cn.share >= 0.25 ? "high" : "medium", kind: "fact", target: "seg-card",
+    text: `中国收入占 ${pct(cn.share, 0)}（${periodLabel(c.geography.periods.at(-1), c.geography.frequency)}），对出口管制、关税等新闻较敏感（[[geo_revenue|分地区收入]]）。` });
+  return out;
+}
+function exposureChart(el, seg) {
+  const rows = [...seg.exposure].sort((a, b) => (b.shares.china ?? -1) - (a.shares.china ?? -1) || a.ticker.localeCompare(b.ticker));
+  const regions = Object.keys(seg.regions).filter((r) => rows.some((x) => x.shares[r] != null));
+  const series = regions.map((r) => ({ name: seg.regions[r], type: "bar", stack: "s", barMaxWidth: 16, color: REGION_COLOR[r] || BENCH_GRAY(),
+    itemStyle: { borderColor: css("--surface"), borderWidth: 1 }, data: rows.map((x) => (x.shares[r] != null ? x.shares[r] * 100 : null)) }));
+  series.push({ name: "其他 / 未归类", type: "bar", stack: "s", barMaxWidth: 16, color: OTHER_GRAY(),
+    itemStyle: { borderColor: css("--surface"), borderWidth: 1 },
+    data: rows.map((x) => (x.shares._rest != null ? x.shares._rest * 100 : null)) });
+  mkChart(el, {
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => (v == null ? "–" : `${v.toFixed(1)}%`),
+      formatter: (ps) => { const x = rows[ps[0].dataIndex]; return `<b>${x.ticker}</b>（${periodLabel(x.period, x.frequency)}）${x.shares.china == null ? "<br>中国收入未单独披露" : ""}<br>` +
+        ps.filter((p) => p.value != null).map((p) => `${p.marker}${p.seriesName} ${p.value.toFixed(1)}%`).join("<br>") + (x.note ? `<br><span style="opacity:.7">${esc(x.note)}</span>` : ""); } },
+    legend: { type: "scroll", top: 0 }, grid: { left: 110, right: 24, top: 44, bottom: 30 },
+    xAxis: { type: "value", max: 100, axisLabel: { formatter: "{value}%" } },
+    yAxis: { type: "category", inverse: true, data: rows.map((x) => `${tickerLabel(x.ticker)}${x.shares.china == null ? " ·" : ""}`) },
+    series });
+}
+
 PAGES.stock = async (r) => {
   const t = r.arg || META.universe.find((u) => u.held)?.ticker || META.universe[0].ticker;
   const s = await load(`stocks/${t}.json`);
+  const seg = await load("segments.json").catch(() => null);
+  const sc = seg?.available ? seg.companies[t] : null;
   const opts = META.universe.map((u) => `<option ${u.ticker === t ? "selected" : ""}>${u.ticker}</option>`).join("");
   const m = s.matrix;
   const dimChips = m ? Object.entries(m.scores).map(([k, v]) => `<span class="chip">${esc({ composite: "综合", momentum: "动量", trend: "趋势", relative: "相对强弱", low_vol: "低波动", valuation: "估值", sentiment: "情绪", event_risk: "事件风险低" }[k] || k)} ${num(v, 0)}</span>`).join("") : "";
   app().innerHTML = `
     <h2>个股 <select id="s-pick">${opts}</select> <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}</span></h2>
-    ${howto(STOCK_HOWTO)}${insightBox(stockInsights(s, t))}
+    ${howto(STOCK_HOWTO)}${insightBox([...stockInsights(s, t), ...segInsights(sc, t)])}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（复权价格）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
+    ${segSection(sc, t)}
     <div class="grid">
       ${card("每日新闻情绪（均值，−1 ~ 1）", Object.keys(s.sentiment).length ? chartDiv("c-sent", "short") : empty("近期无相关新闻"))}
       ${card("综合信号分位历史（周）", s.score_history.values?.length ? chartDiv("c-hist", "short") : empty("暂无"))}
@@ -754,6 +931,10 @@ PAGES.stock = async (r) => {
       ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span></li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
     </div>`;
   byId("s-pick").onchange = (e) => { location.hash = `#/stock/${e.target.value}`; };
+  if (sc) {
+    drawSeg(sc, "share");
+    document.querySelectorAll("#seg-mode button").forEach((b) => (b.onclick = () => drawSeg(sc, b.dataset.m)));
+  }
   const dirColor = { positive: "#0ca30c", negative: "#d03b3b" };
   const closeOn = Object.fromEntries(s.dates.map((d, i) => [d, s.ohlc[i][1]]));
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];
@@ -896,6 +1077,7 @@ const RISK_HOWTO = [
   "这一页是由真实价格算出的[[derived|计算]]结果，用来看“风险在哪里”。散点图：越靠右越颠簸（[[volatility|波动率]]高），越靠上近 3 个月跑赢大盘越多；气泡越大 = 建议仓位越重。",
   "[[correlation|相关性]]热力图：两只股票涨跌越同步，格子越蓝。持仓之间如果都很蓝，说明分散效果差，可能一起跌。",
   "滚动走势图：看波动和平均相关性最近是在上升还是下降。",
+  "地区收入暴露：每只股票的收入来自哪些地区（公司财报），用来判断地缘政治、关税等新闻会同时波及哪些股票。",
 ];
 function riskInsights(k) {
   const out = [];
@@ -921,15 +1103,31 @@ function riskInsights(k) {
   return out;
 }
 
+
+function exposureInsights(seg) {
+  const out = [];
+  if (!seg?.available) return out;
+  const held = new Set(heldTickers());
+  const cn = seg.exposure.filter((x) => x.shares.china != null).sort((a, b) => b.shares.china - a.shares.china);
+  const heldCn = cn.filter((x) => held.has(x.ticker) && x.shares.china >= 0.15);
+  if (heldCn.length) out.push({ level: "high", kind: "fact", target: "c-geo", text: `持仓中中国收入占比较高：${heldCn.map((x) => `${x.ticker} ${pct(x.shares.china, 0)}`).join("，")}；出口管制 / 关税新闻可能同时影响这些持仓（[[geo_revenue|分地区收入]]）。` });
+  if (cn.length) out.push({ level: "info", kind: "fact", target: "c-geo", text: `选股池中中国收入占比最高：${cn.slice(0, 3).map((x) => `${x.ticker} ${pct(x.shares.china, 0)}`).join("，")}。` });
+  return out;
+}
+
 PAGES.risk = async () => {
   const k = await load("risk.json");
+  const seg = await load("segments.json").catch(() => null);
   app().innerHTML = `
     <h2>风险与集中度 <span class="muted">截至 ${esc(k.asof)} · 同期 SPY 3 个月收益 ${pct(k.spy_3m, 1, true)}</span></h2>
-    ${howto(RISK_HOWTO)}${insightBox(riskInsights(k))}
+    ${howto(RISK_HOWTO)}${insightBox([...riskInsights(k), ...exposureInsights(seg)])}
     ${card("风险 vs 收益：60 日年化波动（横）× 3 个月超额收益（纵）；气泡大小 = 当前权重", chartDiv("c-rr", "tall"))}
     <div class="grid two">${card("滚动 60 日年化波动（周；● 持仓为粗线）", k.history ? chartDiv("c-rvol") : empty("暂无"))}
       ${card("选股池平均两两相关性（滚动 60 日；越高越同涨同跌，分散效果越差）", k.history ? chartDiv("c-rcorr") : empty("暂无"))}</div>
+    ${seg?.available ? card("地区收入暴露（最新披露期；按中国收入占比从高到低，“·”= 中国未单独披露）",
+      `<p class="muted">来自公司财报的${term("geo_revenue", "分地区收入")}。各公司统计口径不同（按客户账单地址 / 交付地 / 用户所在地），悬停查看期间与口径说明；中国收入未单独披露的公司可能含在“亚太”“其他”中。</p>${chartDiv("c-geo", "tall")}`, "", ["fact", "derived"]) : ""}
     ${card("60 日日收益相关性（越蓝越正相关，持仓过度同质时整体偏蓝）", `<div id="c-corr" class="chart" style="height:${Math.max(420, k.corr.tickers.length * 24 + 100)}px"></div>`)}`;
+  if (seg?.available && byId("c-geo")) exposureChart(byId("c-geo"), seg);
   if (k.history) {
     const hd = k.history.dates;
     mkChart(byId("c-rvol"), { tooltip: { trigger: "axis", valueFormatter: (v) => pct(v, 0) }, legend: { type: "scroll", top: 0 }, grid: { left: 48, right: 16, top: 40, bottom: 30 },
