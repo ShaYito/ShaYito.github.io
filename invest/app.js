@@ -86,7 +86,9 @@ function lineSeries(name, payload, opts = {}) {
     color: opts.color, data: payload.dates.map((d, i) => [d, payload.values[i]]), ...opts.extra };
 }
 function empty(msg) { return `<div class="empty">${esc(msg)}</div>`; }
-function card(title, body, extra = "") { return `<section class="card" ${extra}><h3>${esc(title)}</h3>${body}</section>`; }
+function card(title, body, extra = "", kinds = null) {
+  return `<section class="card" ${extra}><h3>${esc(title)}${badges(kinds ?? kindsFor(title))}</h3>${body}</section>`;
+}
 function chartDiv(id, size = "") { return `<div id="${id}" class="chart ${size}"></div>`; }
 const byId = (id) => document.getElementById(id);
 function srcLinks(sources, n = 3) {
@@ -94,6 +96,64 @@ function srcLinks(sources, n = 3) {
 }
 // 分位热力色：0 → 红，50 → 灰，100 → 蓝
 function divergingColors() { return [css("--neg"), css("--mid"), css("--pos")]; }
+
+
+// ---------------- 数据类型标签、术语链接、说明与重点 ----------------
+const KINDS = {
+  fact: { label: "事实", tip: "市场上真实发生的数据或新闻原文" },
+  derived: { label: "计算", tip: "由事实按固定公式算出，不含判断" },
+  model: { label: "模型 / AI", tip: "模型或 AI 的判断与建议，可能出错" },
+  simulated: { label: "模拟", tip: "假设过去按模型操作的结果，不是真实收益" },
+};
+function badge(kind) {
+  const k = KINDS[kind];
+  return k ? `<a class="badge b-${kind}" href="#/glossary?t=${kind}" title="${esc(k.tip)}（点击查看说明）">${k.label}</a>` : "";
+}
+function badges(kinds) { return (kinds || []).map(badge).join(""); }
+// 卡片标题 → 数据类型（按关键词匹配，先匹配到先用）
+const CARD_KINDS = [
+  [/^实盘跟踪/, ["simulated"]], [/^Regime/, ["model"]], [/^调仓变化/, ["model"]], [/^相关报道/, ["fact", "model"]],
+  [/^本周摘要/, ["model"]], [/^区间超额收益排名/, ["derived"]], [/基准 .*虚线/, ["derived"]], [/^风险 vs 收益/, ["derived"]],
+  [/^量化分位 vs 新闻情绪/, ["model"]], [/相关性/, ["derived"]], [/^过去 26 周的配置变化/, ["model", "simulated"]],
+  [/^综合信号分位历史/, ["model"]], [/^策略月度收益|^策略净值|^净值|^回撤|^指标|^参数敏感性/, ["simulated"]],
+  [/^穿透暴露/, ["model", "derived"]], [/^相关事件/, ["model"]], [/^滚动 60 日年化波动/, ["derived"]],
+  [/^每日新闻情绪/, ["model"]], [/^最新一期各模型贡献/, ["model"]], [/^明细$/, ["model"]],
+  [/^总资产配置|^当前配置/, ["model"]], [/^其他要闻/, ["fact", "model"]], [/^产业链图谱/, ["model"]],
+];
+function kindsFor(title) { return (CARD_KINDS.find(([re]) => re.test(title)) || [null, []])[1]; }
+const GLOSS_BY_ID = () => Object.fromEntries((window.GLOSSARY || []).map((g) => [g.id, g]));
+function term(id, text) {
+  const g = GLOSS_BY_ID()[id];
+  if (!g) return esc(text || id);
+  return `<a class="term" href="#/glossary?t=${id}" title="${esc(g.short)}">${esc(text || g.name)}</a>`;
+}
+// 文案中的 [[id]] 或 [[id|显示文字]] → 术语链接，其余文字转义
+function rich(text) {
+  return String(text).split(/(\[\[[^\]]+\]\])/).map((part) => {
+    const m = part.match(/^\[\[([^|\]]+)(?:\|([^\]]+))?\]\]$/);
+    return m ? term(m[1], m[2]) : esc(part);
+  }).join("");
+}
+function howto(lines) {
+  return `<details class="howto"><summary>如何阅读本页</summary>${lines.map((l) => `<p>${rich(l)}</p>`).join("")}
+    <p class="muted">标签说明：${badges(["fact", "derived", "model", "simulated"])} —— 点击标签或带下划虚线的术语可查看解释。</p></details>`;
+}
+// 重点：{level: high|medium|good|info, text, kind?, target?}；按严重度排序，最多 max 条
+function insightBox(list, max = 5) {
+  const order = { high: 0, medium: 1, good: 2, info: 3 };
+  const items = list.filter(Boolean).sort((a, b) => order[a.level] - order[b.level]).slice(0, max);
+  if (!items.length) return "";
+  return `<section class="insights"><h3>本页重点</h3><ul>${items.map((x) => `<li class="${x.level}">${rich(x.text)}${x.kind ? badge(x.kind) : ""}${
+    x.target ? `<a class="goto" href="#" data-goto="${x.target}">查看图表 ↓</a>` : ""}</li>`).join("")}</ul></section>`;
+}
+function bindGoto() {
+  document.querySelectorAll("a.goto").forEach((a) => a.addEventListener("click", (e) => {
+    e.preventDefault();
+    byId(a.dataset.goto)?.closest(".card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+}
+function heldTickers() { return META.universe.filter((u) => u.held).map((u) => u.ticker); }
+const pp = (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)} 个百分点`;
 
 // ---------------- 路由 ----------------
 function parseHash() {
@@ -111,18 +171,19 @@ async function route() {
   app().innerHTML = empty("加载中…");
   try {
     await fn(r);
+    bindGoto();
   } catch (e) {
     console.error(e);
     app().innerHTML = card("数据加载失败", `<p class="warn">${esc(e.message)}</p><p class="muted">可能尚未生成该部分数据（例如首份周报前）。</p>`);
   }
-  window.scrollTo(0, 0);
+  if (!(r.page === "glossary" && r.query.t)) window.scrollTo(0, 0);
 }
 
 // ---------------- 1. 总览 ----------------
 PAGES.overview = async () => {
   const o = await load("overview.json");
   if (!o.available) {
-    app().innerHTML = `<h2>总览</h2>${card("当前配置", empty("尚无正式周报存档：首份周报（周六自动运行）生成后显示当前配置、调仓与穿透暴露。"))}
+    app().innerHTML = `<h2>总览</h2>${howto(OVERVIEW_HOWTO)}${insightBox(overviewInsights(o))}${card("当前配置", empty("尚无正式周报存档：首份周报（周六自动运行）生成后显示当前配置、调仓与穿透暴露。"))}
       ${card("过去 26 周的配置变化（回测模拟）", o.allocation_history ? chartDiv("c-ahist") : empty("暂无"))}
       ${card("Regime 历史（总分与状态）", o.regimes ? chartDiv("c-regime", "short") : empty("暂无"))}
       ${card("策略净值（回测；对数坐标）", o.nav ? chartDiv("c-nav") : empty("暂无"))}`;
@@ -135,12 +196,13 @@ PAGES.overview = async () => {
   const warnings = (o.lookthrough?.warnings || []).map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("");
   app().innerHTML = `
     <h2>总览 <span class="muted">信号日 ${esc(o.signal_date)} · 建议 ${esc(o.exec_date)} 开盘执行</span></h2>
-    <section class="card"><div class="kpis">
-      <div class="kpi"><span class="muted">市场状态</span><b style="color:${REGIME_COLOR[o.regime] || "inherit"}">${esc(REGIME_ZH[o.regime] || o.regime)}</b></div>
+    ${howto(OVERVIEW_HOWTO)}${insightBox(overviewInsights(o))}
+    <section class="card"><h3>市场状态与三项依据 ${badge("model")}${badge("fact")}</h3><div class="kpis">
+      <div class="kpi"><span class="muted">${term("regime", "市场状态")}（模型判断）</span><b style="color:${REGIME_COLOR[o.regime] || "inherit"}">${esc(REGIME_ZH[o.regime] || o.regime)}</b></div>
       <div class="kpi"><span class="muted">Regime 总分</span><b>${num(d.score, 0, true)}</b></div>
-      <div class="kpi"><span class="muted">SPY vs MA200</span><b>${pct(d.spy_vs_ma200, 1, true)}</b></div>
-      <div class="kpi"><span class="muted">VIX</span><b>${num(d.vix, 1)}</b></div>
-      <div class="kpi"><span class="muted">10Y−3M 利差</span><b>${num(d.curve, 2, true)}</b></div>
+      <div class="kpi"><span class="muted">SPY 相对 ${term("ma", "200 日均线")}</span><b>${pct(d.spy_vs_ma200, 1, true)}</b></div>
+      <div class="kpi"><span class="muted">${term("vix")}</span><b>${num(d.vix, 1)}</b></div>
+      <div class="kpi"><span class="muted">${term("yield_curve")}</span><b>${num(d.curve, 2, true)}</b></div>
     </div>${warnings}</section>
     <div class="grid two">
       ${card("总资产配置（层 → 标的）", chartDiv("c-alloc"))}
@@ -230,6 +292,49 @@ function allocHistoryChart(el, h, realDates) {
     xAxis: { type: "category", data: h.dates, boundaryGap: false }, yAxis: { type: "value", max: 1, axisLabel: { formatter: (v) => pct(v, 0) } }, series });
 }
 
+
+const OVERVIEW_HOWTO = [
+  "这一页回答“本周建议怎么配置、为什么”。顶部的[[regime|市场状态]]是模型对大环境的判断，它决定[[core|核心]]、[[satellite|卫星]]、[[hedge|对冲]]、[[cash|现金]]四层各占多少。",
+  "“总资产配置”是模型给出的建议（不是你的实际持仓）；“[[lookthrough|穿透暴露]]”把 SPY 里间接持有的股票也算进来，看是否过度集中在某只股票或某个主题。",
+  "“策略净值”和配置历史中标注为回测的部分属于[[simulated|模拟]]：假设过去按模型操作的结果，不是真实收益。",
+];
+function lastSeries(p) { return p && p.values.length ? p.values[p.values.length - 1] : null; }
+function overviewInsights(o) {
+  const out = [];
+  const reg = o.regimes;
+  if (reg && reg.regime.length) {
+    const cur = reg.regime[reg.regime.length - 1];
+    let n = 1;
+    for (let i = reg.regime.length - 2; i >= 0 && reg.regime[i] === cur; i--) n++;
+    const prev = reg.regime[reg.regime.length - 1 - n];
+    out.push(n <= 4 && prev
+      ? { level: "high", kind: "model", target: "c-regime", text: `[[regime|市场状态]]在 ${n} 周前由「${REGIME_ZH[prev]}」切换为「${REGIME_ZH[cur]}」，配置比例随之调整。` }
+      : { level: "info", kind: "model", target: "c-regime", text: `[[regime|市场状态]]为「${REGIME_ZH[cur]}」，已连续 ${n} 周未变。` });
+  }
+  for (const w of (o.lookthrough?.warnings || []).slice(0, 2)) out.push({ level: "high", kind: "derived", target: "c-lt", text: `[[lookthrough|穿透暴露]]提示：${w}` });
+  const ch = (o.changes || []).filter((c) => c.action !== "持平" && c.action !== "新进");
+  if (ch.length) {
+    const big = [...ch].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))[0];
+    out.push({ level: "medium", kind: "model", target: "c-changes", text: `本周调仓变化最大：${big.ticker} ${big.action} ${pct(Math.abs(big.delta), 1)}（${pct(big.prev, 1)} → ${pct(big.new, 1)}）。` });
+  }
+  const dd = o.drawdown?.Strategy;
+  if (dd) {
+    const cur = lastSeries(dd), worst = Math.min(...dd.values.filter(isNum));
+    if (isNum(cur) && cur <= -0.08) out.push({ level: "high", kind: "simulated", target: "c-nav", text: `模拟策略当前处于[[drawdown|回撤]] ${pct(cur, 1)}（历史最大 ${pct(worst, 1)}）。` });
+  }
+  const m1y = (o.metrics || []).filter((m) => m.period === "近 1 年");
+  const st = m1y.find((m) => m.strategy === "Strategy"), spy = m1y.find((m) => m.strategy === "SPY");
+  if (st && spy && isNum(st.TotalReturn) && isNum(spy.TotalReturn)) {
+    const gap = st.TotalReturn - spy.TotalReturn;
+    out.push({ level: gap >= 0 ? "good" : "medium", kind: "simulated", target: "c-nav",
+      text: `近 1 年模拟策略收益 ${pct(st.TotalReturn, 1, true)}，SPY ${pct(spy.TotalReturn, 1, true)}（${gap >= 0 ? "领先" : "落后"} ${pp(Math.abs(gap)).replace("+", "")}）；[[sharpe|夏普比率]] ${num(st.Sharpe, 2)} vs ${num(spy.Sharpe, 2)}。` });
+  }
+  if (o.allocation_history && !(o.real_signal_dates || []).length) {
+    out.push({ level: "info", kind: "simulated", text: "尚无正式周报：配置历史全部是[[backtest|回测]]模拟，首份周报（周六）生成后开始显示真实建议。" });
+  }
+  return out;
+}
+
 function regimeChart(el, r) {
   // 把连续相同 regime 的区间画成背景色带
   const areas = [];
@@ -248,16 +353,21 @@ function regimeChart(el, r) {
     legend: { show: false }, grid: { left: 40, right: 20, top: 16, bottom: 30 },
     xAxis: { type: "category", data: r.dates, boundaryGap: false },
     yAxis: { type: "value", min: -3, max: 3, interval: 1 },
-    series: [{ name: "总分", type: "line", step: "end", showSymbol: false, color: palette()[0], data: r.score, markArea: { silent: true, data: areas } }],
+    series: [{ name: "总分", type: "line", step: "end", showSymbol: false, color: palette()[0], data: r.score, markArea: { silent: true, data: areas },
+      markPoint: { symbol: "roundRect", symbolSize: [86, 20], symbolOffset: [-40, -16], itemStyle: { color: REGIME_COLOR[r.regime[r.regime.length - 1]] },
+        label: { color: "#fff", fontSize: 11, formatter: () => `当前：${(REGIME_ZH[r.regime[r.regime.length - 1]] || "").split("（")[0]}` },
+        data: [{ coord: [r.dates[r.dates.length - 1], r.score[r.score.length - 1]] }] } }],
   });
 }
 
 function navChart(el, nav, log = true) {
   const names = Object.keys(nav);
-  const series = names.map((n, i) => lineSeries(n === "Strategy" ? "策略" : n, nav[n],
+  const series = names.map((n, i) => lineSeries(n === "Strategy" ? "策略" : n === "live" ? "实盘" : n === "backtest" ? "回测" : n, nav[n],
     n === "Strategy" || n === "live" ? { color: palette()[0] } : n === "backtest" ? { color: palette()[1] } : { color: BENCH_GRAY(), width: 1.4, dash: i % 2 ? "dotted" : "dashed" }));
+  series.forEach((sr) => { sr.labelLayout = { moveOverlap: "shiftY" }; sr.endLabel = { show: true, formatter: (p) => `${p.seriesName} ${num(p.value[1], 2)}`, color: css("--ink-2"), fontSize: 11 }; });
   mkChart(el, {
     tooltip: { trigger: "axis", valueFormatter: (v) => num(v, 3) },
+    grid: { left: 56, right: 90, top: 36, bottom: 40 },
     xAxis: { type: "time" },
     // 对数坐标以 2 为底：刻度落在 1、2、4、8…，比以 10 为底更易读
     yAxis: log ? { type: "log", logBase: 2, axisLabel: { formatter: (v) => num(v, v < 1 ? 2 : 0) } }
@@ -302,7 +412,10 @@ PAGES.matrix = async (r) => {
   const dateOpts = `<option value="">${esc(m.asof)}（最新周报）</option>` + dates.map((d) => `<option value="${d}" ${d === date ? "selected" : ""}>${d}</option>`).join("");
   app().innerHTML = `
     <h2>评分矩阵 <span class="muted">信号日 ${esc(date)} · 分位 0–100，越高越好 · ● 持仓 ★ 关注列表${hist ? " · 历史周：综合信号为 A/B/C ensemble 分位，估值 / 情绪仅在有存档时显示" : ""}</span></h2>
-    <section class="card"><div class="row">
+    ${howto(MATRIX_HOWTO)}${insightBox(matrixInsights(m, h, rows, date))}
+    <section class="card"><h3>评分矩阵 ${badge("model")}${badge("derived")}</h3>
+      <p class="muted">“${term("composite", "综合信号")}”列是模型判断；其余各列由行情数据按固定公式计算的${term("percentile", "分位")}，“新闻情绪”列为 AI 打分。</p>
+      <div class="row">
       <label>日期 <select id="m-date">${dateOpts}</select></label>
       <label>排序 <select id="m-sort">${opts}</select></label>
       <label>主题 <select id="m-theme">${themeOpts}</select></label>
@@ -337,6 +450,34 @@ PAGES.matrix = async (r) => {
   });
   c?.on("click", (p) => { location.hash = `#/stock/${rows[p.value[1]].ticker}`; });
 };
+
+
+const MATRIX_HOWTO = [
+  "每一行是一只候选股票，每一列是一个维度；格子里的数字是该股票在 21 只股票中的[[percentile|分位]]：100 = 最强，50 = 中间，0 = 最弱。蓝色越深越强，红色越深越弱。",
+  "“[[composite|综合信号]]”是模型把各维度合成后的看法，决定卫星仓买哪些股票；其余列（[[momentum|动量]]、[[trend|趋势]]、[[relative_strength|相对强弱]]、[[volatility|低波动]]、[[valuation|估值]]、[[earnings|事件风险]]）是由行情按公式算出的客观描述，[[sentiment|新闻情绪]]是 AI 打分。",
+  "用“日期”可以回看过去 26 周；● 表示当前建议持有，★ 表示你的关注列表。",
+];
+function matrixInsights(m, h, rows, date) {
+  const out = [];
+  const held = new Set(heldTickers());
+  const dimName = Object.fromEntries(m.dimensions.map((d) => [d.key, d.name]));
+  for (const r of rows.filter((x) => held.has(x.ticker))) {
+    const weak = Object.entries(r.scores).filter(([k, v]) => k !== "composite" && isNum(v) && v < 20).map(([k]) => dimName[k]);
+    if (weak.length) out.push({ level: "medium", kind: "derived", target: "c-matrix", text: `持仓 ${r.ticker} 在「${weak.join("、")}」上处于最弱的 1/5，是它的短板。` });
+    if (isNum(r.scores.composite) && r.scores.composite < 35) out.push({ level: "high", kind: "model", target: "c-matrix", text: `持仓 ${r.ticker} 的[[composite|综合信号]]分位已降到 ${Math.round(r.scores.composite)}，若继续走弱可能在下次调仓中被移出。` });
+  }
+  const allStrong = rows.filter((r) => Object.entries(r.scores).filter(([k, v]) => k !== "composite" && isNum(v) && v >= 70).length >= 4);
+  if (allStrong.length) out.push({ level: "good", kind: "derived", target: "c-matrix", text: `多个维度同时靠前（≥4 个维度分位 ≥70）：${allStrong.map((r) => r.ticker).join("、")}。` });
+  if (h && h.dates.length >= 5 && date === m.asof) {
+    const i1 = h.dates.length - 1, i0 = i1 - 4;
+    const ci = h.dimensions.indexOf("composite");
+    const moves = h.tickers.map((t, ti) => ({ t, d: (h.values[i1][ti][ci] ?? NaN) - (h.values[i0][ti][ci] ?? NaN) })).filter((x) => isNum(x.d));
+    moves.sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+    const big = moves.filter((x) => Math.abs(x.d) >= 30).slice(0, 3);
+    if (big.length) out.push({ level: "medium", kind: "model", target: "c-matrix", text: `近 4 周[[composite|综合信号]]变化最大：${big.map((x) => `${x.t} ${x.d > 0 ? "+" : ""}${Math.round(x.d)}`).join("，")}（分位点）。` });
+  }
+  return out;
+}
 
 // ---------------- 3. 新闻与产业链 ----------------
 PAGES.news = async (r) => {
@@ -379,9 +520,11 @@ PAGES.news = async (r) => {
       <label>股票 <select id="n-ticker">${tickOpts}</select></label>
       <span class="muted">深度事件 ${events.length} · 其他要闻 ${briefs.length} · 相关报道 ${articles.length}</span></div>
       <p class="muted">历史回补的新闻：情绪由 FinBERT 判断；每周仅对最重要的 2–3 个事件做 LLM 深度分析。</p></section>
+    ${howto(NEWS_HOWTO)}${insightBox(newsInsights(events))}
     ${digestHtml}
     <div class="grid" style="grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start;">
-      <section class="card"><h3>深度分析（点击事件，在右侧产业链图中查看传导）</h3>${events.map(eventCard).join("") || empty("该范围内没有深度分析事件")}</section>
+      <section class="card"><h3>深度分析（点击事件，在右侧产业链图中查看传导）${badge("fact")}${badge("model")}</h3>
+      <p class="muted">每个事件中“关键事实”来自新闻原文（附链接）；“直接影响”“产业链传导”“对组合的含义”是 AI 推断。</p>${events.map(eventCard).join("") || empty("该范围内没有深度分析事件")}</section>
       <div>${graphCard()}${card("其他要闻", briefs.slice(0, 40).map((b) => `<p>• <span class="chip">${esc(b.date.slice(5))}</span>${esc((b.tickers || []).join("/") || "行业")}：${esc(b.text)} <span class="src">${srcLinks(b.sources, 1)}</span></p>`).join("") || empty("无"))}
       ${card(`相关报道（${Math.min(articles.length, 80)} / ${articles.length}）`, `<div class="table-wrap"><table><tbody>${articles.slice(0, 80).map((a) => `<tr><td class="num ${cls(a.sentiment)}">${num(a.sentiment, 2, true)}</td><td class="wrap"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a> <span class="muted">${esc(a.publisher || "")} · ${esc((a.published || "").slice(5, 16).replace("T", " "))}</span></td></tr>`).join("")}</tbody></table></div>`)}</div>
     </div>`;
@@ -400,6 +543,28 @@ PAGES.news = async (r) => {
   });
   if (r.query.event) document.querySelector(`.event[data-id="${CSS.escape(r.query.event)}"]`)?.scrollIntoView({ block: "center" });
 };
+
+
+const NEWS_HOWTO = [
+  "上方选择查看的周或某一天。左侧是 AI 挑出的重要事件：先看“关键事实”（每条都附新闻原文链接，是[[fact|事实]]），再看 AI 的推断——“直接影响”“[[supply_chain|产业链传导]]”“对组合的含义”（[[model|模型 / AI]]，注意[[confidence|置信度]]）。",
+  "右侧产业链图：点一个事件，受影响的公司会变色（绿 = 利好，红 = 利空，黄 = 影响不一），灰色是未受影响的公司。",
+  "历史回补的周只有新闻标题，情绪由 [[finbert|FinBERT]] 判断、每周仅分析 2–3 个最重要的事件，准确度低于每日推送。",
+];
+function newsInsights(events) {
+  const out = [];
+  const held = new Set(heldTickers());
+  const neg = events.filter((e) => (e.direct_impacts || []).some((d) => held.has(d.node) && d.direction === "negative"));
+  for (const e of neg.slice(0, 2)) out.push({ level: "high", kind: "model", text: `利空持仓：${(e.direct_impacts || []).filter((d) => held.has(d.node) && d.direction === "negative").map((d) => d.node).join("、")} —— ${e.headline}（${e.date}）` });
+  const spill = events.filter((e) => !(e.tickers || []).some((t) => held.has(t)) && (e.propagation || []).some((p) => held.has(p.node) && p.confidence !== "low"));
+  for (const e of spill.slice(0, 2)) {
+    const hit = (e.propagation || []).filter((p) => held.has(p.node) && p.confidence !== "low");
+    out.push({ level: "medium", kind: "model", text: `非持仓事件经[[supply_chain|产业链]]影响到持仓 ${hit.map((p) => `${p.node}（${DIR_ZH[p.direction]}）`).join("、")}：${e.headline}` });
+  }
+  const pos = events.filter((e) => (e.direct_impacts || []).some((d) => d.direction === "positive")).length;
+  const negAll = events.filter((e) => (e.direct_impacts || []).some((d) => d.direction === "negative")).length;
+  if (events.length) out.push({ level: "info", kind: "model", text: `该范围共 ${events.length} 个深度分析事件：偏利好 ${pos} 个，偏利空 ${negAll} 个。` });
+  return out;
+}
 
 function overallDirection(e) {
   const ds = [...new Set((e.direct_impacts || []).map((d) => d.direction))];
@@ -467,6 +632,32 @@ async function drawGraph(g, ev) {
 }
 
 // ---------------- 4. 信号 × 新闻 ----------------
+
+const SN_HOWTO = [
+  "横轴是模型对股票的看法（[[composite|量化信号]][[percentile|分位]]），纵轴是最近 7 天新闻的平均情绪（AI 打分后的分位）。两者都是[[model|模型 / AI]]判断。",
+  "右上角 = 模型看好且新闻正面（一致）；左下角 = 两者都偏负面；左上和右下 = 两者意见相反（冲突），值得多看一眼新闻原文。",
+  "点击某只股票可跳到它的相关新闻。",
+];
+function snInsights(points) {
+  const out = [];
+  const held = new Set(heldTickers());
+  const conf = points.filter((p) => p.label === "冲突");
+  const heldConf = conf.filter((p) => held.has(p.ticker));
+  for (const p of heldConf.slice(0, 3)) out.push({ level: "high", kind: "model", target: "c-sn",
+    text: `持仓 ${p.ticker} 信号与新闻冲突：量化分位 ${Math.round(p.quant_pct)}，新闻情绪分位 ${Math.round(p.sent_pct)}（7 日情绪 ${num(p.sentiment, 2, true)}，${p.news_count} 篇）。` });
+  if (conf.length) out.push({ level: "info", kind: "model", target: "c-sn", text: `共有 ${conf.length} 只股票信号与新闻方向相反：${conf.map((p) => p.ticker).join("、")}。` });
+  const both = points.filter((p) => p.label === "一致" && p.quant_pct >= 70 && p.sent_pct >= 70);
+  if (both.length) out.push({ level: "good", kind: "model", target: "c-sn", text: `模型和新闻同时明显看好：${both.map((p) => p.ticker).join("、")}。` });
+  const ss = points.filter((p) => isNum(p.sentiment) && p.news_count >= 5).sort((a, b) => a.sentiment - b.sentiment);
+  if (ss.length >= 2) {
+    const lo = ss[0], hi = ss[ss.length - 1];
+    out.push({ level: held.has(lo.ticker) && lo.sentiment < 0 ? "medium" : "info", kind: "model",
+      text: `近 7 天[[sentiment|新闻情绪]]最正面：${hi.ticker}（${num(hi.sentiment, 2, true)}，${hi.news_count} 篇）；最负面：${lo.ticker}（${num(lo.sentiment, 2, true)}，${lo.news_count} 篇）。` });
+  }
+  if (!points.some((p) => isNum(p.quant_pct))) out.push({ level: "info", kind: "model", text: "该周尚无量化分位（首份正式周报生成后显示），散点图暂不可用，仅显示新闻情绪。" });
+  return out;
+}
+
 PAGES["signal-news"] = async (r) => {
   const s = await load("signal_news.json");
   const snaps = s.snapshots || [];
@@ -477,6 +668,7 @@ PAGES["signal-news"] = async (r) => {
   const weekOpts = `<option value="">${esc(s.signal_date || "最新")}（最新周报）</option>` + [...snaps].reverse().map((x) => `<option value="${x.date}" ${x.date === wk ? "selected" : ""}>${x.date}</option>`).join("");
   app().innerHTML = `
     <h2>信号 × 新闻 <span class="muted">量化信号为该周 A/B/C ensemble 分位；新闻情绪为该周信号日前 7 天</span></h2>
+    ${howto(SN_HOWTO)}${insightBox(snInsights(points))}
     <section class="card"><label>周 <select id="sn-week">${weekOpts}</select></label> <span class="muted">历史周的量化信号来自回测（首份正式周报之前为模拟）</span></section>
     ${card("量化分位 vs 新闻情绪分位（气泡大小 = 新闻数；点击查看相关新闻）", pts.length ? `<p class="muted">右上 = 一致看多 · 左下 = 一致看空 · 左上 = 新闻正面但信号弱（冲突）· 右下 = 信号强但新闻负面（冲突）</p>${chartDiv("c-sn", "tall")}` : empty("数据不足：需要周报存档与每日新闻"))}
     ${card("明细", `<div class="table-wrap"><table><thead><tr><th>股票</th><th>主题</th><th class="num">量化分位</th><th class="num">情绪分位</th><th class="num">7 日情绪</th><th class="num">新闻数</th><th class="num">权重</th><th>判断</th></tr></thead><tbody>${
@@ -506,6 +698,44 @@ PAGES["signal-news"] = async (r) => {
 };
 
 // ---------------- 5. 个股 ----------------
+
+const STOCK_HOWTO = [
+  "K 线：每根柱子是一天的开盘到收盘，绿色 = 当天上涨，红色 = 下跌；蓝线和橙线是 50 日与 200 日[[ma|均线]]，价格在橙线之上通常表示长期向上。",
+  "📍 标记是 AI 分析过的新闻事件；◆ ▲ ○ 是系统识别的[[turning_point|转折点]]：◆ 公司自身事件驱动（附 AI 归因，属推断），▲ 主要由大盘或板块带动（按 [[beta|β]] 计算），○ 证据不足、不做解释。点击任一标记查看详情。",
+  "下方小图分别是每日新闻[[sentiment|情绪]]（AI 打分）、[[composite|综合信号]]分位历史（模型）、各模型对当前分数的贡献。",
+];
+function stockInsights(s, t) {
+  const out = [];
+  const n = s.dates.length;
+  const close = s.ohlc[n - 1]?.[1], ma200 = s.ma200[n - 1];
+  if (isNum(close) && isNum(ma200)) {
+    const gap = close / ma200 - 1;
+    out.push({ level: gap < 0 ? "medium" : "info", kind: "derived", target: "c-k", text: `当前价格${gap >= 0 ? "高于" : "低于"} 200 日[[ma|均线]] ${pct(Math.abs(gap), 1)}，${gap >= 0 ? "长期趋势向上" : "长期趋势偏弱"}。` });
+  }
+  const next = (s.earnings || []).filter((d) => d > s.dates[n - 1]).sort()[0];
+  if (next) {
+    const days = Math.round((new Date(next) - new Date(s.dates[n - 1])) / 86400000);
+    if (days <= 14) out.push({ level: "high", kind: "fact", text: `${t} 将在 ${next}（约 ${days} 天后）发布[[earnings|财报]]，前后股价可能大幅波动。` });
+  }
+  const tp = (s.turning || []).slice(-1)[0];
+  if (tp) out.push({ level: tp.category === "company" ? "medium" : "info", kind: tp.category === "company" ? "model" : "derived", target: "c-k",
+    text: `最近的[[turning_point|转折点]]：${tp.date} ${TP_KIND_ZH[tp.kind]}，区间 ${pct(tp.move, 1, true)}，判断为「${tp.category_zh}」${tp.explanation ? `：${tp.explanation}` : ""}` });
+  const comp = (s.turning || []).filter((x) => x.category === "company").length;
+  if (comp) out.push({ level: "info", kind: "model", text: `近半年有 ${comp} 个转折点可由公司自身事件解释（见下方转折点详情）。` });
+  const hv = (s.score_history?.values || []).filter(isNum);
+  if (hv.length >= 5) {
+    const d = hv[hv.length - 1] - hv[hv.length - 5];
+    if (Math.abs(d) >= 25) out.push({ level: "medium", kind: "model", target: "c-hist", text: `[[composite|综合信号]]分位近 4 周${d > 0 ? "上升" : "下降"} ${Math.round(Math.abs(d))}（${Math.round(hv[hv.length - 5])} → ${Math.round(hv[hv.length - 1])}）。` });
+  }
+  const sd = Object.keys(s.sentiment || {}).sort();
+  if (sd.length >= 6) {
+    const recent = sd.slice(-3).map((d) => s.sentiment[d].mean), before = sd.slice(-6, -3).map((d) => s.sentiment[d].mean);
+    const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    if (recent.every((v) => v < 0)) out.push({ level: "medium", kind: "model", target: "c-sent", text: `最近 3 个有新闻的日子[[sentiment|新闻情绪]]均为负（此前均值 ${num(avg(before), 2, true)}）。` });
+  }
+  return out;
+}
+
 PAGES.stock = async (r) => {
   const t = r.arg || META.universe.find((u) => u.held)?.ticker || META.universe[0].ticker;
   const s = await load(`stocks/${t}.json`);
@@ -514,8 +744,9 @@ PAGES.stock = async (r) => {
   const dimChips = m ? Object.entries(m.scores).map(([k, v]) => `<span class="chip">${esc({ composite: "综合", momentum: "动量", trend: "趋势", relative: "相对强弱", low_vol: "低波动", valuation: "估值", sentiment: "情绪", event_risk: "事件风险低" }[k] || k)} ${num(v, 0)}</span>`).join("") : "";
   app().innerHTML = `
     <h2>个股 <select id="s-pick">${opts}</select> <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}</span></h2>
-    <section class="card"><div>${dimChips}</div><p class="muted">K 线为复权价格。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
-    <section class="card" id="tp-card"><h3>转折点详情</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
+    ${howto(STOCK_HOWTO)}${insightBox(stockInsights(s, t))}
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（复权价格）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
+    <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid">
       ${card("每日新闻情绪（均值，−1 ~ 1）", Object.keys(s.sentiment).length ? chartDiv("c-sent", "short") : empty("近期无相关新闻"))}
       ${card("综合信号分位历史（周）", s.score_history.values?.length ? chartDiv("c-hist", "short") : empty("暂无"))}
@@ -601,6 +832,26 @@ function turningDetail(tp, bench) {
 }
 
 // ---------------- 6. 相对表现 ----------------
+
+const PERF_HOWTO = [
+  "这一页全是由真实价格算出的[[derived|计算]]结果，不含模型判断。选择区间（1 周 … 1 年）后，所有股票都从 100 开始画（[[index100|相对收益指数]]），线越高 = 区间内涨得越多。",
+  "上方条形图：每只股票的涨幅减去 SPY 的涨幅（[[excess_return|超额收益]]），正数 = 跑赢大盘。下方按[[theme|主题]]分组，虚线是该主题的基准，点线是 SPY。",
+];
+function perfInsights(ranking, per, meta) {
+  const out = [];
+  if (!ranking.length) return out;
+  const held = new Set(heldTickers());
+  const top = ranking[0], bot = ranking[ranking.length - 1];
+  out.push({ level: "info", kind: "derived", target: "c-rank", text: `${per} 区间跑赢 SPY 最多：${top.t}（${pp(top.ex)}）；跑输最多：${bot.t}（${pp(bot.ex)}）。` });
+  const lag = ranking.filter((x) => held.has(x.t) && x.ex < -0.05);
+  if (lag.length) out.push({ level: "medium", kind: "derived", target: "c-rank", text: `持仓中明显跑输大盘（超过 5 个百分点）：${lag.map((x) => `${x.t} ${pp(x.ex)}`).join("，")}。` });
+  const byTheme = {};
+  for (const x of ranking) (byTheme[x.theme] ||= []).push(x.ex);
+  const disp = Object.entries(byTheme).map(([k, v]) => ({ k, d: Math.max(...v) - Math.min(...v) })).sort((a, b) => b.d - a.d)[0];
+  if (disp && disp.d > 0.2) out.push({ level: "info", kind: "derived", text: `「${themeName(disp.k)}」主题内部分化最大：最强与最弱相差 ${(disp.d * 100).toFixed(0)} 个百分点，选股差异影响大。` });
+  return out;
+}
+
 const PERIODS = { "1W": 5, "1M": 21, "3M": 63, YTD: "ytd", "1Y": 252 };
 PAGES.performance = async (r) => {
   const p = await load("performance.json");
@@ -614,6 +865,7 @@ PAGES.performance = async (r) => {
   const ranking = META.universe.map((u) => ({ t: u.ticker, theme: u.theme, ex: (last(idx(u.ticker)) - last(spy)) / 100 })).filter((x) => isNum(x.ex)).sort((a, b) => b.ex - a.ex);
   app().innerHTML = `
     <h2>相对表现 <span class="muted">区间起点 = 100 · 截至 ${esc(p.dates[n - 1])}</span></h2>
+    ${howto(PERF_HOWTO)}${insightBox(perfInsights(ranking, per, META))}
     <section class="card"><div class="seg" id="p-seg">${Object.keys(PERIODS).map((k) => `<button type="button" data-p="${k}" class="${k === per ? "on" : ""}">${k}</button>`).join("")}</div></section>
     ${card(`区间超额收益排名（相对 SPY，${per}）`, chartDiv("c-rank", "tall"))}
     <p class="muted">主题小图：● 持仓为粗线，★ 关注列表为实线，其余股票为细淡线；悬停图例可单独高亮</p>
@@ -639,10 +891,41 @@ PAGES.performance = async (r) => {
 };
 
 // ---------------- 7. 风险与集中度 ----------------
+
+const RISK_HOWTO = [
+  "这一页是由真实价格算出的[[derived|计算]]结果，用来看“风险在哪里”。散点图：越靠右越颠簸（[[volatility|波动率]]高），越靠上近 3 个月跑赢大盘越多；气泡越大 = 建议仓位越重。",
+  "[[correlation|相关性]]热力图：两只股票涨跌越同步，格子越蓝。持仓之间如果都很蓝，说明分散效果差，可能一起跌。",
+  "滚动走势图：看波动和平均相关性最近是在上升还是下降。",
+];
+function riskInsights(k) {
+  const out = [];
+  const held = new Set(heldTickers());
+  const hp = k.points.filter((p) => held.has(p.ticker) && isNum(p.vol_60d)).sort((a, b) => b.vol_60d - a.vol_60d);
+  if (hp.length) out.push({ level: hp[0].vol_60d > 0.5 ? "medium" : "info", kind: "derived", target: "c-rr", text: `持仓中波动最大：${hp[0].ticker}（年化 ${pct(hp[0].vol_60d, 0)}，权重 ${pct(hp[0].weight, 1)}）。` });
+  const T = k.corr.tickers, hi = [];
+  for (let i = 0; i < T.length; i++) for (let j = i + 1; j < T.length; j++) {
+    if (held.has(T[i]) && held.has(T[j]) && k.corr.values[i][j] >= 0.75) hi.push(`${T[i]}–${T[j]} ${num(k.corr.values[i][j], 2)}`);
+  }
+  if (hi.length) out.push({ level: "high", kind: "derived", target: "c-corr", text: `持仓之间高度同涨同跌（[[correlation|相关性]] ≥ 0.75）：${hi.slice(0, 4).join("，")}，分散效果有限。` });
+  const top = k.points.filter((p) => isNum(p.vol_60d)).sort((a, b) => b.vol_60d - a.vol_60d)[0];
+  if (top && !held.has(top.ticker)) out.push({ level: "info", kind: "derived", target: "c-rr", text: `选股池中波动最大：${top.ticker}（年化 ${pct(top.vol_60d, 0)}，即一年内价格上下波动幅度的典型值）。` });
+  let best = null;
+  for (let i = 0; i < T.length; i++) for (let j = i + 1; j < T.length; j++) if (!best || k.corr.values[i][j] > best.v) best = { a: T[i], b: T[j], v: k.corr.values[i][j] };
+  if (best) out.push({ level: "info", kind: "derived", target: "c-corr", text: `走势最同步的一对：${best.a} 与 ${best.b}（[[correlation|相关性]] ${num(best.v, 2)}），同时持有两者的分散效果有限。` });
+  const ac = (k.history?.avg_corr || []).filter(isNum);
+  if (ac.length >= 8) {
+    const cur = ac[ac.length - 1], med = [...ac].sort((a, b) => a - b)[Math.floor(ac.length / 2)];
+    if (cur - med >= 0.08) out.push({ level: "medium", kind: "derived", target: "c-rcorr", text: `选股池平均相关性升至 ${num(cur, 2)}（半年中位数 ${num(med, 2)}）：股票走势越来越同步，分散效果在变差。` });
+    else if (med - cur >= 0.03) out.push({ level: "good", kind: "derived", target: "c-rcorr", text: `选股池平均相关性降至 ${num(cur, 2)}（半年中位数 ${num(med, 2)}）：个股走势分化，分散效果较好。` });
+  }
+  return out;
+}
+
 PAGES.risk = async () => {
   const k = await load("risk.json");
   app().innerHTML = `
     <h2>风险与集中度 <span class="muted">截至 ${esc(k.asof)} · 同期 SPY 3 个月收益 ${pct(k.spy_3m, 1, true)}</span></h2>
+    ${howto(RISK_HOWTO)}${insightBox(riskInsights(k))}
     ${card("风险 vs 收益：60 日年化波动（横）× 3 个月超额收益（纵）；气泡大小 = 当前权重", chartDiv("c-rr", "tall"))}
     <div class="grid two">${card("滚动 60 日年化波动（周；● 持仓为粗线）", k.history ? chartDiv("c-rvol") : empty("暂无"))}
       ${card("选股池平均两两相关性（滚动 60 日；越高越同涨同跌，分散效果越差）", k.history ? chartDiv("c-rcorr") : empty("暂无"))}</div>
@@ -655,7 +938,10 @@ PAGES.risk = async () => {
         lineStyle: { width: u.held ? 2.4 : 1, opacity: u.held ? 1 : 0.35 }, emphasis: { focus: "series" }, data: k.history.vol[u.ticker] })) });
     mkChart(byId("c-rcorr"), { legend: { show: false }, tooltip: { trigger: "axis", valueFormatter: (v) => num(v, 2) }, grid: { left: 48, right: 16, top: 16, bottom: 30 },
       xAxis: { type: "category", data: hd, boundaryGap: false }, yAxis: { type: "value", scale: true },
-      series: [{ type: "line", showSymbol: false, color: palette()[0], data: k.history.avg_corr, areaStyle: { opacity: 0.12 } }] });
+      series: [{ type: "line", showSymbol: false, color: palette()[0], data: k.history.avg_corr, areaStyle: { opacity: 0.12 },
+        markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { formatter: "中位数", position: "insideEndTop", color: css("--muted") },
+          data: [{ yAxis: [...k.history.avg_corr.filter(isNum)].sort((a, b) => a - b)[Math.floor(k.history.avg_corr.filter(isNum).length / 2)] }] },
+        markPoint: { symbolSize: 34, data: [{ coord: [hd.length - 1, k.history.avg_corr[hd.length - 1]], value: num(k.history.avg_corr[hd.length - 1], 2) }], label: { fontSize: 10 } } }] });
   }
   const byTheme = {};
   for (const p of k.points) if (isNum(p.vol_60d) && isNum(p.excess_3m)) (byTheme[p.theme] ||= []).push(p);
@@ -687,6 +973,35 @@ PAGES.risk = async () => {
 };
 
 // ---------------- 8. 回测与实盘 ----------------
+
+const BT_HOWTO = [
+  "这一页几乎全是[[simulated|模拟]]结果：[[backtest|回测]]假设 2016 年起每周都按模型建议调仓（每次买卖扣除 0.1% 成本），得出“如果当时这么做会怎样”。它不是任何人真实赚到的钱。",
+  "看回测时优先看[[oos|样本外]]（2019 年至今）的[[sharpe|夏普比率]]和[[drawdown|最大回撤]]，而不是最高收益；并记住选股池存在[[survivorship|幸存者偏差]]，结果偏乐观。",
+  "“[[tracking|实盘跟踪]]”用每周真实推送的建议和真实价格计算，比回测更接近现实，积累几个月后可与回测对比。",
+];
+function btInsights(b) {
+  const out = [];
+  const oos = (b.metrics || []).filter((m) => m.period === "OOS");
+  const st = oos.find((m) => m.strategy === "Strategy"), spy = oos.find((m) => m.strategy === "SPY");
+  if (st && spy) out.push({ level: st.Sharpe > spy.Sharpe ? "good" : "medium", kind: "simulated", target: "c-bnav",
+    text: `[[oos|样本外]]：模拟策略年化 ${pct(st.CAGR, 1)}、[[sharpe|夏普]] ${num(st.Sharpe, 2)}、[[drawdown|最大回撤]] ${pct(st.MaxDrawdown, 1)}；SPY 分别为 ${pct(spy.CAGR, 1)}、${num(spy.Sharpe, 2)}、${pct(spy.MaxDrawdown, 1)}。` });
+  const dd = b.drawdown?.Strategy;
+  if (dd) {
+    let wi = 0;
+    dd.values.forEach((v, i) => { if (isNum(v) && v < dd.values[wi]) wi = i; });
+    out.push({ level: "info", kind: "simulated", target: "c-bdd", text: `模拟策略最深的一次回撤出现在 ${dd.dates[wi]} 附近（${pct(dd.values[wi], 1)}）。` });
+    const cur = lastSeries(dd);
+    if (isNum(cur) && cur <= -0.08) out.push({ level: "high", kind: "simulated", target: "c-bdd", text: `模拟策略当前仍在回撤中：${pct(cur, 1)}。` });
+  }
+  const m3 = (b.metrics || []).filter((m) => m.period === "近 3 个月");
+  const s3 = m3.find((m) => m.strategy === "Strategy"), p3 = m3.find((m) => m.strategy === "SPY");
+  if (s3 && p3 && s3.TotalReturn - p3.TotalReturn < -0.03) out.push({ level: "medium", kind: "simulated", text: `近 3 个月模拟策略落后 SPY ${pp(p3.TotalReturn - s3.TotalReturn).replace("+", "")}（${pct(s3.TotalReturn, 1, true)} vs ${pct(p3.TotalReturn, 1, true)}）。` });
+  const t = b.tracking?.summary;
+  if (t && t.weeks) out.push({ level: "info", kind: "simulated", text: `[[tracking|实盘跟踪]] ${t.weeks} 周：累计 ${pct(t.cum_live, 1, true)}，同期 SPY ${pct(t.cum_SPY, 1, true)}。` });
+  else out.push({ level: "info", kind: "simulated", text: "[[tracking|实盘跟踪]]尚无数据：首份周报之后的下一周开始显示。" });
+  return out;
+}
+
 PAGES.backtest = async () => {
   const b = await load("backtest.json");
   if (!b.nav) { app().innerHTML = card("回测与实盘", empty("尚无周报网页数据：首份周报生成后显示。")); return; }
@@ -694,7 +1009,8 @@ PAGES.backtest = async () => {
     <td class="num">${num(m.Sharpe, 2)}</td><td class="num">${pct(m.MaxDrawdown, 1)}</td><td class="num">${num(m.Calmar, 2)}</td><td class="num">${pct(m.TotalReturn, 1)}</td></tr>`).join("");
   const sens = b.summary?.sensitivity;
   app().innerHTML = `
-    <h2>回测与实盘 <span class="muted">策略 = regime 动态配置 + 量化卫星选股（成本单边 10bps）；回测存在 survivorship bias，结果偏乐观</span></h2>
+    <h2>回测与实盘</h2>
+    ${howto(BT_HOWTO)}${insightBox(btInsights(b))}
     <div class="grid">${card("净值（对数坐标）", chartDiv("c-bnav"))}${card("回撤", chartDiv("c-bdd"))}</div>
     ${card("指标", `<div class="table-wrap"><table><thead><tr><th>区间</th><th>组合</th><th class="num">CAGR（年化）</th><th class="num">波动</th><th class="num">Sharpe</th><th class="num">最大回撤</th><th class="num">Calmar</th><th class="num">总收益</th></tr></thead><tbody>${metrics}</tbody></table></div>`)}
     ${card("策略月度收益（样本外）", b.monthly ? `<div id="c-month" class="chart" style="height:${b.monthly.years.length * 30 + 80}px"></div>` : empty("暂无"))}
@@ -704,7 +1020,10 @@ PAGES.backtest = async () => {
   navChart(byId("c-bnav"), b.nav, true);
   const dd = b.drawdown;
   mkChart(byId("c-bdd"), { tooltip: { trigger: "axis", valueFormatter: (v) => pct(v, 1) }, xAxis: { type: "time" }, yAxis: { type: "value", axisLabel: { formatter: (v) => pct(v, 0) } },
-    series: Object.keys(dd).map((k, i) => lineSeries(k === "Strategy" ? "策略" : k, dd[k], k === "Strategy" ? { color: palette()[0], width: 1.6 } : { color: BENCH_GRAY(), width: 1.2, dash: i % 2 ? "dotted" : "dashed" })) });
+    series: Object.keys(dd).map((k, i) => lineSeries(k === "Strategy" ? "策略" : k, dd[k], k === "Strategy"
+      ? { color: palette()[0], width: 1.6, extra: { markPoint: { symbol: "pin", symbolSize: 36, data: [{ type: "min", name: "最大回撤" }],
+          label: { formatter: (p) => pct(p.value, 0), fontSize: 10 } } } }
+      : { color: BENCH_GRAY(), width: 1.2, dash: i % 2 ? "dotted" : "dashed" })) });
   if (b.monthly) {
     const months = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
     const data = [];
@@ -717,6 +1036,32 @@ PAGES.backtest = async () => {
   }
   if (b.regimes) regimeChart(byId("c-breg"), b.regimes);
   if (b.tracking?.nav) navChart(byId("c-track"), b.tracking.nav, false);
+};
+
+
+// ---------------- 术语与说明 ----------------
+PAGES.glossary = async (r) => {
+  const q = (r.query.q || "").trim();
+  const target = r.query.t || "";
+  const list = (window.GLOSSARY || []).filter((g) => !q || `${g.name}${g.short}${g.body}`.toLowerCase().includes(q.toLowerCase()));
+  const sections = window.GLOSSARY_CATEGORIES.map((cat) => {
+    const items = list.filter((g) => g.cat === cat);
+    if (!items.length) return "";
+    return card(cat, items.map((g) => `<div class="gloss-item ${g.id === target ? "target" : ""}" id="g-${g.id}">
+      <h4>${esc(g.name)}${KINDS[g.id] ? badge(g.id) : ""}</h4><p class="short">${esc(g.short)}</p>
+      ${g.body ? `<p>${esc(g.body)}</p>` : ""}${g.how ? `<p class="muted">怎么看：${esc(g.how)}</p>` : ""}</div>`).join(""), "", []);
+  }).join("");
+  app().innerHTML = `
+    <h2>术语与说明</h2>
+    <section class="card"><h3>本看板的信息分四类</h3>
+      <p>${badge("fact")} <b>事实</b>：真实发生的数据或新闻原文。 ${badge("derived")} <b>计算</b>：由事实按固定公式算出。
+         ${badge("model")} <b>模型 / AI</b>：模型或 AI 的判断，可能出错。 ${badge("simulated")} <b>模拟</b>：假设过去按模型操作的结果，不是真实收益。</p>
+      <p class="muted">阅读顺序建议：先看“事实”和“计算”了解发生了什么，再把“模型 / AI”当作参考意见，“模拟”只用来判断方法是否大致可靠。所有内容仅为量化研究信号，不构成投资建议。</p>
+      <div class="row"><input id="g-q" type="search" placeholder="搜索术语，如 夏普 / 回撤 / 分位" value="${esc(q)}" style="min-width:260px"></div></section>
+    ${sections || card("没有匹配的术语", empty("换个关键词试试"), "", [])}`;
+  const input = byId("g-q");
+  input.addEventListener("change", () => { location.hash = `#/glossary${input.value ? `?q=${encodeURIComponent(input.value)}` : ""}`; });
+  if (target) setTimeout(() => byId(`g-${target}`)?.scrollIntoView({ block: "center" }), 50);
 };
 
 // ---------------- 启动 ----------------
