@@ -322,7 +322,7 @@ const RECON_START_KEY = "invest.recon.start.v1";
 const RECON_HOWTO = [
   "用你的真实调仓来检验模拟运算：从一份“起始持仓”出发，录入之后每一笔实际交易（日期、买卖、股数、成交价、费用），系统同时计算两条资产曲线——",
   "① 实际：按原始股价估值，按你的成交价与费用成交，除息日收到现金分红；② 模拟：同一起始持仓、在同一天调到同样的比例，但按模拟经营的规则成交（当天开盘价、单边 0.1% 成本、分红再投资）。",
-  "两条曲线的差额被拆成：成交价差（你的成交价 vs 当天开盘价）、费用差（实际费用 vs 模型成本）、现金利息差、其他（差额在之后的复利、分红到账方式、整股等）。没有交易时两条曲线应完全一致；差额主要来自成交价和费用，说明模拟的规则是对的，只是成交假设和你的实际不同。",
+  "两条曲线的差额被拆成：成交价差（你的成交价 vs 当天开盘价）、费用差（实际费用 vs 模拟成本假设）、现金利息差、其他（差额在之后的复利、分红到账方式、整股等）。没有交易时两条曲线应完全一致；差额主要来自成交价和费用，说明模拟的规则是对的，只是成交假设和你的实际不同。",
   "数据只保存在本机浏览器。录完交易后可点“应用到我的持仓”更新股数与现金，再到“我的持仓”页同步到后台（现金请以券商显示为准）。",
 ];
 function loadTrades() { try { return JSON.parse(localStorage.getItem(TRADES_KEY) || "[]"); } catch { return []; } }
@@ -366,10 +366,12 @@ async function renderRecon() {
       <details class="howto"><summary>粘贴导入（每行“日期 买/卖 代码 股数 成交价 费用”）</summary>
         <textarea id="rc-paste" rows="4" style="width:100%" placeholder="2026-09-29 买 NVDA 10 180.50 1.00\n2026-09-29 卖 SPY 5 700.20 0.50"></textarea>
         <div class="row"><button type="button" class="ghost" id="rc-paste-btn">解析并追加</button><span class="muted" id="rc-paste-msg"></span></div></details>
-      <div class="row"><label>模型成本 <input type="number" id="rc-cost" min="0" max="100" value="10" style="width:56px"> bps</label>
+      <div class="row"><label title="模拟那条曲线每笔买卖按成交额扣除的成本比例，不是某一笔交易的费用">模拟成本假设 <input type="number" id="rc-cost" min="0" max="100" value="10" style="width:56px"> bps</label>
         <label><input type="checkbox" id="rc-int" checked> 现金计息（放在 SPAXX 等货币基金中）</label>
         <button type="button" class="primary" id="rc-run">运行对账</button>
         <button type="button" class="ghost" id="rc-apply">应用到我的持仓</button><span class="muted" id="rc-msg"></span></div>
+      <p class="muted"><b>模拟成本假设</b>：模拟曲线每笔买卖按成交额扣除的成本比例（1 bp = 0.01%，默认 10 bps = 0.1%，与策略回测相同），对所有交易统一生效；你每笔的实际费用填在交易记录的“费用”栏，两者之差即结果中的“费用差”。
+        填 10 看默认假设与你的实际差多少；填 0 只验证计算逻辑；调到“费用差”接近 0 的值，可作为你在策略回测中设置成本的参考。</p>
       <p class="muted">成交价留空时按当天开盘价计；交易日期若不是交易日，按之后第一个交易日计。只计入起始持仓日期之后、价格数据截止日之前的交易。</p></section>
     <div id="rc-report"></div>`;
   const draw = () => {
@@ -474,7 +476,7 @@ function renderReconReport(out, money) {
       const avg = slip.reduce((a, r) => a + r.slip_bps * r.shares * r.open, 0) / slip.reduce((a, r) => a + r.shares * r.open, 0);
       ins.push({ level: Math.abs(avg) > 20 ? "medium" : "info", kind: "derived", text: `按成交额加权，你的成交价平均比开盘价${avg > 0 ? "差" : "好"} ${Math.abs(avg).toFixed(1)} 个基点（${avg > 0 ? "买得更贵 / 卖得更便宜" : "买得更便宜 / 卖得更贵"}）。` });
     }
-    ins.push({ level: "info", kind: "derived", text: `实际费用 ${num(out.fees, 2)}，模型成本 ${num(out.model_cost, 2)}${out.fees < out.model_cost ? "：模型的 0.1% 成本假设偏保守" : ""}。` });
+    ins.push({ level: "info", kind: "derived", text: `实际费用 ${num(out.fees, 2)}，按模拟成本假设计 ${num(out.model_cost, 2)}${out.fees < out.model_cost ? "：该成本假设比你的实际费用偏保守" : out.fees > out.model_cost ? "：该成本假设低于你的实际费用" : ""}。` });
   } else ins.push({ level: "info", kind: "derived", text: "还没有起始日期之后的交易：两条曲线应一致（差额来自分红到账方式等细节）。" });
   byId("rc-report").innerHTML = `${insightBox(ins)}
     ${out.warnings.length ? `<section class="card"><p class="warn">${out.warnings.map(esc).join("<br>")}</p></section>` : ""}
@@ -484,7 +486,7 @@ function renderReconReport(out, money) {
       <div class="kpi"><span class="muted">差额（实际 − 模拟）</span><b class="${cls(d.total)}">${money(d.total)}</b><span class="muted">${(rel * 100).toFixed(2)}%</span></div>
       <div class="kpi"><span class="muted">期间分红 / 利息</span><b>${money(out.dividends)} / ${money(out.interest)}</b></div></div>
       <div class="grid two"><div>${chartDiv("c-rc-nav")}</div><div>${chartDiv("c-rc-dec")}</div></div></section>
-    ${out.rows.length ? card("逐笔对比：你的成交 vs 模拟假设", `<div class="table-wrap"><table><thead><tr><th>日期</th><th>方向</th><th>代码</th><th class="num">股数</th><th class="num">成交价</th><th class="num">当天开盘价</th><th class="num">价差（bps）</th><th class="num">实际费用</th><th class="num">模型成本</th></tr></thead>
+    ${out.rows.length ? card("逐笔对比：你的成交 vs 模拟假设", `<div class="table-wrap"><table><thead><tr><th>日期</th><th>方向</th><th>代码</th><th class="num">股数</th><th class="num">成交价</th><th class="num">当天开盘价</th><th class="num">价差（bps）</th><th class="num">实际费用</th><th class="num">模拟成本</th></tr></thead>
       <tbody>${out.rows.map((r) => `<tr><td>${esc(r.date)}</td><td>${r.side === "buy" ? "买入" : "卖出"}</td><td><b>${esc(r.ticker)}</b></td><td class="num">${r.shares}</td>
         <td class="num">${num(r.price, 2)}${r.price_given ? "" : " <span class=\"muted\">(开盘)</span>"}</td><td class="num">${num(r.open, 2)}</td>
         <td class="num ${cls(-r.slip_bps)}">${isNum(r.slip_bps) ? r.slip_bps.toFixed(1) : "–"}</td><td class="num">${num(r.fee, 2)}</td><td class="num">${num(r.model_cost, 2)}</td></tr>`).join("")}</tbody></table></div>
