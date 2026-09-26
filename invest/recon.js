@@ -78,6 +78,7 @@
       return a + shares[t] * (lastClose[t] ?? 0);
     }, 0);
     const actual = [];
+    const decisions = []; // 每个操作日：调仓前 / 后状态（决策评估用）
     const postTrade = {}; // 交易日 → 调仓后按开盘价计的比例（模拟用）
     actual.push(mark(s0) + cash);
     const start0 = actual[0];
@@ -86,6 +87,8 @@
       for (const t of tickers) { const d = divAt[t][i]; if (d && shares[t] > 0) { cash += shares[t] * d; dividends += shares[t] * d; } }
       if (cashFlows[i]) cash += cashFlows[i]; // 资金存入 / 取出：开盘前计入现金（模拟路径同样计入）
       if (byDay[i]) {
+        const pre = { shares: { ...shares }, cash, i };
+        const dayRows = [];
         for (const tr of byDay[i]) {
           const o = px[tr.ticker].open(i);
           const p = tr.price > 0 ? tr.price : o;
@@ -100,8 +103,10 @@
           modelCost += mc;
           rows.push({ date: P.dates[i], ticker: tr.ticker, side: tr.side, shares: n, price: p, open: o,
             slip_bps: Number.isFinite(o) && o > 0 ? sign * (p / o - 1) * 1e4 : NaN, fee, model_cost: mc, price_given: tr.price > 0 });
+          dayRows.push({ ticker: tr.ticker, side: tr.side, shares: n, price: p, fee });
           if (shares[tr.ticker] < -1e-9) warnings.push(`${P.dates[i]} ${tr.ticker} 卖出后股数为负，请检查`);
         }
+        decisions.push({ i, date: P.dates[i], pre, post: { shares: { ...shares }, cash }, trades: dayRows });
         const val = tickers.reduce((a, t) => a + shares[t] * (px[t].open(i) || lastClose[t] || 0), 0) + cash;
         postTrade[i] = Object.fromEntries(tickers.filter((t) => shares[t] > 0).map((t) => [t, shares[t] * (px[t].open(i) || lastClose[t]) / val]));
       }
@@ -123,7 +128,55 @@
     const decomposition = { total, fill: fillDiff, fee: feeDiff, interest: interestDiff, other: total - fillDiff - feeDiff - interestDiff };
     const flowList = Object.entries(cashFlows).map(([i, a]) => ({ date: P.dates[+i], amount: a }));
     return { dates, actual, sim, rows, decomposition, warnings, dividends, interest, fees, model_cost: res.costSum, flows: flowList, flow_total: flowTotal,
-      final_positions: { ...shares }, final_cash: cash, start_value: start0 };
+      final_positions: { ...shares }, final_cash: cash, start_value: start0,
+      _ctx: { decisions, tickers, s0, end, cashInterest, costBps } };
+  }
+
+  /* 决策评估：对每个操作日 d，从同一起点价值（调仓前持仓按 d 前一交易日收盘估值）出发比较
+     A = 调仓后持有（你的实际操作，含成交价与费用），B = 调仓前持有（不操作），C = 从调仓前改按系统每周建议（可选）。
+     窗口：next = 到下一次操作前一日收盘；数字 = 固定交易日数（封顶到数据截止日）。窗口内的资金进出不计入（对 A / B / C 相同）。 */
+  function evaluateDecisions(P, raw, recon, opts = {}) {
+    const { decisions, tickers, end, cashInterest, costBps } = recon._ctx;
+    const horizon = opts.horizon || "next";
+    const px = Object.fromEntries(tickers.map((t) => [t, rawPrice(P, raw, t)]));
+    const divAt = Object.fromEntries(tickers.map((t) => [t, Object.fromEntries((raw.corp?.[t]?.div || []).map(([k, d]) => [k, d]))]));
+    const lastClose = (t, k) => { for (let j = k; j >= 0; j--) { const v = px[t].close(j); if (Number.isFinite(v)) return v; } return 0; };
+    const valueAt = (sh, k) => tickers.reduce((a, t) => a + (sh[t] || 0) * lastClose(t, k), 0);
+    // 持有 sh 与现金 c 从 i 收盘到 e 收盘的价值（含 i 之后的分红与现金利息）
+    const hold = (sh, c, i, e) => {
+      let cash = c;
+      for (let k = i + 1; k <= e; k++) {
+        if (cashInterest) cash += cash * (P.rate[k - 1] || 0) * P.gap[k] / 360;
+        for (const t of tickers) { const d = divAt[t][k]; if (d && sh[t] > 0) cash += sh[t] * d; }
+      }
+      return valueAt(sh, e) + cash;
+    };
+    const out = [];
+    decisions.forEach((d, n) => {
+      const next = decisions[n + 1];
+      const e = horizon === "next" ? (next ? next.i - 1 : end) : Math.min(d.i + (+horizon) - 1, end);
+      const full = horizon === "next" ? !!next : d.i + (+horizon) - 1 <= end;
+      const v0 = valueAt(d.pre.shares, d.i - 1) + d.pre.cash;
+      const a = hold(d.post.shares, d.post.cash, d.i, Math.max(e, d.i));
+      const b = hold(d.pre.shares, d.pre.cash, d.i, Math.max(e, d.i));
+      let c = null;
+      if (opts.sys && e >= d.i) {
+        const w0 = {};
+        tickers.forEach((t) => { if ((d.pre.shares[t] || 0) > 0) w0[t] = d.pre.shares[t] * lastClose(t, d.i - 1) / v0; });
+        const strat = Sim.makeStrategy(P, { mode: "system", overlays: {} }, opts.sys);
+        if (strat.assets.length) {
+          try {
+            const res = Sim.run(P, { ...strat, assets: [...new Set([...strat.assets, ...Object.keys(w0)])], onClose: strat.onClose.bind(strat) },
+              { start: d.i, end: Math.max(e, d.i), costBps, initial: v0, initialWeights: w0 });
+            c = res.final;
+          } catch { c = null; }
+        }
+      }
+      out.push({ date: d.date, window_end: P.dates[Math.max(e, d.i)], sessions: Math.max(e, d.i) - d.i + 1, full, trades: d.trades,
+        v0, a, b, c, added: a - b, added_pct: (a - b) / v0, a_ret: a / v0 - 1, b_ret: b / v0 - 1, c_ret: c == null ? null : c / v0 - 1,
+        vs_c: c == null ? null : a - c, fees: d.trades.reduce((x, t) => x + (t.fee || 0), 0) });
+    });
+    return out;
   }
 
   /* 粘贴交易：每行“日期 买/卖 代码 股数 [成交价] [费用]”，分隔符为空格 / 逗号 / 制表符 */
@@ -192,7 +245,7 @@
       missingPrice: used.filter((t) => !isFlow(t) && !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
   }
 
-  const api = { reconcile, parseTrades, applyTrades, reverseTrades, rawPrice };
+  const api = { reconcile, evaluateDecisions, parseTrades, applyTrades, reverseTrades, rawPrice };
   root.Recon = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

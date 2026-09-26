@@ -543,7 +543,7 @@ function simTabs(active) {
 }
 
 async function renderRecon() {
-  const { P, raw } = await simData();
+  const { P, raw, sys } = await simData();
   let start = loadReconStart();
   const mine = loadHoldings();
   if (!start && mine) { start = { date: mine.date, positions: { ...mine.positions }, cash: mine.cash || 0 }; saveReconStart(start); }
@@ -680,6 +680,7 @@ async function renderRecon() {
     try {
       const out = Recon.reconcile(P, raw, start, trades, { costBps: +byId("rc-cost").value || 0, cashInterest: byId("rc-int").checked });
       renderReconReport(out, money);
+      renderDecisionEval(P, raw, sys, out, money);
     } catch (e) { console.error(e); byId("rc-msg").textContent = `对账失败：${e.message}`; }
   };
   draw(); syncSide();
@@ -732,4 +733,67 @@ function renderReconReport(out, money) {
     series: [{ type: "bar", barMaxWidth: 16, data: items.map(([n, v]) => ({ value: v, itemStyle: { color: n === "合计" ? palette()[0] : v >= 0 ? css("--pos") : css("--neg"), borderRadius: 3 } })),
       label: { show: true, position: "right", formatter: (p) => money(p.value), fontSize: 11, color: css("--ink-2") } }],
   });
+}
+
+
+// ---------------- 决策评估 ----------------
+function renderDecisionEval(P, raw, sys, recon, money) {
+  const host = document.createElement("div");
+  byId("rc-report").appendChild(host);
+  if (!recon._ctx.decisions.length) {
+    host.innerHTML = card("决策评估", `<p class="muted">还没有起始持仓之后的交易，暂无可评估的操作。</p>`, "", ["derived"]);
+    return;
+  }
+  let horizon = "next", withSys = !!sys;
+  const draw = () => {
+    const oldEl = byId("c-de");
+    const old = oldEl && window.echarts?.getInstanceByDom(oldEl);
+    if (old) { charts = charts.filter((x) => x !== old); old.dispose(); }
+    const rows = Recon.evaluateDecisions(P, raw, recon, { horizon, sys: withSys ? sys : null });
+    const n = rows.length, up = rows.filter((r) => r.added > 0).length;
+    const total = rows.reduce((a, r) => a + r.added, 0);
+    const vsRows = rows.filter((r) => r.vs_c != null);
+    const sysBetter = vsRows.filter((r) => r.vs_c < 0).length;
+    const vsTotal = vsRows.reduce((a, r) => a + r.vs_c, 0);
+    const best = [...rows].sort((a, b) => b.added - a.added)[0], worst = [...rows].sort((a, b) => a.added - b.added)[0];
+    const hz = { next: "到下一次操作", 21: "1 个月（21 个交易日）", 63: "3 个月（63 个交易日）" }[horizon];
+    const ins = [
+      { level: total >= 0 ? "good" : "medium", kind: "derived",
+        text: `共 ${n} 次操作（窗口：${hz}）：${up} 次加分、${n - up} 次减分；${horizon === "next" ? "累计增减（即你主动操作相对“一直不动”的总贡献）" : "各次增减合计（窗口互相重叠，仅供参考）"} ${money(total)}。` },
+      { level: "info", kind: "derived", text: `加分最多：${best.date}（${money(best.added)}，${pct(best.added_pct, 2, true)}）；减分最多：${worst.date}（${money(worst.added)}，${pct(worst.added_pct, 2, true)}）。` },
+    ];
+    if (vsRows.length) ins.push({ level: vsTotal >= 0 ? "good" : "medium", kind: "simulated",
+      text: `与“改按系统每周建议操作”相比：${vsRows.length} 次中系统在 ${sysBetter} 次更好；合计你${vsTotal >= 0 ? "多" : "少"}赚 ${money(Math.abs(vsTotal))}。` });
+    if (n < 10) ins.push({ level: "medium", kind: "derived", text: `目前只有 ${n} 次操作，结果受运气影响很大，不能说明判断能力；建议积累 10 次以上再看整体规律。` });
+    if (rows.some((r) => !r.full)) ins.push({ level: "info", kind: "derived", text: "标注“未完”的操作窗口尚未走完（最近一次操作之后的时间不足），数字会随行情继续变化。" });
+    const tradeText = (r) => r.trades.map((t) => `${t.side === "buy" ? "买" : "卖"} ${t.ticker} ${+t.shares.toFixed(4)}`).join("；");
+    host.innerHTML = `${insightBox(ins)}
+      <section class="card"><h3>决策评估：每次操作 vs 不操作 ${badge("derived")}${withSys ? badge("simulated") : ""}</h3>
+        <p class="muted">对每次操作，从同一起点价值（操作前持仓按前一交易日收盘估值）出发比较：<b>A 操作后持有</b>（你的实际成交价与费用）vs <b>B 不操作</b>（继续持有操作前的仓位）${withSys ? " vs <b>C 改按系统每周建议</b>（当天开盘调到系统建议配置、之后每周跟随，成本按模拟假设）" : ""}。增减 = A − B，已扣除这次操作的费用；窗口内的分红与现金利息计入，资金进出不计。</p>
+        <div class="row"><span class="muted">窗口</span><div class="seg" id="de-h">${[["next", "到下一次操作"], ["21", "1 个月"], ["63", "3 个月"]].map(([k, t]) => `<button type="button" data-h="${k}" class="${k === horizon ? "on" : ""}">${t}</button>`).join("")}</div>
+          ${sys ? `<label><input type="checkbox" id="de-sys" ${withSys ? "checked" : ""}> 对比“改按系统每周建议”</label>` : ""}
+          <span class="muted">“到下一次操作”：各段不重叠，增减相加 = 主动操作的总贡献；固定窗口：每次比较时长相同，但会重叠。</span></div>
+        ${chartDiv("c-de")}
+        <div class="table-wrap"><table><thead><tr><th>操作日</th><th>操作内容</th><th>窗口</th><th class="num">起点价值</th><th class="num">A 操作后</th><th class="num">B 不操作</th><th class="num">增减 A−B</th>${withSys ? '<th class="num">C 系统建议</th><th class="num">你 − 系统</th>' : ""}</tr></thead>
+        <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td><td class="wrap">${esc(tradeText(r))}${r.fees ? ` <span class="muted">（费用 ${num(r.fees, 2)}）</span>` : ""}</td>
+          <td>至 ${esc(r.window_end)}（${r.sessions} 个交易日）${r.full ? "" : ' <span class="chip">未完</span>'}</td><td class="num">${money(r.v0)}</td>
+          <td class="num ${cls(r.a_ret)}">${pct(r.a_ret, 2, true)}</td><td class="num ${cls(r.b_ret)}">${pct(r.b_ret, 2, true)}</td>
+          <td class="num ${cls(r.added)}"><b>${money(r.added)}</b><br><span class="muted">${pct(r.added_pct, 2, true)}</span></td>
+          ${withSys ? `<td class="num ${cls(r.c_ret)}">${r.c_ret == null ? "–" : pct(r.c_ret, 2, true)}</td><td class="num ${cls(r.vs_c)}">${r.vs_c == null ? "–" : money(r.vs_c)}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+      </section>`;
+    let cum = 0;
+    const series = [
+      { name: "这次操作的增减（A − B）", type: "bar", barMaxWidth: 22, data: rows.map((r) => ({ value: r.added, itemStyle: { color: r.added >= 0 ? css("--pos") : css("--neg"), borderRadius: 3 } })) },
+      { name: horizon === "next" ? "累计增减" : "增减累加（窗口重叠）", type: "line", symbolSize: 6, color: palette()[1], data: rows.map((r) => (cum += r.added)) },
+    ];
+    if (withSys && vsRows.length) series.push({ name: "你 − 系统建议（C）", type: "scatter", symbol: "diamond", symbolSize: 9, color: palette()[6], data: rows.map((r) => r.vs_c) });
+    mkChart(byId("c-de"), {
+      tooltip: { trigger: "axis", valueFormatter: (v) => (v == null ? "–" : money(v)) }, legend: { top: 0 }, grid: { left: 70, right: 20, top: 40, bottom: 30 },
+      xAxis: { type: "category", data: rows.map((r) => r.date) }, yAxis: { type: "value", axisLabel: { formatter: (v) => money(v) } },
+      series,
+    });
+    document.querySelectorAll("#de-h button").forEach((b) => (b.onclick = () => { horizon = b.dataset.h; draw(); }));
+    byId("de-sys")?.addEventListener("change", (e) => { withSys = e.target.checked; draw(); });
+  };
+  draw();
 }
