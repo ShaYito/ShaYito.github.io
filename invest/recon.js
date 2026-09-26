@@ -42,13 +42,17 @@
     // 交易按成交日归到交易日；早于起点或晚于数据末日的交易单列
     const byDay = {};
     const rows = [];
+    let before = 0, after = 0;
     for (const tr of trades) {
       if (!known(tr.ticker)) continue;
       const i = sessionOnOrAfter(P, tr.date);
-      if (i < 0 || i > end) { warnings.push(`${tr.date} ${tr.ticker} 的交易晚于价格数据截止日，暂未计入`); continue; }
-      if (i <= s0) { warnings.push(`${tr.date} ${tr.ticker} 的交易不晚于起始持仓日期，已忽略`); continue; }
+      if (i < 0 || i > end) { after++; continue; }
+      if (i <= s0) { before++; continue; }
       (byDay[i] ||= []).push(tr);
     }
+
+    if (before) warnings.push(`${before} 笔交易不晚于起始持仓日期（${P.dates[s0]}），未计入对账。要验证这些调仓，请把起始持仓日期改到它们之前（可用“由当前持仓倒推到该日期”）`);
+    if (after) warnings.push(`${after} 笔交易晚于价格数据截止日（${P.dates[end]}），暂未计入`);
 
     // ---------- 实际路径 ----------
     const shares = Object.fromEntries(tickers.map((t) => [t, start.positions[t] || 0]));
@@ -145,7 +149,25 @@
     return { positions: pos, cash: c, missingPrice: trades.filter((t) => !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
   }
 
-  const api = { reconcile, parseTrades, applyTrades, rawPrice };
+  /* 由当前持仓倒推过去某日的持仓：撤销 (fromDate, toDate] 之间的交易。
+     现金按成交额与费用反推；没有成交价的交易无法反推现金，单列返回。 */
+  function reverseTrades(positions, cash, trades, fromDate, toDate) {
+    const pos = { ...positions };
+    let c = cash;
+    const used = trades.filter((t) => t.date > fromDate && (!toDate || t.date <= toDate));
+    for (const tr of used) {
+      const sign = tr.side === "sell" ? -1 : 1;
+      pos[tr.ticker] = (pos[tr.ticker] || 0) - sign * tr.shares;
+      if (tr.price > 0) c += sign * tr.shares * tr.price;
+      c += tr.fee || 0;
+    }
+    const negative = Object.entries(pos).filter(([, s]) => s < -1e-9).map(([t]) => t);
+    for (const t of Object.keys(pos)) if (Math.abs(pos[t]) < 1e-9) delete pos[t];
+    return { positions: pos, cash: c, used: used.length, negative,
+      missingPrice: used.filter((t) => !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
+  }
+
+  const api = { reconcile, parseTrades, applyTrades, reverseTrades, rawPrice };
   root.Recon = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

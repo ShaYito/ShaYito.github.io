@@ -344,11 +344,19 @@ async function renderRecon() {
   app().innerHTML = `
     <h2>模拟经营 <span class="muted">实盘对账 · 价格数据截至 ${esc(P.dates[P.n - 1])}</span></h2>
     ${simTabs("recon")}${howto(RECON_HOWTO)}
-    <section class="card"><h3>起始持仓 ${badge("fact")}</h3>
-      ${start ? `<p>${esc(start.date)} 收盘后：${Object.entries(start.positions).map(([t, s]) => `${esc(t)} ${s}`).join("、") || "无持仓"}；现金 ${money(start.cash)}</p>`
-        : `<p class="warn">还没有起始持仓：请先在“我的持仓”页填写并保存。</p>`}
-      <div class="row"><button type="button" class="ghost" id="rc-reset">用当前“我的持仓”作为新的起始持仓</button>
-        <span class="muted">起始持仓单独保存；把交易应用到“我的持仓”后，起始持仓不会跟着改变，便于持续对账。</span></div></section>
+    <section class="card" id="rc-start"><h3>起始持仓（过去某日收盘后）${badge("fact")}</h3>
+      <div class="row"><label>日期 <input type="date" id="rs-date" min="${esc(P.dates[Math.max(P.backtestStart, 1)])}" max="${esc(P.dates[P.n - 1])}" value="${esc(start?.date || "")}"></label>
+        <label>现金 <input type="number" id="rs-cash" min="0" step="100" value="${start?.cash ?? 0}" style="width:120px"></label></div>
+      <div class="table-wrap"><table><thead><tr><th>代码</th><th>名称</th><th class="num">股数</th><th></th></tr></thead><tbody id="rs-rows"></tbody></table></div>
+      <div class="row"><input type="text" id="rs-new" placeholder="代码" style="width:100px"><input type="number" id="rs-new-n" placeholder="股数" min="0" step="1" style="width:90px">
+        <button type="button" class="ghost" id="rs-add">添加</button>
+        <details class="howto" style="flex:1 1 300px"><summary>粘贴导入（每行“代码 股数”，现金写“现金 金额”）</summary>
+          <textarea id="rs-paste" rows="4" style="width:100%" placeholder="NVDA 40\nSPY 30\n现金 8000"></textarea>
+          <div class="row"><button type="button" class="ghost" id="rs-paste-btn">解析并覆盖</button></div></details></div>
+      <div class="row"><button type="button" class="primary" id="rs-save">保存起始持仓</button>
+        <button type="button" class="ghost" id="rs-copy">从“我的持仓”复制</button>
+        <button type="button" class="ghost" id="rs-reverse">由当前持仓倒推到该日期</button><span class="muted" id="rs-msg"></span></div>
+      <p class="muted">起始持仓与“我的持仓”分开保存。倒推 = 用“我的持仓”（${mine ? `${esc(mine.date)} 的持仓` : "尚未填写"}）撤销该日期之后、${mine ? esc(mine.date) : "当前"}之前的交易记录，现金按成交价与费用反推；请先录入这段时间的全部交易。</p></section>
     <section class="card"><h3>交易记录 ${badge("fact")}</h3>
       <div class="table-wrap"><table><thead><tr><th>日期</th><th>方向</th><th>代码</th><th class="num">股数</th><th class="num">成交价</th><th class="num">费用</th><th></th></tr></thead><tbody id="rc-rows"></tbody></table></div>
       <div class="row"><input type="date" id="rc-d" value="${esc(P.dates[P.n - 1])}"><select id="rc-side"><option value="buy">买入</option><option value="sell">卖出</option></select>
@@ -382,12 +390,55 @@ async function renderRecon() {
     trades.push(...p.trades); saveTrades(trades); draw();
     byId("rc-paste-msg").textContent = `追加 ${p.trades.length} 笔${p.errors.length ? `；${p.errors.length} 行无法识别：${p.errors.slice(0, 2).join("；")}` : ""}`;
   };
-  byId("rc-reset").onclick = () => {
-    const h = loadHoldings();
-    if (!h) { byId("rc-msg").textContent = "本机没有“我的持仓”"; return; }
-    if (trades.length && !confirm("更换起始持仓后，早于新起始日期的交易将不再计入对账。继续？")) return;
-    saveReconStart({ date: h.date, positions: { ...h.positions }, cash: h.cash || 0 }); renderRecon();
+  // ---------- 起始持仓编辑器 ----------
+  let sp = start ? { ...start.positions } : {};
+  const drawStart = () => {
+    byId("rs-rows").innerHTML = Object.keys(sp).sort().map((t) => `<tr><td><b>${esc(t)}</b>${P.C[t] ? "" : ' <span class="chip">无行情，不参与对账</span>'}</td>
+      <td>${esc(META.names_zh?.[t] || "")}</td><td class="num"><input type="number" class="rs-sh" data-t="${t}" min="0" step="1" value="${sp[t]}" style="width:100px"></td>
+      <td><button type="button" class="ghost rs-del" data-t="${t}">移除</button></td></tr>`).join("") || `<tr><td colspan="4" class="muted">尚未填写</td></tr>`;
+    document.querySelectorAll(".rs-sh").forEach((el) => (el.onchange = () => { sp[el.dataset.t] = Math.max(0, +el.value || 0); }));
+    document.querySelectorAll(".rs-del").forEach((el) => (el.onclick = () => { delete sp[el.dataset.t]; drawStart(); }));
   };
+  const commitStart = (msg) => {
+    const d = byId("rs-date").value;
+    if (!d) { byId("rs-msg").textContent = "请填写日期"; return false; }
+    start = { date: d, positions: Object.fromEntries(Object.entries(sp).filter(([, v]) => v > 0)), cash: Math.max(0, +byId("rs-cash").value || 0) };
+    saveReconStart(start);
+    byId("rs-msg").textContent = msg || `已保存 ${d} 的起始持仓（${Object.keys(start.positions).length} 个标的）`;
+    byId("rc-run").click();
+    return true;
+  };
+  byId("rs-add").onclick = () => {
+    const t = byId("rs-new").value.trim().toUpperCase().replace(/\./g, "-"), n = +byId("rs-new-n").value;
+    if (!/^[A-Z0-9^][A-Z0-9\-=^]{0,11}$/.test(t) || !(n > 0)) { byId("rs-msg").textContent = "请填写代码与股数"; return; }
+    sp[t] = n; byId("rs-new").value = ""; byId("rs-new-n").value = ""; drawStart();
+  };
+  byId("rs-paste-btn").onclick = () => {
+    const p = HoldingsCalc.parsePasted(byId("rs-paste").value);
+    sp = { ...p.positions }; if (p.cash != null) byId("rs-cash").value = p.cash;
+    byId("rs-msg").textContent = `识别 ${Object.keys(sp).length} 个标的${p.errors.length ? `；${p.errors.length} 行无法识别` : ""}（记得点“保存起始持仓”）`;
+    drawStart();
+  };
+  byId("rs-save").onclick = () => commitStart();
+  byId("rs-copy").onclick = () => {
+    const h = loadHoldings();
+    if (!h) { byId("rs-msg").textContent = "本机没有“我的持仓”"; return; }
+    sp = { ...h.positions }; byId("rs-cash").value = h.cash || 0; byId("rs-date").value = h.date; drawStart();
+    commitStart(`已复制“我的持仓”（${h.date}）作为起始持仓`);
+  };
+  byId("rs-reverse").onclick = () => {
+    const h = loadHoldings(), d = byId("rs-date").value;
+    if (!h) { byId("rs-msg").textContent = "请先在“我的持仓”页填写当前持仓"; return; }
+    if (!d || d >= h.date) { byId("rs-msg").textContent = `请先选择早于 ${h.date} 的日期`; return; }
+    const r = Recon.reverseTrades(h.positions, h.cash || 0, trades, d, h.date);
+    sp = { ...r.positions }; byId("rs-cash").value = Math.max(0, Math.round(r.cash * 100) / 100); drawStart();
+    const notes = [`已由 ${h.date} 的持仓撤销 ${r.used} 笔交易，倒推出 ${d} 的持仓`];
+    if (r.missingPrice.length) notes.push(`${r.missingPrice.length} 笔没有成交价，现金无法反推，请手动核对`);
+    if (r.negative.length) notes.push(`${r.negative.join("、")} 倒推后为负，可能漏录了买入`);
+    if (r.cash < 0) notes.push("倒推现金为负，可能漏录了卖出或期间有资金存入");
+    commitStart(notes.join("；"));
+  };
+  drawStart();
   byId("rc-apply").onclick = () => {
     if (!start) return;
     const after = trades.filter((t) => t.date > start.date);
