@@ -1,29 +1,34 @@
 "use strict";
-/* 模拟经营页面：设置 → 浏览器端回测（sim.js）→ 收益报告。设置编码进网址（#/sim?c=...），可保存 / 分享。 */
+/* 模拟经营 · 策略回测：① 起始仓位 → ② 策略（之后怎么操作）→ ③ 区间与资金 → 收益报告。
+   起始仓位视为“开始日已持有”（不计建仓成本），之后按所选策略的节奏调整。设置编码进网址（#/sim?c=...）。 */
 
 const SIM_STRATEGIES = {
-  fixed: { name: "固定比例", tip: "按你设定的比例持有；配合下方“调仓”规则定期调回目标比例。",
-    why: "定期再平衡会自动“高卖低买”，把组合风险维持在你设定的水平；这是最被广泛验证、最透明的做法。", risk: "不判断市场，牛市中涨得多的资产会被卖出一部分，收益可能略低于放任不管。" },
-  invvol: { name: "逆波动率加权", tip: "只用你选的标的，比例改为“波动越小给得越多”（过去 60 日波动）；你填写的比例合计作为总仓位，其余为现金。",
+  hold: { name: "买入持有", tip: "持有起始仓位，之后不再调整（比例会随涨跌自然变化）。",
+    why: "最简单、成本最低，作为其他策略的对照基准。", risk: "涨得多的标的占比越来越大，组合风险可能逐渐集中。" },
+  rebalance: { name: "定期再平衡", tip: "定期把各标的调回起始比例（每月 / 每季 / 每年，或偏离超过阈值时）。",
+    why: "自动“高卖低买”，把组合风险维持在你设定的水平；这是最被广泛验证、最透明的做法。", risk: "牛市中会卖出涨得多的标的，收益可能略低于买入持有。" },
+  invvol: { name: "逆波动率", tip: "只在起始仓位的标的之间，定期按“波动越小给得越多”重新分配（过去 60 日波动）；总仓位与现金比例保持不变。",
     why: "让每个标的对组合波动的贡献更接近，避免一只高波动股票主导组合。", risk: "低波动资产未必收益高；波动突然放大时调整有滞后。" },
-  momentum: { name: "动量轮动", tip: "在你选的标的中，每次调仓持有过去 N 个月（跳过最近 1 个月）涨幅最高的几只，等权；若连现金都跑不赢，该份额留在现金（绝对动量）。",
-    why: "“强者恒强”的动量效应是金融学里被研究最多、跨市场都存在的现象之一；绝对动量过滤能在长期下跌中退到现金。", risk: "换手高；市场急转弯（如 2020 年 3 月后的反弹）时会追高杀跌。" },
-  system: { name: "本系统策略（原版）", tip: "完全复现本系统回测：每周按市场状态分配核心 / 卫星 / 对冲 / 现金，卫星层由模型选 6 只股票。不能修改参数，结果与“回测与实盘”页一致。",
+  momentum: { name: "动量轮动", tip: "只在起始仓位的标的中，定期持有过去 N 个月（跳过最近 1 个月）涨幅最高的几只，等权；跑输现金的份额留在现金（绝对动量）。",
+    why: "“强者恒强”的动量效应是金融学里研究最多、跨市场都存在的现象之一；绝对动量能在长期下跌中退到现金。", risk: "换手高；市场急转弯时会追高杀跌。" },
+  system: { name: "按系统每周建议调仓（原版）", tip: "从起始仓位出发，第一个周信号起完全按本系统每周的建议配置调仓（市场状态决定四层比例，卫星层由模型选股）。",
     why: "按市场状态调整仓位在回测中降低了回撤。", risk: "模型选股在样本外没有稳定的预测力；收益受幸存者偏差影响较大。" },
-  system_custom: { name: "本系统策略（可调）", tip: "沿用本系统每周的市场状态和模型排名，但你可以修改各状态下四层的比例和选股只数。组合构建为简化版（逆波动率 + 单只上限），与原版略有差异。",
-    why: "用来检验“更保守 / 更激进的配置”在历史上会怎样。", risk: "同原版。" },
+  system_custom: { name: "按系统建议调仓（可调比例）", tip: "沿用本系统每周的市场状态与模型排名，但你可以修改各状态下四层的比例与选股只数（组合构建为简化版）。",
+    why: "检验“更保守 / 更激进的配置”在历史上会怎样。", risk: "同原版。" },
 };
 const SIM_OVERLAYS = {
   trend: { name: "趋势过滤（200 日均线）", tip: "调仓时，价格低于 200 日均线的标的不持有（换成现金）；买入持有时每月检查一次。",
     why: "有长期研究支持（如 Faber 2007）：能避开大部分长期熊市。", risk: "震荡市中会反复卖出又买回，产生交易成本和踏空。" },
-  volTarget: { name: "波动率目标", tip: "按目标权重估算组合过去 60 日的年化波动，高于目标时整体按比例降仓（不加杠杆）。",
+  volTarget: { name: "波动率目标", tip: "按目标权重估算组合过去 60 日的年化波动，高于目标时整体按比例降仓（不加杠杆）；每次调仓时重新计算。",
     why: "机构常用的风险控制：市场越动荡仓位越低，明显降低回撤。", risk: "波动回落后才恢复仓位，反弹初期会少赚。" },
   stop: { name: "移动止损", tip: "持仓从持有期间的最高收盘价回落超过设定比例就卖出，直到下一次定期调仓才重新买入。",
     why: "直观、便于执行纪律。", risk: "研究支持弱：单只股票的正常波动也常触发止损，容易卖在低点。仅供对比。" },
 };
 const SIM_TEMPLATES = {
-  mine: { name: "我的持仓（本机）" },
-  system_now: { name: "本系统最新配置" },
+  mine: { name: "我的持仓（按当前市值比例）" },
+  mine_shares: { name: "我的持仓（按股数）" },
+  recon: { name: "对账起始持仓（按股数与日期）" },
+  system_now: { name: "本系统最新建议配置" },
   spy: { name: "SPY 100%", weights: { SPY: 1 } },
   qqq: { name: "QQQ 100%", weights: { QQQ: 1 } },
   classic: { name: "SPY 60% + GLD 20% + 现金 20%", weights: { SPY: 0.6, GLD: 0.2 } },
@@ -31,15 +36,15 @@ const SIM_TEMPLATES = {
   semis: { name: "半导体等权" },
   ai_infra: { name: "AI 基础设施等权" },
 };
-const SIM_DEFAULT = { mode: "fixed", weights: { SPY: 0.35, QQQ: 0.25, GLD: 0.1, NVDA: 0.1, MSFT: 0.1 }, rebalance: "Q", band: 0.05,
-  topN: 3, momentumLookback: 12, overlays: { trend: false, trendMA: 200, volTarget: 0, stop: 0 }, initial: 100000, monthly: 0,
-  start: "2019-01-01", end: "", costBps: 10, bench: ["SPY", "QQQ", "bh"], layers: null };
+const SIM_DEFAULT = { v: 2, posMode: "weight", weights: { SPY: 0.35, QQQ: 0.25, GLD: 0.1, NVDA: 0.1, MSFT: 0.1 }, shares: {}, cash: 0,
+  initial: 100000, strategy: "rebalance", freq: "Q", band: 0.05, topN: 3, lookback: 12,
+  overlays: { trend: false, trendMA: 200, volTarget: 0, stop: 0 }, monthly: 0, start: "2019-01-01", end: "", costBps: 10,
+  bench: ["SPY", "QQQ", "bh"], layers: null, sysTopN: null };
 const SIM_HOWTO = [
-  "这一页让你用真实历史价格做“如果当时这样操作会怎样”的[[simulated|模拟]]：设定标的和比例，选择一种分配方式和调仓规则，可选叠加风控，然后选择历史区间运行。",
-  "可选的分配方式与风控：固定比例 + [[rebalance|再平衡]]、[[inverse_vol|逆波动率加权]]、[[momentum_rotation|动量轮动]]、本系统策略；叠加[[trend_filter|趋势过滤]]、[[vol_target|波动率目标]]、[[trailing_stop|移动止损]]。展开下方“逻辑、可靠性说明”查看每种方法为什么可能有效、何时会失效。",
-  "报告中的“净值”是[[twr|时间加权收益]]（不受[[dca|定投]]时点影响）；“期末资产 / 盈亏”是按你的初始资金与定投计算的金额。",
-  "规则与本系统回测完全一致：收盘产生信号、下一交易日开盘成交、每笔买卖扣除成本（默认 0.1%），现金按短期国债利率计息；不计税和分红预扣税，价格为复权价（分红再投资）。",
-  "候选股票是今天挑出来的公司（[[survivorship|幸存者偏差]]），越早的起点、越集中于个股，结果越偏乐观。",
+  "三步：① 设定起始仓位（直接填写比例或股数，或载入模板，例如你的持仓）；② 选择之后怎么操作（策略）；③ 选择历史区间与资金，点“运行模拟”。",
+  "起始仓位视为“开始日已经持有”，不计建仓成本；之后按策略的节奏调整（例如每季末再平衡、每周按系统建议调仓），每次买卖按单边成本扣除。",
+  "结果是用真实历史价格做的[[simulated|模拟]]：“净值”是[[twr|时间加权收益]]（不受[[dca|定投]]影响），“期末资产 / 盈亏”按你的资金计算。规则与本系统回测一致：收盘产生信号、下一交易日开盘成交，现金按短期国债利率计息，分红再投资，不计税。",
+  "候选股票是今天挑出来的公司（[[survivorship|幸存者偏差]]），起点越早、越集中于个股，结果越偏乐观。",
 ];
 
 let SIM_DATA = null;
@@ -51,121 +56,218 @@ async function simData() {
 }
 function simEncode(c) { return btoa(unescape(encodeURIComponent(JSON.stringify(c)))).replace(/=+$/, ""); }
 function simDecode(s) { try { return JSON.parse(decodeURIComponent(escape(atob(s)))); } catch { return null; } }
+function simUpgrade(c) {
+  // 兼容旧网址参数（mode / rebalance）
+  if (!c || c.v === 2) return c;
+  const m = c.mode || "fixed";
+  const strategy = m === "fixed" ? (c.rebalance === "none" ? "hold" : "rebalance") : m;
+  return { ...c, v: 2, posMode: "weight", strategy, freq: c.rebalance && c.rebalance !== "none" ? c.rebalance : "Q", lookback: c.momentumLookback || 12 };
+}
+function lastRawClose(P, raw, t, i) {
+  if (!P.C[t]) return NaN;
+  const px = Recon.rawPrice(P, raw, t);
+  for (let k = i; k >= 0; k--) { const v = px.close(k); if (Number.isFinite(v)) return v; }
+  return NaN;
+}
+/* 起始仓位 → {weights, initial, s, notes}；s = 第一个交易日（持仓按 s-1 收盘估值） */
+function simStartPosition(P, raw, c) {
+  const s = Math.max(Sim.indexOnOrAfter(P, c.start), P.backtestStart, 1);
+  const notes = [];
+  if (c.posMode === "shares") {
+    let total = c.cash || 0;
+    const val = {};
+    for (const [t, n] of Object.entries(c.shares || {})) {
+      if (!(n > 0)) continue;
+      const p = lastRawClose(P, raw, t, s - 1);
+      if (!Number.isFinite(p) || !Number.isFinite(P.C[t]?.[s - 1])) { notes.push(`${t} 在 ${P.dates[s - 1]} 没有价格（未上市或不在数据范围），按 0 计`); continue; }
+      val[t] = n * p; total += val[t];
+    }
+    if (total <= 0) throw new Error("起始仓位市值为 0");
+    return { weights: Object.fromEntries(Object.entries(val).map(([t, v]) => [t, v / total])), initial: total, s, notes };
+  }
+  const w = Object.fromEntries(Object.entries(c.weights || {}).filter(([t, x]) => x > 0 && P.C[t]));
+  for (const [t, x] of Object.entries(w)) if (!Number.isFinite(P.C[t][s - 1])) { notes.push(`${t} 在 ${P.dates[s - 1]} 还没有价格，其比例按现金计`); delete w[t]; }
+  const sum = Object.values(w).reduce((a, b) => a + b, 0);
+  const weights = sum > 1 ? Object.fromEntries(Object.entries(w).map(([t, x]) => [t, x / sum])) : w;
+  return { weights, initial: Math.max(100, c.initial || 100000), s, notes };
+}
+function simEngineCfg(c, w) {
+  const base = { overlays: c.overlays || {}, holdStart: true, initialWeights: w };
+  switch (c.strategy) {
+    case "hold": return { ...base, mode: "fixed", weights: w, rebalance: "none" };
+    case "rebalance": return { ...base, mode: "fixed", weights: w, rebalance: c.freq, band: c.band };
+    case "invvol": return { ...base, mode: "invvol", weights: w, rebalance: c.freq === "band" ? "M" : c.freq };
+    case "momentum": return { ...base, mode: "momentum", weights: w, rebalance: c.freq === "band" ? "M" : c.freq, topN: c.topN, momentumLookback: c.lookback };
+    case "system": return { ...base, mode: "system" };
+    case "system_custom": return { ...base, mode: "system_custom", layers: c.layers, topN: c.sysTopN };
+    default: return { ...base, mode: "fixed", weights: w, rebalance: "none" };
+  }
+}
 
 PAGES.sim = async (r) => {
   if (r.query.tab === "recon") return renderRecon();
-  const { P, sys } = await simData();
-  const cfg = { ...structuredClone(SIM_DEFAULT), ...(r.query.c ? simDecode(r.query.c) || {} : {}) };
+  const { P, raw, sys } = await simData();
+  const cfg = { ...structuredClone(SIM_DEFAULT), ...(r.query.c ? simUpgrade(simDecode(r.query.c)) || {} : {}) };
   cfg.overlays = { ...SIM_DEFAULT.overlays, ...(cfg.overlays || {}) };
   if (!cfg.end) cfg.end = P.dates[P.n - 1];
   const first = P.dates[Math.max(P.backtestStart, 1)];
-  const assetOpts = P.assets.map((a) => `<option value="${a.ticker}">${esc(tickerLabel(a.ticker) || a.ticker)}${a.kind === "etf" ? "（ETF）" : ""}</option>`).join("");
+  const lastDate = P.dates[P.n - 1];
+  const nameOf = (t) => `${t}${META.names_zh?.[t] ? ` ${META.names_zh[t]}` : ""}`;
+  const assetOpts = P.assets.map((a) => `<option value="${a.ticker}">${esc(nameOf(a.ticker))}${a.kind === "etf" ? "（ETF）" : ""}</option>`).join("");
   const layerRows = sys ? ["risk_on", "neutral", "risk_off"].map((rg) => {
     const lw = (cfg.layers && cfg.layers[rg]) || sys.regime_weights[rg];
     return `<tr><td>${esc(REGIME_ZH[rg])}</td>${["core", "satellite", "hedge", "cash"].map((k) => `<td><input type="number" class="sim-layer" data-rg="${rg}" data-k="${k}" min="0" max="100" step="1" value="${Math.round(lw[k] * 100)}" style="width:64px">%</td>`).join("")}</tr>`;
   }).join("") : "";
+  const stratRadios = Object.entries(SIM_STRATEGIES).filter(([k]) => sys || !k.startsWith("system")).map(([k, s]) =>
+    `<label class="sim-strat"><input type="radio" name="sim-strat" value="${k}" ${k === cfg.strategy ? "checked" : ""}> <b>${esc(s.name)}</b><span class="muted">${esc(s.tip)}</span></label>`).join("");
   app().innerHTML = `
-    <h2>模拟经营 <span class="muted">用真实历史价格检验你的仓位与策略 · 数据 ${esc(first)} ~ ${esc(P.dates[P.n - 1])}</span></h2>
+    <h2>模拟经营 <span class="muted">用真实历史价格检验“某个仓位 + 某种操作方式”的结果 · 数据 ${esc(first)} ~ ${esc(lastDate)}</span></h2>
     ${simTabs("bt")}${howto(SIM_HOWTO)}
-    <section class="card" id="sim-form"><h3>设置 ${badge("simulated")}</h3>
-      <div class="row"><label>模板 <select id="sim-tpl"><option value="">— 载入模板 —</option>${Object.entries(SIM_TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.name)}</option>`).join("")}</select></label>
-        <label>分配方式 <select id="sim-mode">${Object.entries(SIM_STRATEGIES).filter(([k]) => sys || !k.startsWith("system")).map(([k, s]) => `<option value="${k}" ${k === cfg.mode ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label></div>
-      <p class="muted" id="sim-mode-tip"></p>
-      <div id="sim-assets-box"><h4>标的与目标比例 <span class="muted" id="sim-sum"></span></h4>
-        <div class="table-wrap"><table><tbody id="sim-assets"></tbody></table></div>
-        <div class="row"><select id="sim-add">${assetOpts}</select><button type="button" class="ghost" id="sim-add-btn">添加标的</button>
-          <button type="button" class="ghost" id="sim-eq-btn">等权</button><button type="button" class="ghost" id="sim-clear-btn">清空</button></div></div>
-      <div class="row" id="sim-mom-box"><label>持有前 <input type="number" id="sim-topn" min="1" max="20" value="${cfg.topN}" style="width:60px"> 只</label>
-        <label>回看 <input type="number" id="sim-lookback" min="3" max="12" value="${cfg.momentumLookback}" style="width:60px"> 个月（跳过最近 1 个月）</label></div>
-      <div id="sim-sys-box">${sys ? `<h4>各市场状态下的四层比例（可调版）</h4><div class="table-wrap"><table><thead><tr><th>市场状态</th><th>核心 SPY</th><th>卫星（模型选股）</th><th>对冲 GLD</th><th>现金</th></tr></thead><tbody>${layerRows}</tbody></table></div>
-        <div class="row"><label>卫星选股只数 <input type="number" id="sim-sys-topn" min="1" max="15" value="${cfg.sysTopN || sys.top_n}" style="width:60px"></label></div>` : ""}</div>
-      <div class="row" id="sim-reb-box"><label>调仓 <select id="sim-reb">${[["none", "不调仓（买入持有）"], ["M", "每月"], ["Q", "每季"], ["Y", "每年"], ["band", "偏离超过阈值时（每周检查）"]].map(([k, n]) => `<option value="${k}" ${k === cfg.rebalance ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+    <section class="card" id="sim-form"><h3>① 起始仓位 ${badge("simulated")}</h3>
+      <div class="row"><label>载入模板 <select id="sim-tpl"><option value="">— 选择 —</option>${Object.entries(SIM_TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.name)}</option>`).join("")}</select></label>
+        <span class="muted" id="sim-tpl-msg"></span></div>
+      <div class="row"><span class="muted">输入方式</span><div class="seg" id="sim-posmode"><button type="button" data-m="weight">按比例</button><button type="button" data-m="shares">按股数</button></div>
+        <span class="muted" id="sim-posmode-tip"></span></div>
+      <div class="table-wrap"><table><tbody id="sim-assets"></tbody></table></div>
+      <div class="row"><select id="sim-add">${assetOpts}</select><button type="button" class="ghost" id="sim-add-btn">添加标的</button>
+        <button type="button" class="ghost" id="sim-eq-btn">等权</button><button type="button" class="ghost" id="sim-clear-btn">清空</button></div>
+      <div class="row" id="sim-money-row"></div>
+      <h3 style="margin-top:18px">② 策略：之后怎么操作</h3>
+      <div class="sim-strats">${stratRadios}</div>
+      <div class="row" id="sim-freq-box"><label>调整频率 <select id="sim-freq">${[["M", "每月"], ["Q", "每季"], ["Y", "每年"], ["band", "偏离超过阈值时（每周检查）"]].map(([k, n]) => `<option value="${k}" ${k === cfg.freq ? "selected" : ""}>${n}</option>`).join("")}</select></label>
         <label id="sim-band-l">阈值 <input type="number" id="sim-band" min="1" max="30" value="${Math.round(cfg.band * 100)}" style="width:60px"> 个百分点</label></div>
-      <h4>风控叠加（可多选）</h4>
-      <div class="row"><label><input type="checkbox" id="sim-trend" ${cfg.overlays.trend ? "checked" : ""}> ${SIM_OVERLAYS.trend.name}</label>
-        <label><input type="checkbox" id="sim-vt-on" ${cfg.overlays.volTarget > 0 ? "checked" : ""}> ${SIM_OVERLAYS.volTarget.name} <input type="number" id="sim-vt" min="3" max="40" value="${Math.round((cfg.overlays.volTarget || 0.12) * 100)}" style="width:56px">%</label>
-        <label><input type="checkbox" id="sim-stop-on" ${cfg.overlays.stop > 0 ? "checked" : ""}> ${SIM_OVERLAYS.stop.name} <input type="number" id="sim-stop" min="3" max="50" value="${Math.round((cfg.overlays.stop || 0.15) * 100)}" style="width:56px">%</label></div>
+      <div class="row" id="sim-mom-box"><label>持有前 <input type="number" id="sim-topn" min="1" max="20" value="${cfg.topN}" style="width:60px"> 只</label>
+        <label>回看 <input type="number" id="sim-lookback" min="3" max="12" value="${cfg.lookback}" style="width:60px"> 个月（跳过最近 1 个月）</label></div>
+      <div id="sim-sys-box">${sys ? `<div class="table-wrap"><table><thead><tr><th>市场状态</th><th>核心 SPY</th><th>卫星（模型选股）</th><th>对冲 GLD</th><th>现金</th></tr></thead><tbody>${layerRows}</tbody></table></div>
+        <div class="row"><label>卫星选股只数 <input type="number" id="sim-sys-topn" min="1" max="15" value="${cfg.sysTopN || sys.top_n}" style="width:60px"></label></div>` : ""}</div>
+      <details class="howto"><summary>可选：风控叠加（在任何策略之上再加一层风险控制）</summary>
+        <div class="row"><label><input type="checkbox" id="sim-trend" ${cfg.overlays.trend ? "checked" : ""}> ${SIM_OVERLAYS.trend.name}</label>
+          <label><input type="checkbox" id="sim-vt-on" ${cfg.overlays.volTarget > 0 ? "checked" : ""}> ${SIM_OVERLAYS.volTarget.name} <input type="number" id="sim-vt" min="3" max="40" value="${Math.round((cfg.overlays.volTarget || 0.12) * 100)}" style="width:56px">%</label>
+          <label><input type="checkbox" id="sim-stop-on" ${cfg.overlays.stop > 0 ? "checked" : ""}> ${SIM_OVERLAYS.stop.name} <input type="number" id="sim-stop" min="3" max="50" value="${Math.round((cfg.overlays.stop || 0.15) * 100)}" style="width:56px">%</label></div></details>
       <details class="howto"><summary>各策略与风控的逻辑、可靠性说明</summary>${[...Object.values(SIM_STRATEGIES), ...Object.values(SIM_OVERLAYS)].map((s) => `<p><b>${esc(s.name)}</b>：${esc(s.tip)}<br><span class="pos">为什么可能有效：</span>${esc(s.why)}<br><span class="neg">局限：</span>${esc(s.risk)}</p>`).join("")}</details>
-      <h4>资金与区间</h4>
-      <div class="row"><label>初始资金 <input type="number" id="sim-initial" min="100" step="1000" value="${cfg.initial}" style="width:110px"></label>
-        <label>每月定投 <input type="number" id="sim-monthly" min="0" step="100" value="${cfg.monthly}" style="width:90px"></label>
-        <label>成本 <input type="number" id="sim-cost" min="0" max="100" step="1" value="${cfg.costBps}" style="width:56px"> bps（单边）</label></div>
-      <div class="row"><label>开始 <input type="date" id="sim-start" min="${first}" max="${P.dates[P.n - 1]}" value="${esc(cfg.start)}"></label>
-        <label>结束 <input type="date" id="sim-end" min="${first}" max="${P.dates[P.n - 1]}" value="${esc(cfg.end)}"></label>
+      <h3 style="margin-top:18px">③ 区间与资金</h3>
+      <div class="row"><label>开始 <input type="date" id="sim-start" min="${first}" max="${lastDate}" value="${esc(cfg.start)}"></label>
+        <label>结束 <input type="date" id="sim-end" min="${first}" max="${lastDate}" value="${esc(cfg.end)}"></label>
         <div class="seg" id="sim-quick">${[["2016-01-01", "2016 起"], ["2019-01-01", "2019 起（样本外）"], ["3y", "近 3 年"], ["1y", "近 1 年"], ["2022", "2022 熊市"], ["2020", "2020 疫情"]].map(([k, n]) => `<button type="button" data-q="${k}">${n}</button>`).join("")}</div></div>
-      <div class="row">对比：${[["SPY", "SPY"], ["QQQ", "QQQ"], ["bh", "同比例买入持有"]].map(([k, n]) => `<label><input type="checkbox" class="sim-bench" value="${k}" ${cfg.bench.includes(k) ? "checked" : ""}> ${n}</label>`).join("")}
-        <button type="button" id="sim-run" class="primary">运行模拟</button><span class="muted" id="sim-status"></span></div>
+      <div class="row"><label>每月定投 <input type="number" id="sim-monthly" min="0" step="100" value="${cfg.monthly}" style="width:90px"></label>
+        <label>成本 <input type="number" id="sim-cost" min="0" max="100" step="1" value="${cfg.costBps}" style="width:56px"> bps（单边）</label>
+        对比：${[["SPY", "SPY 买入持有"], ["QQQ", "QQQ 买入持有"], ["bh", "起始仓位买入持有"]].map(([k, n]) => `<label><input type="checkbox" class="sim-bench" value="${k}" ${cfg.bench.includes(k) ? "checked" : ""}> ${n}</label>`).join("")}</div>
+      <div class="row"><button type="button" id="sim-run" class="primary">运行模拟</button><span class="muted" id="sim-status"></span></div>
     </section>
     <div id="sim-report"></div>`;
 
   // ---------- 表单状态 ----------
-  let weights = { ...cfg.weights };
+  let posMode = cfg.posMode === "shares" ? "shares" : "weight";
+  let weights = { ...(cfg.weights || {}) };
+  let shares = { ...(cfg.shares || {}) };
+  let cash = cfg.cash || 0;
+  const priceAtStart = (t) => {
+    const s = Math.max(Sim.indexOnOrAfter(P, byId("sim-start").value || cfg.start), P.backtestStart, 1);
+    return lastRawClose(P, raw, t, s - 1);
+  };
   const drawAssets = () => {
-    const rows = Object.entries(weights).map(([t, w]) => `<tr><td>${esc(tickerLabel(t) || t)}</td><td><input type="number" class="sim-w" data-t="${t}" min="0" max="100" step="1" value="${+(w * 100).toFixed(1)}" style="width:72px"> %</td>
-      <td><button type="button" class="ghost sim-del" data-t="${t}">移除</button></td></tr>`).join("");
+    document.querySelectorAll("#sim-posmode button").forEach((b) => b.classList.toggle("on", b.dataset.m === posMode));
+    byId("sim-posmode-tip").textContent = posMode === "weight" ? "填写各标的占总资产的比例，其余为现金" : "填写开始日持有的股数（按拆股调整后的口径）与现金，按开始日收盘价折算市值与比例";
+    const list = posMode === "weight" ? weights : shares;
+    const rows = Object.entries(list).map(([t, v]) => {
+      const input = posMode === "weight"
+        ? `<input type="number" class="sim-w" data-t="${t}" min="0" max="100" step="1" value="${+(v * 100).toFixed(1)}" style="width:72px"> %`
+        : `<input type="number" class="sim-w" data-t="${t}" min="0" step="1" value="${v}" style="width:90px"> 股 <span class="muted">≈ ${(() => { const p = priceAtStart(t); return Number.isFinite(p) ? (v * p).toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "开始日无价格"; })()}</span>`;
+      return `<tr><td>${esc(nameOf(t))}</td><td>${input}</td><td><button type="button" class="ghost sim-del" data-t="${t}">移除</button></td></tr>`;
+    }).join("");
     byId("sim-assets").innerHTML = rows || `<tr><td class="muted">尚未添加标的（全部为现金）</td></tr>`;
-    const s = Object.values(weights).reduce((a, b) => a + b, 0);
-    byId("sim-sum").innerHTML = `合计 ${pct(s, 0)}，现金 ${pct(Math.max(0, 1 - s), 0)}${s > 1.0001 ? ' <span class="neg">（超过 100%，运行时按比例缩放）</span>' : ""}`;
-    document.querySelectorAll(".sim-w").forEach((el) => (el.onchange = () => { weights[el.dataset.t] = Math.max(0, +el.value || 0) / 100; drawAssets(); }));
-    document.querySelectorAll(".sim-del").forEach((el) => (el.onclick = () => { delete weights[el.dataset.t]; drawAssets(); }));
+    if (posMode === "weight") {
+      const s = Object.values(weights).reduce((a, b) => a + b, 0);
+      byId("sim-money-row").innerHTML = `<label>初始资金 <input type="number" id="sim-initial" min="100" step="1000" value="${cfg.initial}" style="width:120px"></label>
+        <span class="muted">比例合计 ${pct(s, 0)}，现金 ${pct(Math.max(0, 1 - s), 0)}${s > 1.0001 ? '（超过 100%，运行时按比例缩放）' : ""}</span>`;
+      byId("sim-initial").onchange = (e) => { cfg.initial = +e.target.value || 100000; };
+    } else {
+      const tot = Object.entries(shares).reduce((a, [t, n]) => { const p = priceAtStart(t); return a + (Number.isFinite(p) ? n * p : 0); }, 0) + cash;
+      byId("sim-money-row").innerHTML = `<label>现金 <input type="number" id="sim-cash" min="0" step="100" value="${cash}" style="width:120px"></label>
+        <span class="muted">按开始日（${esc(byId("sim-start").value || cfg.start)}）收盘价折算的起始市值 ≈ ${tot.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}</span>`;
+      byId("sim-cash").onchange = (e) => { cash = Math.max(0, +e.target.value || 0); drawAssets(); };
+    }
+    document.querySelectorAll(".sim-w").forEach((el) => (el.onchange = () => {
+      if (posMode === "weight") weights[el.dataset.t] = Math.max(0, +el.value || 0) / 100; else shares[el.dataset.t] = Math.max(0, +el.value || 0);
+      drawAssets();
+    }));
+    document.querySelectorAll(".sim-del").forEach((el) => (el.onclick = () => { delete (posMode === "weight" ? weights : shares)[el.dataset.t]; drawAssets(); }));
   };
-  const syncMode = () => {
-    const m = byId("sim-mode").value;
-    const s = SIM_STRATEGIES[m];
-    byId("sim-mode-tip").textContent = s.tip;
-    byId("sim-assets-box").style.display = m.startsWith("system") ? "none" : "";
-    byId("sim-mom-box").style.display = m === "momentum" ? "" : "none";
-    byId("sim-sys-box").style.display = m === "system_custom" ? "" : "none";
-    byId("sim-reb-box").style.display = m.startsWith("system") ? "none" : "";
-    byId("sim-band-l").style.display = byId("sim-reb").value === "band" ? "" : "none";
+  const syncStrategy = () => {
+    const k = document.querySelector('input[name="sim-strat"]:checked')?.value || "hold";
+    byId("sim-freq-box").style.display = ["rebalance", "invvol", "momentum"].includes(k) ? "" : "none";
+    byId("sim-band-l").style.display = k === "rebalance" && byId("sim-freq").value === "band" ? "" : "none";
+    [...byId("sim-freq").options].forEach((o) => { o.disabled = o.value === "band" && k !== "rebalance"; });
+    byId("sim-mom-box").style.display = k === "momentum" ? "" : "none";
+    byId("sim-sys-box").style.display = k === "system_custom" ? "" : "none";
   };
-  byId("sim-mode").onchange = syncMode;
-  byId("sim-reb").onchange = syncMode;
-  byId("sim-add-btn").onclick = () => { const t = byId("sim-add").value; if (!(t in weights)) weights[t] = 0.1; drawAssets(); };
-  byId("sim-eq-btn").onclick = () => { const k = Object.keys(weights); k.forEach((t) => (weights[t] = 1 / k.length)); drawAssets(); };
-  byId("sim-clear-btn").onclick = () => { weights = {}; drawAssets(); };
+  document.querySelectorAll('input[name="sim-strat"]').forEach((el) => (el.onchange = syncStrategy));
+  byId("sim-freq").onchange = syncStrategy;
+  document.querySelectorAll("#sim-posmode button").forEach((b) => (b.onclick = () => { posMode = b.dataset.m; drawAssets(); }));
+  byId("sim-start").onchange = () => { if (posMode === "shares") drawAssets(); };
+  byId("sim-add-btn").onclick = () => {
+    const t = byId("sim-add").value;
+    if (posMode === "weight") { if (!(t in weights)) weights[t] = 0.1; } else if (!(t in shares)) shares[t] = 10;
+    drawAssets();
+  };
+  byId("sim-eq-btn").onclick = () => {
+    if (posMode !== "weight") { byId("sim-tpl-msg").textContent = "等权仅用于按比例输入"; return; }
+    const k = Object.keys(weights); k.forEach((t) => (weights[t] = 1 / k.length)); drawAssets();
+  };
+  byId("sim-clear-btn").onclick = () => { if (posMode === "weight") weights = {}; else { shares = {}; cash = 0; } drawAssets(); };
   byId("sim-tpl").onchange = (e) => {
     const k = e.target.value;
-    if (k === "mine") {
+    const msg = byId("sim-tpl-msg");
+    msg.textContent = "";
+    const eq = (list) => Object.fromEntries(list.map((t) => [t, 1 / list.length]));
+    if (k === "mine" || k === "mine_shares") {
       const hh = loadHoldings();
-      const last = (t) => { const c = SIM_DATA.raw.close[t]; if (!c) return null; for (let i = c.length - 1; i >= 0; i--) if (c[i] != null) return c[i]; return null; };
-      const vals = Object.entries(hh?.positions || {}).map(([t, s]) => [t, s * (last(t) || 0)]).filter(([, v]) => v > 0);
-      const skipped = Object.keys(hh?.positions || {}).filter((t) => !last(t));
-      const tot = vals.reduce((a, [, v]) => a + v, 0) + (hh?.cash || 0);
-      weights = tot > 0 ? Object.fromEntries(vals.map(([t, v]) => [t, v / tot])) : {};
-      byId("sim-mode-tip").textContent = hh ? `已载入本机持仓（按最新价格折算比例${skipped.length ? `；${skipped.join("、")} 无历史数据，按现金处理` : ""}）` : "本机没有保存持仓：请先在“我的持仓”页填写";
-      drawAssets();
-      return;
-    }
-    if (k === "system_now" && sys) weights = { ...sys.targets[sys.targets.length - 1] };
-    else if (k === "pool_ew") { const u = META.universe.map((x) => x.ticker); weights = Object.fromEntries(u.map((t) => [t, 1 / u.length])); }
-    else if (k === "ai_infra") { const u = META.universe.filter((x) => x.theme === "ai_infrastructure").map((x) => x.ticker); weights = Object.fromEntries(u.map((t) => [t, 1 / u.length])); }
-    else if (k === "semis") { const u = META.universe.filter((x) => x.theme === "semis" || x.theme === "semiconductors").map((x) => x.ticker); weights = Object.fromEntries(u.map((t) => [t, 1 / u.length])); }
-    else if (SIM_TEMPLATES[k]?.weights) weights = { ...SIM_TEMPLATES[k].weights };
-    if (k && byId("sim-mode").value.startsWith("system")) byId("sim-mode").value = "fixed";
-    syncMode(); drawAssets();
+      if (!hh) { msg.textContent = "本机没有“我的持仓”：请先在“我的持仓”页填写并保存"; return; }
+      if (k === "mine_shares") {
+        posMode = "shares"; shares = { ...hh.positions }; cash = hh.cash || 0;
+        msg.textContent = "已按股数载入：表示“开始日就持有这些股数”，市值按开始日价格计算";
+      } else {
+        const vals = Object.entries(hh.positions).map(([t, n]) => [t, n * lastRawClose(P, raw, t, P.n - 1)]).filter(([, v]) => v > 0);
+        const skipped = Object.keys(hh.positions).filter((t) => !P.C[t]);
+        const tot = vals.reduce((a, [, v]) => a + v, 0) + (hh.cash || 0);
+        posMode = "weight"; weights = Object.fromEntries(vals.map(([t, v]) => [t, v / tot])); cfg.initial = Math.round(tot);
+        msg.textContent = `已按当前市值比例载入（初始资金 = 当前总资产 ${Math.round(tot).toLocaleString("zh-CN")}）${skipped.length ? `；${skipped.join("、")} 无历史数据，按现金处理` : ""}`;
+      }
+    } else if (k === "recon") {
+      const st = loadReconStart();
+      if (!st) { msg.textContent = "还没有对账起始持仓：请先在“实盘对账”标签设置"; return; }
+      posMode = "shares"; shares = { ...st.positions }; cash = st.cash || 0; byId("sim-start").value = st.date;
+      msg.textContent = `已载入 ${st.date} 的对账起始持仓，并把开始日期设为该日`;
+    } else if (k === "system_now" && sys) { posMode = "weight"; weights = { ...sys.targets[sys.targets.length - 1] }; }
+    else if (k === "pool_ew") { posMode = "weight"; weights = eq(META.universe.map((x) => x.ticker)); }
+    else if (k === "semis") { posMode = "weight"; weights = eq(META.universe.filter((x) => x.theme === "semiconductors").map((x) => x.ticker)); }
+    else if (k === "ai_infra") { posMode = "weight"; weights = eq(META.universe.filter((x) => x.theme === "ai_infrastructure").map((x) => x.ticker)); }
+    else if (SIM_TEMPLATES[k]?.weights) { posMode = "weight"; weights = { ...SIM_TEMPLATES[k].weights }; }
+    drawAssets();
   };
   document.querySelectorAll("#sim-quick button").forEach((b) => (b.onclick = () => {
-    const last = P.dates[P.n - 1], q = b.dataset.q;
-    const back = (y) => { const d = new Date(last); d.setFullYear(d.getFullYear() - y); return d.toISOString().slice(0, 10); };
-    const [s, e] = q === "3y" ? [back(3), last] : q === "1y" ? [back(1), last] : q === "2022" ? ["2022-01-01", "2022-12-31"] : q === "2020" ? ["2020-01-01", "2020-12-31"] : [q, last];
+    const q = b.dataset.q;
+    const back = (y) => { const d = new Date(lastDate); d.setFullYear(d.getFullYear() - y); return d.toISOString().slice(0, 10); };
+    const [s, e] = q === "3y" ? [back(3), lastDate] : q === "1y" ? [back(1), lastDate] : q === "2022" ? ["2022-01-01", "2022-12-31"] : q === "2020" ? ["2020-01-01", "2020-12-31"] : [q, lastDate];
     byId("sim-start").value = s < first ? first : s; byId("sim-end").value = e;
+    if (posMode === "shares") drawAssets();
   }));
-  drawAssets(); syncMode();
+  drawAssets(); syncStrategy();
 
   const readCfg = () => {
     const c = {
-      mode: byId("sim-mode").value, weights: { ...weights }, rebalance: byId("sim-reb").value, band: (+byId("sim-band").value || 5) / 100,
-      topN: +byId("sim-topn").value || 3, momentumLookback: +byId("sim-lookback").value || 12,
+      v: 2, posMode, weights: { ...weights }, shares: { ...shares }, cash,
+      initial: Math.max(100, +(byId("sim-initial")?.value || cfg.initial) || 100000),
+      strategy: document.querySelector('input[name="sim-strat"]:checked')?.value || "hold",
+      freq: byId("sim-freq").value, band: (+byId("sim-band").value || 5) / 100,
+      topN: +byId("sim-topn").value || 3, lookback: +byId("sim-lookback").value || 12,
       overlays: { trend: byId("sim-trend").checked, trendMA: 200, volTarget: byId("sim-vt-on").checked ? (+byId("sim-vt").value || 12) / 100 : 0,
         stop: byId("sim-stop-on").checked ? (+byId("sim-stop").value || 15) / 100 : 0 },
-      initial: Math.max(100, +byId("sim-initial").value || 100000), monthly: Math.max(0, +byId("sim-monthly").value || 0),
-      start: byId("sim-start").value || first, end: byId("sim-end").value || P.dates[P.n - 1], costBps: Math.max(0, +byId("sim-cost").value || 0),
-      bench: [...document.querySelectorAll(".sim-bench:checked")].map((x) => x.value), layers: null,
+      monthly: Math.max(0, +byId("sim-monthly").value || 0),
+      start: byId("sim-start").value || first, end: byId("sim-end").value || lastDate, costBps: Math.max(0, +byId("sim-cost").value || 0),
+      bench: [...document.querySelectorAll(".sim-bench:checked")].map((x) => x.value), layers: null, sysTopN: null,
     };
-    const s = Object.values(c.weights).reduce((a, b) => a + b, 0);
-    if (s > 1) c.weights = Object.fromEntries(Object.entries(c.weights).map(([t, w]) => [t, w / s]));
-    if (c.mode === "system_custom" && sys) {
+    if (c.strategy === "system_custom" && sys) {
       c.layers = {};
       document.querySelectorAll(".sim-layer").forEach((el) => { (c.layers[el.dataset.rg] ||= {})[el.dataset.k] = Math.max(0, +el.value || 0) / 100; });
       for (const rg of Object.keys(c.layers)) { const t = Object.values(c.layers[rg]).reduce((a, b) => a + b, 0); if (t > 0) for (const k in c.layers[rg]) c.layers[rg][k] /= t; }
@@ -189,23 +291,35 @@ PAGES.sim = async (r) => {
 // ---------------- 运行与报告 ----------------
 function simRun(P, sys, c, override = {}) {
   const cc = { ...c, ...override };
-  const strat = Sim.makeStrategy(P, { ...cc, topN: cc.mode === "system_custom" ? cc.sysTopN : cc.topN }, sys);
-  const start = Math.max(Sim.indexOnOrAfter(P, cc.start), P.backtestStart, 1);
+  const { raw } = SIM_DATA;
+  const sp = cc.startPos || simStartPosition(P, raw, cc);
+  const strat = Sim.makeStrategy(P, simEngineCfg(cc, sp.weights), sys);
   const end = Sim.indexOnOrBefore(P, cc.end);
-  if (end - start < 5) throw new Error("区间太短（至少一周）");
-  const res = Sim.run(P, strat, { start, end, costBps: cc.costBps, initial: cc.initial, monthly: cc.monthly });
-  return { res, m: Sim.metrics(P, res) };
+  if (end - sp.s < 5) throw new Error("区间太短（至少一周）");
+  const res = Sim.run(P, strat, { start: sp.s, end, costBps: cc.costBps, initial: sp.initial, monthly: cc.monthly, initialWeights: sp.weights });
+  return { res, m: Sim.metrics(P, res), sp };
+}
+function simSummary(c, sp, res) {
+  const strat = SIM_STRATEGIES[c.strategy]?.name || c.strategy;
+  const freq = { M: "每月", Q: "每季", Y: "每年", band: `偏离超过 ${Math.round(c.band * 100)} 个百分点时` }[c.freq];
+  const detail = c.strategy === "rebalance" ? `（${freq}调回起始比例）` : ["invvol", "momentum"].includes(c.strategy) ? `（${freq}调整${c.strategy === "momentum" ? `，持有前 ${c.topN} 只` : ""}）` : "";
+  const top = Object.entries(sp.weights).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([t, w]) => `${t} ${pct(w, 0)}`).join("、");
+  const cashW = 1 - Object.values(sp.weights).reduce((a, b) => a + b, 0);
+  const ov = [c.overlays.trend && "趋势过滤", c.overlays.volTarget > 0 && `波动率目标 ${Math.round(c.overlays.volTarget * 100)}%`, c.overlays.stop > 0 && `移动止损 ${Math.round(c.overlays.stop * 100)}%`].filter(Boolean);
+  return `从 ${res.dates[0]} 起持有 ${top || "现金"}${Object.keys(sp.weights).length > 5 ? " 等" : ""}${cashW > 0.005 ? `（现金 ${pct(cashW, 0)}）` : ""}，起始资金 ${Math.round(sp.initial).toLocaleString("zh-CN")}；按「${strat}」${detail}${ov.length ? `，叠加${ov.join("、")}` : ""}${c.monthly > 0 ? `，每月定投 ${c.monthly.toLocaleString("zh-CN")}` : ""}，到 ${res.dates[res.dates.length - 1]}：`;
 }
 function renderSimReport(P, sys, c) {
   const main = simRun(P, sys, c);
+  const sp = main.sp;
   const runs = [{ key: "main", name: "你的策略", ...main }];
-  const benchFixed = (w) => ({ mode: "fixed", weights: w, rebalance: "none", overlays: {} });
-  if (c.bench.includes("SPY")) runs.push({ key: "SPY", name: "SPY 买入持有", ...simRun(P, sys, c, benchFixed({ SPY: 1 })) });
-  if (c.bench.includes("QQQ")) runs.push({ key: "QQQ", name: "QQQ 买入持有", ...simRun(P, sys, c, benchFixed({ QQQ: 1 })) });
-  if (c.bench.includes("bh") && !c.mode.startsWith("system") && Object.keys(c.weights).length)
-    runs.push({ key: "bh", name: "同比例买入持有", ...simRun(P, sys, c, benchFixed(c.weights)) });
+  // 对比基准：同一起始资金，开始日直接持有（与主策略口径一致，不计建仓成本）
+  const bench = (w) => ({ strategy: "hold", overlays: {}, startPos: { ...sp, weights: w } });
+  if (c.bench.includes("SPY")) runs.push({ key: "SPY", name: "SPY 买入持有", ...simRun(P, sys, c, bench({ SPY: 1 })) });
+  if (c.bench.includes("QQQ")) runs.push({ key: "QQQ", name: "QQQ 买入持有", ...simRun(P, sys, c, bench({ QQQ: 1 })) });
   const anyOverlay = c.overlays.trend || c.overlays.volTarget > 0 || c.overlays.stop > 0;
-  const noOv = anyOverlay ? simRun(P, sys, c, { overlays: {} }) : null;
+  if (c.bench.includes("bh") && (c.strategy !== "hold" || anyOverlay) && Object.keys(sp.weights).length)
+    runs.push({ key: "bh", name: "起始仓位买入持有", ...simRun(P, sys, c, bench(sp.weights)) });
+  const noOv = anyOverlay ? simRun(P, sys, c, { overlays: {}, startPos: sp }) : null;
   const { res, m } = main;
   const spy = runs.find((x) => x.key === "SPY");
   const money = (v) => `${v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("zh-CN", { maximumFractionDigits: 0 })}`;
@@ -221,8 +335,10 @@ function renderSimReport(P, sys, c) {
   const contrib = Object.entries(res.pnl).filter(([, v]) => Math.abs(v) > 1).sort((a, b) => b[1] - a[1]);
   if (contrib.length && pnlTotal > 0) {
     const [t, v] = contrib[0];
-    ins.push({ level: v / pnlTotal > 0.5 ? "medium" : "info", kind: "simulated", target: "c-sim-contrib",
-      text: `盈亏贡献最大：${t}（${money(v)}，占总盈亏 ${pct(v / pnlTotal, 0)}）${v / pnlTotal > 0.5 ? "——结果高度依赖单一标的" : ""}。` });
+    const isStock = P.assets.find((x) => x.ticker === t)?.kind === "stock";
+    const conc = v / pnlTotal > 0.5 && isStock;
+    ins.push({ level: conc ? "medium" : "info", kind: "simulated", target: "c-sim-contrib",
+      text: `盈亏贡献最大：${t}（${money(v)}，占总盈亏 ${pct(v / pnlTotal, 0)}）${conc ? "——结果高度依赖单一个股" : ""}。` });
   }
   if (m.ddPeak) ins.push({ level: "info", kind: "simulated", target: "c-sim-dd",
     text: `最深回撤从 ${m.ddPeak} 开始、${m.ddTrough} 见底（${pct(m.MaxDrawdown, 1)}），${m.ddRecover ? `${m.ddRecover} 收复` : "区间结束时尚未收复"}。` });
@@ -232,7 +348,8 @@ function renderSimReport(P, sys, c) {
       text: `风控叠加的效果：与不叠加相比，年化 ${d >= 0 ? "+" : ""}${(d * 100).toFixed(1)} 个百分点，最大回撤 ${dd >= 0 ? "减少" : "增加"} ${Math.abs(dd * 100).toFixed(1)} 个百分点。` });
   }
   if (res.costSum / res.invested > 0.01) ins.push({ level: "medium", kind: "simulated", text: `交易成本累计 ${money(res.costSum)}（占投入 ${pct(res.costSum / res.invested, 1)}），年化[[turnover|换手]] ${num(m.Turnover, 1)} 倍。` });
-  const stocks = Object.keys(c.mode.startsWith("system") ? res.pnl : c.weights).filter((t) => P.assets.find((a) => a.ticker === t)?.kind === "stock");
+  const stocks = Object.keys(res.pnl).filter((t) => Math.abs(res.pnl[t]) > 0 && P.assets.find((a) => a.ticker === t)?.kind === "stock");
+  sp.notes.forEach((n) => ins.push({ level: "medium", kind: "simulated", text: n }));
   if (stocks.length) ins.push({ level: "info", kind: "simulated", text: `包含个股：候选股票是今天挑出的公司（[[survivorship|幸存者偏差]]），${c.start < "2019-01-01" ? "且起点较早，" : ""}结果偏乐观。` });
 
   const kpi = (label, val, sub = "") => `<div class="kpi"><span class="muted">${label}</span><b>${val}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
@@ -241,7 +358,8 @@ function renderSimReport(P, sys, c) {
     <td class="num">${pct(x.m.WinRate, 0)}</td><td class="num">${isNum(x.m.Turnover) ? num(x.m.Turnover, 1) : "–"}</td><td class="num">${money(x.res.final)}</td></tr>`;
   byId("sim-report").innerHTML = `
     ${insightBox(ins)}
-    <section class="card"><h3>结果概览（${esc(res.dates[0])} ~ ${esc(res.dates[res.dates.length - 1])}，${num(m.Years, 1)} 年）${badge("simulated")}</h3><div class="kpis">
+    <section class="card"><h3>结果概览（${esc(res.dates[0])} ~ ${esc(res.dates[res.dates.length - 1])}，${num(m.Years, 1)} 年）${badge("simulated")}</h3>
+      <p>${esc(simSummary(c, sp, res))}期末资产 <b>${money(res.final)}</b>，${pnlTotal >= 0 ? "盈利" : "亏损"} <b class="${cls(pnlTotal)}">${money(Math.abs(pnlTotal))}</b>（年化 ${pct(m.CAGR, 1)}，最大回撤 ${pct(m.MaxDrawdown, 1)}）。</p><div class="kpis">
       ${kpi("期末资产", money(res.final), `投入 ${money(res.invested)}`)}${kpi("盈亏", `<span class="${cls(pnlTotal)}">${money(pnlTotal)}</span>`)}
       ${kpi("总收益（时间加权）", pct(m.TotalReturn, 1, true))}${kpi(term("cagr", "年化收益"), pct(m.CAGR, 1))}
       ${kpi(term("drawdown", "最大回撤"), `<span class="neg">${pct(m.MaxDrawdown, 1)}</span>`)}${kpi(term("sharpe", "夏普比率"), num(m.Sharpe, 2))}

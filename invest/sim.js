@@ -249,6 +249,7 @@
      band: 偏离阈值（绝对值，如 0.05）
      topN, momentumLookback(月)
      overlays: { trend: bool, trendMA: 200, volTarget: 0 或年化目标, stop: 0 或回撤比例 }
+     holdStart + initialWeights：起点已持有该仓位（配合 run 的 opts.initialWeights），第一天不调仓
      system / system_custom 需要 sys（sim/system.json）；system_custom 可覆盖 layers（各 regime 四层比例）与 topN */
   function makeStrategy(P, cfg, sys) {
     const ov = cfg.overlays || {};
@@ -341,6 +342,12 @@
             peak[t] = Math.max(peak[t] || 0, P.C[t][i]);
             if (P.C[t][i] < peak[t] * (1 - ov.stop)) { stopped.add(t); stopHit = true; delete peak[t]; }
           }
+        }
+        // holdStart：起点已持有 cfg.initialWeights（由 run 的 initialWeights 建立），第一天不调仓，之后按策略节奏调整
+        if (state.first && cfg.holdStart) {
+          st.lastTarget = cfg.initialWeights || null;
+          lastBase = cfg.initialWeights || null;
+          return null;
         }
         let due;
         if (cfg.mode === "system" || cfg.mode === "system_custom") due = sysIdx[i] != null;

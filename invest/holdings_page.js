@@ -199,7 +199,7 @@ function renderHoldingsReport(s, prices, sugg, sysSet, money) {
       <p>合计买入 ${money(plan.total_buy)}、卖出 ${money(plan.total_sell)}，预估成本 ${num(plan.total_cost, 2)}；调仓后现金 ${money(plan.cash_after)}（建议 ${pct(plan.target_cash_weight, 1)}），与建议的最大偏差 ${pct(plan.max_deviation, 1)}。</p>
       ${Object.keys(plan.unmanaged).length ? `<p class="muted">不参与调仓（系统范围外）：${Object.entries(plan.unmanaged).map(([t, v]) => `${esc(t)} ${money(v)}`).join("、")}</p>` : ""}
       ${plan.no_price.length ? `<p class="warn">缺少价格、未计算：${plan.no_price.join("、")}</p>` : ""}
-      <p class="muted"><a href="#/sim?c=${simEncode({ ...SIM_DEFAULT, weights: Object.fromEntries(rows.filter((r) => isNum(r.v) && prices[r.t]).map((r) => [r.t, r.v / total])), rebalance: "none", start: "2019-01-01" })}">在模拟经营中回测“按当前比例持有”→</a></p></section>`;
+      <p class="muted"><a href="#/sim?c=${simEncode({ ...SIM_DEFAULT, posMode: "weight", weights: Object.fromEntries(rows.filter((r) => isNum(r.v) && prices[r.t]).map((r) => [r.t, r.v / total])), initial: Math.round(total), strategy: "hold", start: "2019-01-01" })}">在模拟经营中回测“按当前比例持有”→</a></p></section>`;
   bindGoto();
   const wr = rows.filter((r) => isNum(r.v)).sort((a, b) => b.v - a.v);
   mkChart(byId("c-h-w"), { tooltip: { trigger: "item", valueFormatter: (v) => money(v) }, legend: { show: false },

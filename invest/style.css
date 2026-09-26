@@ -174,3 +174,9 @@ a.chain-chip:hover { border-color: var(--ink-2); }
   nav { order: 3; flex: 1 0 100%; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
   nav::-webkit-scrollbar { display: none; }
 }
+
+/* ---------- 模拟经营：策略单选 ---------- */
+.sim-strats { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-bottom: 8px; }
+.sim-strat { display: block; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.sim-strat span { display: block; margin: 2px 0 0 22px; font-size: 12px; }
+.sim-strat:has(input:checked) { border-color: #2a78d6; box-shadow: inset 3px 0 0 #2a78d6; background: var(--chip); }
