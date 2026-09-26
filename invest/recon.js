@@ -22,7 +22,11 @@
   const sessionOnOrBefore = (P, d) => { let k = -1; for (let i = 0; i < P.n && P.dates[i] <= d; i++) k = i; return k; };
   const sessionOnOrAfter = (P, d) => P.dates.findIndex((x) => x >= d);
 
-  /* start: {date, positions: {t: 股数}, cash}；trades: [{date, ticker, side: "buy"|"sell", shares, price?, fee?}]
+  const isFlow = (t) => t.side === "deposit" || t.side === "withdraw";
+  const flowAmount = (t) => (t.side === "withdraw" ? -1 : 1) * (t.shares || 0);
+
+  /* start: {date, positions: {t: 股数}, cash}
+     trades: [{date, ticker, side: "buy"|"sell", shares, price?, fee?}]；资金流水：{date, side: "deposit"|"withdraw", ticker: "CASH", shares: 金额}
      opts: {costBps, cashInterest(默认 true), end(日期，默认最新)} */
   function reconcile(P, raw, start, trades, opts = {}) {
     const costBps = opts.costBps ?? 10;
@@ -32,7 +36,7 @@
     const end = opts.end ? sessionOnOrBefore(P, opts.end) : P.n - 1;
     const warnings = [];
     const known = (t) => !!P.C[t];
-    const allTickers = [...new Set([...Object.keys(start.positions), ...trades.map((x) => x.ticker)])];
+    const allTickers = [...new Set([...Object.keys(start.positions), ...trades.filter((x) => !isFlow(x)).map((x) => x.ticker)])];
     const unknown = allTickers.filter((t) => !known(t));
     if (unknown.length) warnings.push(`以下标的没有行情数据，已排除在对账之外：${unknown.join("、")}`);
     const tickers = allTickers.filter(known);
@@ -43,8 +47,17 @@
     const byDay = {};
     const rows = [];
     let before = 0, after = 0;
+    const cashFlows = {};
+    let flowTotal = 0;
+    for (const tr of trades.filter(isFlow)) {
+      const i = sessionOnOrAfter(P, tr.date);
+      if (i < 0 || i > end) { after++; continue; }
+      if (i <= s0) { before++; continue; }
+      cashFlows[i] = (cashFlows[i] || 0) + flowAmount(tr);
+      flowTotal += flowAmount(tr);
+    }
     for (const tr of trades) {
-      if (!known(tr.ticker)) continue;
+      if (isFlow(tr) || !known(tr.ticker)) continue;
       const i = sessionOnOrAfter(P, tr.date);
       if (i < 0 || i > end) { after++; continue; }
       if (i <= s0) { before++; continue; }
@@ -71,6 +84,7 @@
     for (let i = s0 + 1; i <= end; i++) {
       if (cashInterest) { const a = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += a; interest += a; }
       for (const t of tickers) { const d = divAt[t][i]; if (d && shares[t] > 0) { cash += shares[t] * d; dividends += shares[t] * d; } }
+      if (cashFlows[i]) cash += cashFlows[i]; // 资金存入 / 取出：开盘前计入现金（模拟路径同样计入）
       if (byDay[i]) {
         for (const tr of byDay[i]) {
           const o = px[tr.ticker].open(i);
@@ -100,14 +114,15 @@
     tickers.forEach((t) => { const c = px[t].close(s0); if ((start.positions[t] || 0) > 0 && Number.isFinite(c)) w0[t] = start.positions[t] * c / start0; });
     const strategy = { assets: tickers, lastTarget: null,
       onClose(i) { const w = postTrade[i + 1]; if (w) this.lastTarget = w; return w || null; } };
-    const res = Sim.run(P, strategy, { start: s0 + 1, end, costBps, initial: start0, initialWeights: w0, monthly: 0 });
+    const res = Sim.run(P, strategy, { start: s0 + 1, end, costBps, initial: start0, initialWeights: w0, monthly: 0, cashFlows });
     const sim = [start0, ...res.value];
     const dates = P.dates.slice(s0, end + 1);
     const total = actual[actual.length - 1] - sim[sim.length - 1];
     const interestDiff = interest - res.interest;
     const feeDiff = -(fees - res.costSum);
     const decomposition = { total, fill: fillDiff, fee: feeDiff, interest: interestDiff, other: total - fillDiff - feeDiff - interestDiff };
-    return { dates, actual, sim, rows, decomposition, warnings, dividends, interest, fees, model_cost: res.costSum,
+    const flowList = Object.entries(cashFlows).map(([i, a]) => ({ date: P.dates[+i], amount: a }));
+    return { dates, actual, sim, rows, decomposition, warnings, dividends, interest, fees, model_cost: res.costSum, flows: flowList, flow_total: flowTotal,
       final_positions: { ...shares }, final_cash: cash, start_value: start0 };
   }
 
@@ -121,7 +136,15 @@
       if (p.length === 1) p = line.split(",");
       p = p.map((x) => x.replace(/,$/, "").trim()).filter(Boolean);
       const date = (p[0] || "").replace(/\//g, "-");
-      const side = { 买: "buy", 买入: "buy", buy: "buy", b: "buy", 卖: "sell", 卖出: "sell", sell: "sell", s: "sell" }[(p[1] || "").toLowerCase()];
+      const side = { 买: "buy", 买入: "buy", buy: "buy", b: "buy", 卖: "sell", 卖出: "sell", sell: "sell", s: "sell",
+        存入: "deposit", 转入: "deposit", 入金: "deposit", deposit: "deposit", 取出: "withdraw", 转出: "withdraw", 出金: "withdraw", withdraw: "withdraw" }[(p[1] || "").toLowerCase()];
+      if (side === "deposit" || side === "withdraw") {
+        const amt = parseFloat((p[2] || "").replace(/[$,]/g, ""));
+        if (!/^\d{4}-\d{1,2}-\d{1,2}$/.test(date) || !(amt > 0)) { errors.push(`第 ${k + 1} 行无法识别：${rawLine}`); continue; }
+        const [y2, m2, d2] = date.split("-");
+        out.push({ date: `${y2}-${m2.padStart(2, "0")}-${d2.padStart(2, "0")}`, side, ticker: "CASH", shares: amt, price: null, fee: 0 });
+        continue;
+      }
       const ticker = (p[2] || "").toUpperCase().replace(/\./g, "-");
       const shares = parseFloat((p[3] || "").replace(/,/g, ""));
       if (!/^\d{4}-\d{1,2}-\d{1,2}$/.test(date) || !side || !/^[A-Z0-9^][A-Z0-9\-=^]{0,11}$/.test(ticker) || !(shares > 0)) {
@@ -140,13 +163,14 @@
     const pos = { ...positions };
     let c = cash;
     for (const tr of trades) {
+      if (isFlow(tr)) { c += flowAmount(tr); continue; }
       const sign = tr.side === "sell" ? -1 : 1;
       pos[tr.ticker] = (pos[tr.ticker] || 0) + sign * tr.shares;
       if (tr.price > 0) c -= sign * tr.shares * tr.price;
       c -= tr.fee || 0;
       if (Math.abs(pos[tr.ticker]) < 1e-9) delete pos[tr.ticker];
     }
-    return { positions: pos, cash: c, missingPrice: trades.filter((t) => !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
+    return { positions: pos, cash: c, missingPrice: trades.filter((t) => !isFlow(t) && !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
   }
 
   /* 由当前持仓倒推过去某日的持仓：撤销 (fromDate, toDate] 之间的交易。
@@ -156,6 +180,7 @@
     let c = cash;
     const used = trades.filter((t) => t.date > fromDate && (!toDate || t.date <= toDate));
     for (const tr of used) {
+      if (isFlow(tr)) { c -= flowAmount(tr); continue; }
       const sign = tr.side === "sell" ? -1 : 1;
       pos[tr.ticker] = (pos[tr.ticker] || 0) - sign * tr.shares;
       if (tr.price > 0) c += sign * tr.shares * tr.price;
@@ -164,7 +189,7 @@
     const negative = Object.entries(pos).filter(([, s]) => s < -1e-9).map(([t]) => t);
     for (const t of Object.keys(pos)) if (Math.abs(pos[t]) < 1e-9) delete pos[t];
     return { positions: pos, cash: c, used: used.length, negative,
-      missingPrice: used.filter((t) => !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
+      missingPrice: used.filter((t) => !isFlow(t) && !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
   }
 
   const api = { reconcile, parseTrades, applyTrades, reverseTrades, rawPrice };

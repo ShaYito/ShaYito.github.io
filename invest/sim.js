@@ -57,7 +57,8 @@
   /* strategy: { assets: [...], onClose(i, state) → 目标权重对象 | null, lastTarget }
      opts: { start, end, costBps, initial, monthly, initialWeights }
        —— start 为第一个可成交日（信号取 start-1 收盘）
-       —— initialWeights：起点（start-1 收盘）直接持有这些比例、不计建仓成本（实盘对账用） */
+       —— initialWeights：起点（start-1 收盘）直接持有这些比例、不计建仓成本（实盘对账用）
+       —— cashFlows：{交易日索引: 金额}，当天开盘前存入（正）/ 取出（负）现金，按单位净值调整份额，不自动投资 */
   function run(P, strategy, opts) {
     const assets = strategy.assets;
     const m = assets.length;
@@ -83,9 +84,17 @@
     for (let i = start; i <= end; i++) {
       if (i > start || held0) { const acc = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += acc; interest += acc; }
       const contribute = i > start && opts.monthly > 0 && P.dates[i].slice(0, 7) !== P.dates[i - 1].slice(0, 7);
-      const atOpen = !!pending || contribute;
+      const flow = (opts.cashFlows && opts.cashFlows[i]) || 0;
+      const atOpen = !!pending || contribute || flow !== 0;
       // 需要在开盘成交的日子：先把持仓重估到开盘价
       if (atOpen && (i > start || held0)) for (let j = 0; j < m; j++) { const nv = v[j] * ratio(O[j][i], C[j][i - 1]); pnl[j] += nv - v[j]; v[j] = nv; }
+      if (flow !== 0) {
+        const navOpen = v.reduce((a, b) => a + b, 0) + cash;
+        units += navOpen > 0 ? flow * units / navOpen : 0;
+        cash += flow;
+        invested += flow;
+        flows.push({ date: P.dates[i], amount: flow, external: true });
+      }
       if (contribute) {
         const navOpen = v.reduce((a, b) => a + b, 0) + cash;
         units += opts.monthly * units / navOpen;

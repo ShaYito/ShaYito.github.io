@@ -92,7 +92,11 @@ function reconSnapshots(P, raw) {
       const a = Recon.applyTrades(st.positions, st.cash || 0, upto);
       positions = a.positions; cash = a.cash; note = "（现金未含分红与利息）";
     }
-    out.push({ label: `${d} 调仓后（${trades.filter((t) => t.date === d).length} 笔）${note}`, date: d, positions, cash: Math.max(0, cash) });
+    const dayT = trades.filter((t) => t.date === d);
+    const nFlow = dayT.filter((t) => t.side === "deposit" || t.side === "withdraw").length;
+    const nTrade = dayT.length - nFlow;
+    const what = [nTrade && `${nTrade} 笔交易`, nFlow && `${nFlow} 笔资金进出`].filter(Boolean).join("、");
+    out.push({ label: `${d} ${nTrade ? "调仓后" : "资金变动后"}（${what}）${note}`, date: d, positions, cash: Math.max(0, cash) });
   }
   return out;
 }
@@ -526,6 +530,7 @@ const RECON_HOWTO = [
   "用你的真实调仓来检验模拟运算：从一份“起始持仓”出发，录入之后每一笔实际交易（日期、买卖、股数、成交价、费用），系统同时计算两条资产曲线——",
   "① 实际：按原始股价估值，按你的成交价与费用成交，除息日收到现金分红；② 模拟：同一起始持仓、在同一天调到同样的比例，但按模拟经营的规则成交（当天开盘价、单边 0.1% 成本、分红再投资）。",
   "两条曲线的差额被拆成：成交价差（你的成交价 vs 当天开盘价）、费用差（实际费用 vs 模拟成本假设）、现金利息差、其他（差额在之后的复利、分红到账方式、整股等）。没有交易时两条曲线应完全一致；差额主要来自成交价和费用，说明模拟的规则是对的，只是成交假设和你的实际不同。",
+  "期间有资金转入转出时，在交易记录里选“存入现金 / 取出现金”并填金额：它在当天开盘前同时计入实际与模拟两条曲线，不会被算成差额。",
   "数据只保存在本机浏览器。录完交易后可点“应用到我的持仓”更新股数与现金，再到“我的持仓”页同步到后台（现金请以券商显示为准）。",
 ];
 function loadTrades() { try { return JSON.parse(localStorage.getItem(TRADES_KEY) || "[]"); } catch { return []; } }
@@ -562,12 +567,12 @@ async function renderRecon() {
       <p class="muted">起始持仓与“我的持仓”分开保存。倒推 = 用“我的持仓”（${mine ? `${esc(mine.date)} 的持仓` : "尚未填写"}）撤销该日期之后、${mine ? esc(mine.date) : "当前"}之前的交易记录，现金按成交价与费用反推；请先录入这段时间的全部交易。</p></section>
     <section class="card"><h3>交易记录 ${badge("fact")}</h3>
       <div class="table-wrap"><table><thead><tr><th>日期</th><th>方向</th><th>代码</th><th class="num">股数</th><th class="num">成交价</th><th class="num">费用</th><th></th></tr></thead><tbody id="rc-rows"></tbody></table></div>
-      <div class="row"><input type="date" id="rc-d" value="${esc(P.dates[P.n - 1])}"><select id="rc-side"><option value="buy">买入</option><option value="sell">卖出</option></select>
+      <div class="row"><input type="date" id="rc-d" value="${esc(P.dates[P.n - 1])}"><select id="rc-side"><option value="buy">买入</option><option value="sell">卖出</option><option value="deposit">存入现金</option><option value="withdraw">取出现金</option></select>
         <input type="text" id="rc-t" placeholder="代码" style="width:90px"><input type="number" id="rc-n" placeholder="股数" min="0" step="1" style="width:90px">
         <input type="number" id="rc-p" placeholder="成交价" min="0" step="0.01" style="width:100px"><input type="number" id="rc-f" placeholder="费用" min="0" step="0.01" style="width:80px">
         <button type="button" class="ghost" id="rc-add">添加</button></div>
-      <details class="howto"><summary>粘贴导入（每行“日期 买/卖 代码 股数 成交价 费用”）</summary>
-        <textarea id="rc-paste" rows="4" style="width:100%" placeholder="2026-09-29 买 NVDA 10 180.50 1.00\n2026-09-29 卖 SPY 5 700.20 0.50"></textarea>
+      <details class="howto"><summary>粘贴导入（每行“日期 买/卖 代码 股数 成交价 费用”；资金写“日期 存入/取出 金额”）</summary>
+        <textarea id="rc-paste" rows="5" style="width:100%" placeholder="2026-09-29 买 NVDA 10 180.50 1.00\n2026-09-29 卖 SPY 5 700.20 0.50\n2026-10-01 存入 5000\n2026-10-15 取出 2000"></textarea>
         <div class="row"><button type="button" class="ghost" id="rc-paste-btn">解析并追加</button><span class="muted" id="rc-paste-msg"></span></div></details>
       <div class="row"><label title="模拟那条曲线每笔买卖按成交额扣除的成本比例，不是某一笔交易的费用">模拟成本假设 <input type="number" id="rc-cost" min="0" max="100" value="10" style="width:56px"> bps</label>
         <label><input type="checkbox" id="rc-int" checked> 现金计息（放在 SPAXX 等货币基金中）</label>
@@ -579,12 +584,29 @@ async function renderRecon() {
     <div id="rc-report"></div>`;
   const draw = () => {
     trades.sort((a, b) => a.date.localeCompare(b.date));
-    byId("rc-rows").innerHTML = trades.map((t, i) => `<tr><td>${esc(t.date)}</td><td class="${t.side === "buy" ? "pos" : "neg"}">${t.side === "buy" ? "买入" : "卖出"}</td>
-      <td><b>${esc(t.ticker)}</b></td><td class="num">${t.shares}</td><td class="num">${t.price > 0 ? num(t.price, 2) : "开盘价"}</td><td class="num">${num(t.fee || 0, 2)}</td>
+    const SIDE = { buy: ["买入", "pos"], sell: ["卖出", "neg"], deposit: ["存入现金", "pos"], withdraw: ["取出现金", "neg"] };
+    const flowSide = (t) => t.side === "deposit" || t.side === "withdraw";
+    byId("rc-rows").innerHTML = trades.map((t, i) => `<tr><td>${esc(t.date)}</td><td class="${SIDE[t.side]?.[1] || ""}">${SIDE[t.side]?.[0] || esc(t.side)}</td>
+      <td><b>${flowSide(t) ? "现金" : esc(t.ticker)}</b></td><td class="num">${flowSide(t) ? `金额 ${money(t.shares)}` : t.shares}</td>
+      <td class="num">${flowSide(t) ? "–" : t.price > 0 ? num(t.price, 2) : "开盘价"}</td><td class="num">${flowSide(t) ? "–" : num(t.fee || 0, 2)}</td>
       <td><button type="button" class="ghost rc-del" data-i="${i}">删除</button></td></tr>`).join("") || `<tr><td colspan="7" class="muted">还没有交易记录</td></tr>`;
     document.querySelectorAll(".rc-del").forEach((b) => (b.onclick = () => { trades.splice(+b.dataset.i, 1); saveTrades(trades); draw(); }));
   };
+  const syncSide = () => {
+    const f = ["deposit", "withdraw"].includes(byId("rc-side").value);
+    byId("rc-t").disabled = f; byId("rc-p").disabled = f; byId("rc-f").disabled = f;
+    byId("rc-t").placeholder = f ? "现金" : "代码"; byId("rc-n").placeholder = f ? "金额" : "股数";
+  };
+  byId("rc-side").onchange = syncSide;
   byId("rc-add").onclick = () => {
+    const side = byId("rc-side").value;
+    if (side === "deposit" || side === "withdraw") {
+      const amt = +byId("rc-n").value;
+      if (!(amt > 0)) { byId("rc-msg").textContent = "请填写金额"; return; }
+      trades.push({ date: byId("rc-d").value, side, ticker: "CASH", shares: amt, price: null, fee: 0 });
+      saveTrades(trades); draw(); byId("rc-msg").textContent = ""; byId("rc-n").value = "";
+      return;
+    }
     const t = byId("rc-t").value.trim().toUpperCase().replace(/\./g, "-"), n = +byId("rc-n").value;
     if (!/^[A-Z0-9^][A-Z0-9\-=^]{0,11}$/.test(t) || !(n > 0)) { byId("rc-msg").textContent = "请填写代码与股数"; return; }
     trades.push({ date: byId("rc-d").value, side: byId("rc-side").value, ticker: t, shares: n, price: +byId("rc-p").value || null, fee: +byId("rc-f").value || 0 });
@@ -660,7 +682,7 @@ async function renderRecon() {
       renderReconReport(out, money);
     } catch (e) { console.error(e); byId("rc-msg").textContent = `对账失败：${e.message}`; }
   };
-  draw();
+  draw(); syncSide();
   if (start) byId("rc-run").click();
 }
 
@@ -669,6 +691,7 @@ function renderReconReport(out, money) {
   const last = out.actual.length - 1;
   const rel = d.total / out.sim[last];
   const ins = [];
+  if (out.flows.length) ins.push({ level: "info", kind: "fact", text: `期间资金净${out.flow_total >= 0 ? "存入" : "取出"} ${money(Math.abs(out.flow_total))}（${out.flows.map((f) => `${f.date} ${f.amount >= 0 ? "+" : ""}${money(f.amount)}`).join("，")}），实际与模拟两条曲线同时计入。` });
   ins.push({ level: Math.abs(rel) < 0.002 ? "good" : "info", kind: "derived",
     text: `实际期末资产 ${money(out.actual[last])}，模拟 ${money(out.sim[last])}，相差 ${money(d.total)}（${(rel * 100).toFixed(2)}%）。` });
   if (out.rows.length) {
@@ -687,7 +710,8 @@ function renderReconReport(out, money) {
       <div class="kpi"><span class="muted">实际期末资产</span><b>${money(out.actual[last])}</b></div>
       <div class="kpi"><span class="muted">模拟期末资产</span><b>${money(out.sim[last])}</b></div>
       <div class="kpi"><span class="muted">差额（实际 − 模拟）</span><b class="${cls(d.total)}">${money(d.total)}</b><span class="muted">${(rel * 100).toFixed(2)}%</span></div>
-      <div class="kpi"><span class="muted">期间分红 / 利息</span><b>${money(out.dividends)} / ${money(out.interest)}</b></div></div>
+      <div class="kpi"><span class="muted">期间分红 / 利息</span><b>${money(out.dividends)} / ${money(out.interest)}</b></div>
+      ${out.flows.length ? `<div class="kpi"><span class="muted">资金净存入（${out.flows.length} 笔）</span><b class="${cls(out.flow_total)}">${money(out.flow_total)}</b><span class="muted">两条曲线同时计入，不影响差额</span></div>` : ""}</div>
       <div class="grid two"><div>${chartDiv("c-rc-nav")}</div><div>${chartDiv("c-rc-dec")}</div></div></section>
     ${out.rows.length ? card("逐笔对比：你的成交 vs 模拟假设", `<div class="table-wrap"><table><thead><tr><th>日期</th><th>方向</th><th>代码</th><th class="num">股数</th><th class="num">成交价</th><th class="num">当天开盘价</th><th class="num">价差（bps）</th><th class="num">实际费用</th><th class="num">模拟成本</th></tr></thead>
       <tbody>${out.rows.map((r) => `<tr><td>${esc(r.date)}</td><td>${r.side === "buy" ? "买入" : "卖出"}</td><td><b>${esc(r.ticker)}</b></td><td class="num">${r.shares}</td>
