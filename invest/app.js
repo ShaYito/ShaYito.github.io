@@ -952,17 +952,27 @@ function drawSegGraph(el, t, g, sc) {
   c?.on("click", (p) => { if (p.dataType === "node" && p.data.kind === "other" && META.universe.some((u) => u.ticker === p.data.ticker)) location.hash = `#/stock/${p.data.ticker}`; });
 }
 
+function stockSidebar(cur) {
+  const groups = META.themes.map((th) => {
+    const items = META.universe.filter((u) => u.theme === th.key).map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}`)}">
+      <span class="dot" style="background:${themeColor(th.key)}"></span>${u.held ? "● " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
+    return `<h4>${esc(th.name)}</h4>${items}`;
+  }).join("");
+  return `<aside class="stock-side" aria-label="选择股票">${groups}</aside>`;
+}
 PAGES.stock = async (r) => {
   const t = r.arg || META.universe.find((u) => u.held)?.ticker || META.universe[0].ticker;
   const s = await load(`stocks/${t}.json`);
   const seg = await load("segments.json").catch(() => null);
   const sc = seg?.available ? seg.companies[t] : null;
   const graphData = (await load("news/index.json").catch(() => null))?.graph;
-  const opts = META.universe.map((u) => `<option ${u.ticker === t ? "selected" : ""}>${u.ticker}</option>`).join("");
+  const inChain = (await load("chain.json").catch(() => null))?.metrics?.[t];
+  const nameZh = META.names_zh?.[t] || "";
   const m = s.matrix;
   const dimChips = m ? Object.entries(m.scores).map(([k, v]) => `<span class="chip">${esc({ composite: "综合", momentum: "动量", trend: "趋势", relative: "相对强弱", low_vol: "低波动", valuation: "估值", sentiment: "情绪", event_risk: "事件风险低" }[k] || k)} ${num(v, 0)}</span>`).join("") : "";
   app().innerHTML = `
-    <h2>个股 <select id="s-pick">${opts}</select> <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}</span></h2>
+    <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
+    <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
     ${howto(STOCK_HOWTO)}${insightBox([...stockInsights(s, t), ...segInsights(sc, t)])}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（复权价格）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
@@ -973,8 +983,8 @@ PAGES.stock = async (r) => {
       ${card("综合信号分位历史（周）", s.score_history.values?.length ? chartDiv("c-hist", "short") : empty("暂无"))}
       ${card("最新一期各模型贡献（截面排名 × 权重）", s.contributions ? chartDiv("c-contrib", "short") : empty("暂无"))}
       ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span></li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
-    </div>`;
-  byId("s-pick").onchange = (e) => { location.hash = `#/stock/${e.target.value}`; };
+    </div></div></div>`;
+  document.querySelector(".stock-side a.on")?.scrollIntoView({ block: "nearest", inline: "center" });
   if (byId("c-sg")) drawSegGraph(byId("c-sg"), t, graphData, sc);
   if (sc) {
     drawSeg(sc, "share");

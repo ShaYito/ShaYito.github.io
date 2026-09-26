@@ -125,3 +125,52 @@ details.howto p, details.howto li { margin: 6px 0; }
 button.primary { background: #2a78d6; color: #fff; border: 0; border-radius: 8px; padding: 7px 16px; font-weight: 600; cursor: pointer; }
 button.primary:hover { filter: brightness(1.08); }
 #sim-form h4 { margin: 14px 0 6px; }
+
+/* ---------- AI 产业链全景 ---------- */
+.chain-flow { display: flex; align-items: stretch; gap: 6px; overflow-x: auto; padding-bottom: 6px; }
+.chain-arrow { align-self: center; font-size: 22px; color: var(--muted); flex: 0 0 auto; }
+.chain-stage { flex: 1 1 150px; min-width: 145px; border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--surface); }
+.chain-stage.input { flex: 1 1 220px; }
+.chain-head { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.chain-no { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--chip); font-size: 12px; font-weight: 700; }
+.chain-desc { font-size: 12px; margin: 6px 0; min-height: 3em; }
+.chain-avg, .chain-feed { font-size: 12px; margin: 4px 0; }
+.chain-feed { color: var(--muted); }
+.chain-chips { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.chain-chip { display: block; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 13px; color: var(--ink); text-decoration: none; line-height: 1.35; }
+.chain-chip small { float: right; font-weight: 600; }
+.chain-chip .chain-role { display: block; font-size: 11px; color: var(--ink-2); margin-top: 2px; }
+.chain-chip.ext { color: var(--muted); border-style: dashed; font-size: 12px; }
+.chain-chip.hl { outline: 3px solid #2a78d6; outline-offset: 1px; }
+a.chain-chip:hover { border-color: var(--ink-2); }
+.chain-inputs { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 900px) {
+  .chain-flow { flex-direction: column; overflow-x: visible; }
+  .chain-arrow { transform: rotate(90deg); }
+  .chain-stage { min-width: 0; }
+}
+
+/* ---------- 个股页侧边栏 ---------- */
+.stock-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 16px; align-items: start; }
+.stock-side { position: sticky; top: 74px; max-height: calc(100vh - 90px); overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; padding: 8px; background: var(--surface); }
+.stock-side h4 { margin: 10px 6px 4px; font-size: 12px; color: var(--muted); }
+.stock-side h4:first-child { margin-top: 2px; }
+.stock-side a { display: block; padding: 4px 6px; border-radius: 6px; color: var(--ink-2); text-decoration: none; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stock-side a b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+.stock-side a:hover { background: var(--chip); }
+.stock-side a.on { background: var(--chip); box-shadow: inset 3px 0 0 #2a78d6; }
+.stock-side .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+@media (max-width: 900px) {
+  .stock-layout { grid-template-columns: minmax(0, 1fr); }
+  .stock-side { position: static; max-height: none; display: flex; gap: 4px; overflow-x: auto; padding: 6px; }
+  .stock-side h4 { display: none; }
+  .stock-side a { flex: 0 0 auto; border: 1px solid var(--border); }
+}
+
+/* 窄屏：导航单独占一行、横向滑动（导航项较多） */
+@media (max-width: 900px) {
+  .topbar { flex-wrap: wrap; }
+  .brand { min-width: 0; flex: 1; }
+  nav { order: 3; flex: 1 0 100%; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  nav::-webkit-scrollbar { display: none; }
+}
