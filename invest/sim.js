@@ -55,7 +55,9 @@
 
   // ---------------- 引擎 ----------------
   /* strategy: { assets: [...], onClose(i, state) → 目标权重对象 | null, lastTarget }
-     opts: { start, end, costBps, initial, monthly } —— start 为第一个可成交日（信号取 start-1 收盘） */
+     opts: { start, end, costBps, initial, monthly, initialWeights }
+       —— start 为第一个可成交日（信号取 start-1 收盘）
+       —— initialWeights：起点（start-1 收盘）直接持有这些比例、不计建仓成本（实盘对账用） */
   function run(P, strategy, opts) {
     const assets = strategy.assets;
     const m = assets.length;
@@ -69,13 +71,20 @@
     const navIdx = [], value = [], dates = [], turnover = [], costs = [], trades = [], weightsHist = [], flows = [];
     const pnl = new Float64Array(m);
     let interest = 0, costSum = 0;
+    if (opts.initialWeights) {
+      const nav0 = cash;
+      assets.forEach((t, j) => { const w = opts.initialWeights[t] || 0; if (w > 0 && Number.isFinite(C[j][start - 1])) v[j] = w * nav0; });
+      cash = nav0 - v.reduce((a, b) => a + b, 0);
+    }
+    // 起点已有持仓（initialWeights）时，第一天也要计入价格变动与利息
+    const held0 = !!opts.initialWeights;
     let pending = strategy.onClose(start - 1, { i: start - 1, weights: {}, nav: cash, first: true });
     for (let i = start; i <= end; i++) {
-      if (i > start) { const acc = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += acc; interest += acc; }
+      if (i > start || held0) { const acc = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += acc; interest += acc; }
       const contribute = i > start && opts.monthly > 0 && P.dates[i].slice(0, 7) !== P.dates[i - 1].slice(0, 7);
       const atOpen = !!pending || contribute;
       // 需要在开盘成交的日子：先把持仓重估到开盘价
-      if (atOpen && i > start) for (let j = 0; j < m; j++) { const nv = v[j] * ratio(O[j][i], C[j][i - 1]); pnl[j] += nv - v[j]; v[j] = nv; }
+      if (atOpen && (i > start || held0)) for (let j = 0; j < m; j++) { const nv = v[j] * ratio(O[j][i], C[j][i - 1]); pnl[j] += nv - v[j]; v[j] = nv; }
       if (contribute) {
         const navOpen = v.reduce((a, b) => a + b, 0) + cash;
         units += opts.monthly * units / navOpen;
@@ -121,7 +130,7 @@
       }
       if (atOpen) {
         for (let j = 0; j < m; j++) { const nv = v[j] * ratio(C[j][i], O[j][i]); pnl[j] += nv - v[j]; v[j] = nv; }
-      } else if (i > start) {
+      } else if (i > start || held0) {
         for (let j = 0; j < m; j++) { const nv = v[j] * ratio(C[j][i], C[j][i - 1]); pnl[j] += nv - v[j]; v[j] = nv; }
       }
       const nav = v.reduce((a, b) => a + b, 0) + cash;
