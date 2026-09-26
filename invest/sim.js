@@ -79,6 +79,7 @@
     // 起点已有持仓（initialWeights）时，第一天也要计入价格变动与利息
     const held0 = !!opts.initialWeights;
     let pending = strategy.onClose(start - 1, { i: start - 1, weights: {}, nav: cash, first: true });
+    let pendingReason = pending ? strategy.reason || "" : "", pendingSignal = P.dates[start - 1];
     for (let i = start; i <= end; i++) {
       if (i > start || held0) { const acc = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += acc; interest += acc; }
       const contribute = i > start && opts.monthly > 0 && P.dates[i].slice(0, 7) !== P.dates[i - 1].slice(0, 7);
@@ -93,6 +94,7 @@
         flows.push({ date: P.dates[i], amount: opts.monthly });
         if (!pending && strategy.lastTarget) {
           const tr = [];
+          const navBefore = v.reduce((a, b) => a + b, 0) + cash - opts.monthly;
           let buyCost = 0;
           assets.forEach((t, j) => {
             const x = strategy.lastTarget[t] || 0;
@@ -103,11 +105,14 @@
             }
           });
           costSum += buyCost;
-          if (tr.length) trades.push({ date: P.dates[i], nav: navOpen + opts.monthly, items: tr, contribution: true });
+          if (tr.length) trades.push({ date: P.dates[i], signal: null, nav: navOpen + opts.monthly, items: tr, contribution: true,
+            reason: `定投 ${opts.monthly.toLocaleString("zh-CN")}：按目标比例买入`, turnover: 0, cost: buyCost, before: null, after: null, navBefore });
         }
       }
       if (pending) {
         const navPre = v.reduce((a, b) => a + b, 0) + cash;
+        const before = {};
+        assets.forEach((t, j) => { if (v[j] > 0) before[t] = v[j] / navPre; });
         const w = new Float64Array(m);
         assets.forEach((t, j) => { const x = pending[t] || 0; w[j] = x > 0 && Number.isFinite(O[j][i]) ? x : 0; });
         let trade = 0;
@@ -124,7 +129,8 @@
         turnover.push({ i, value: trade / navPre });
         costs.push({ i, value: cost / navPre });
         costSum += cost;
-        if (tr.length) trades.push({ date: P.dates[i], nav: navPre, items: tr });
+        if (tr.length) trades.push({ date: P.dates[i], signal: pendingSignal, nav: navPre, items: tr, reason: pendingReason,
+          turnover: trade / navPre, cost, before, after: Object.fromEntries(assets.map((t, j) => [t, w[j]]).filter(([, x]) => x > 0)) });
         weightsHist.push({ date: P.dates[i], weights: Object.fromEntries(assets.map((t, j) => [t, w[j]]).filter(([, x]) => x > 0)) });
         pending = null;
       }
@@ -140,7 +146,8 @@
       if (i < end) {
         const weights = {};
         assets.forEach((t, j) => { if (v[j] > 0) weights[t] = v[j] / nav; });
-        pending = strategy.onClose(i, { i, weights, nav }) || pending;
+        const tgt = strategy.onClose(i, { i, weights, nav });
+        if (tgt) { pending = tgt; pendingReason = strategy.reason || ""; pendingSignal = P.dates[i]; }
       }
     }
     const idx0 = navIdx[0];
@@ -307,11 +314,15 @@
       }
       return {};
     }
+    let ovNotes = [];
     function applyOverlays(i, w) {
       let out = { ...w };
+      ovNotes = [];
       if (ov.trend) {
         const L = ov.trendMA || 200;
-        for (const t of Object.keys(out)) { const m = ma(P.C[t], i, L); if (Number.isFinite(m) && P.C[t][i] < m) delete out[t]; }
+        const cut = [];
+        for (const t of Object.keys(out)) { const m = ma(P.C[t], i, L); if (Number.isFinite(m) && P.C[t][i] < m) { delete out[t]; cut.push(t); } }
+        if (cut.length) ovNotes.push(`趋势过滤：${cut.join("、")} 低于 ${L} 日均线，改持现金`);
       }
       if (ov.volTarget > 0) {
         // 以目标权重估算组合过去 60 日年化波动；高于目标则整体按比例降仓（不加杠杆）
@@ -323,15 +334,34 @@
         }
         const mu = r.reduce((a, b) => a + b, 0) / r.length;
         const vol = Math.sqrt(r.reduce((a, b) => a + (b - mu) ** 2, 0) / (r.length - 1)) * Math.sqrt(TD);
-        if (vol > 0) { const sc = Math.min(1, ov.volTarget / vol); out = Object.fromEntries(Object.entries(out).map(([t, x]) => [t, x * sc])); }
+        if (vol > 0) {
+          const sc = Math.min(1, ov.volTarget / vol);
+          if (sc < 0.999) ovNotes.push(`波动率目标：近 60 日波动 ${(vol * 100).toFixed(0)}% 高于目标，总仓位降至原来的 ${(sc * 100).toFixed(0)}%`);
+          out = Object.fromEntries(Object.entries(out).map(([t, x]) => [t, x * sc]));
+        }
       }
       if (sumW(out) > 1) { const s = sumW(out); out = Object.fromEntries(Object.entries(out).map(([t, x]) => [t, x / s])); }
       return out;
     }
+    const FREQ_ZH = { W: "周末", M: "月末", Q: "季末", Y: "年末" };
+    const REGIME_ZH = { risk_on: "进攻", neutral: "中性", risk_off: "防御" };
+    const withNotes = (r) => [r, ...ovNotes].join("；");
+    function reasonFor(i, w) {
+      if (cfg.mode === "system" || cfg.mode === "system_custom") {
+        const k = sysIdx[i] ?? null;
+        return `系统周信号（市场状态：${REGIME_ZH[sys.regime[k]] || sys.regime[k] || "–"}）${cfg.mode === "system_custom" ? "，按你设定的四层比例" : ""}`;
+      }
+      if (cfg.rebalance === "band") return `偏离超过 ${Math.round((cfg.band || 0.05) * 100)} 个百分点，调回目标比例`;
+      const when = FREQ_ZH[cfg.rebalance] || "月末";
+      if (cfg.mode === "invvol") return `${when}逆波动率重新分配`;
+      if (cfg.mode === "momentum") return `${when}动量轮动：持有 ${Object.keys(w).join("、") || "现金（全部跑输现金）"}`;
+      if (!cfg.rebalance || cfg.rebalance === "none") return "月度趋势检查";
+      return `${when}再平衡：调回目标比例`;
+    }
     const peak = {}, stopped = new Set();
     let lastBase = null;
     const st = {
-      assets, lastTarget: null,
+      assets, lastTarget: null, reason: "",
       onClose(i, state) {
         const cur = new Set(Object.keys(state.weights || {}));
         // 移动止损：持仓从持有期间最高收盘价回落超过 stop → 次日开盘卖出，直到下一次定期调仓
@@ -361,17 +391,20 @@
           let k = i; while (k >= 0 && sysIdx[k] == null) k--;
           if (k < 0) return null;
           const w = applyOverlays(i, baseAt(k, cur));
+          st.reason = withNotes("建仓：按起点前最近一期系统信号");
           st.lastTarget = w; lastBase = w; return w;
         }
         if (due) {
           stopped.clear();
           const w = applyOverlays(i, base(i, cur));
+          st.reason = withNotes(state.first ? "建仓" : reasonFor(i, w));
           st.lastTarget = w; lastBase = w;
           return w;
         }
         if (stopHit) {
           const w = { ...state.weights };
           stopped.forEach((t) => delete w[t]);
+          st.reason = `移动止损：${[...stopped].join("、")} 自持有期最高收盘价回落超过 ${Math.round(ov.stop * 100)}%，卖出至下次定期调仓`;
           return w;
         }
         return null;

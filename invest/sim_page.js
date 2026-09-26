@@ -134,8 +134,9 @@ PAGES.sim = async (r) => {
       <div class="row" id="sim-money-row"></div>
       <h3 style="margin-top:18px">② 策略：之后怎么操作</h3>
       <div class="sim-strats">${stratRadios}</div>
-      <div class="row" id="sim-freq-box"><label>调整频率 <select id="sim-freq">${[["M", "每月"], ["Q", "每季"], ["Y", "每年"], ["band", "偏离超过阈值时（每周检查）"]].map(([k, n]) => `<option value="${k}" ${k === cfg.freq ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+      <div class="row" id="sim-freq-box"><label>调整频率 <select id="sim-freq">${[["W", "每周"], ["M", "每月"], ["Q", "每季"], ["Y", "每年"], ["band", "偏离超过阈值时（每周检查）"]].map(([k, n]) => `<option value="${k}" ${k === cfg.freq ? "selected" : ""}>${n}</option>`).join("")}</select></label>
         <label id="sim-band-l">阈值 <input type="number" id="sim-band" min="1" max="30" value="${Math.round(cfg.band * 100)}" style="width:60px"> 个百分点</label></div>
+      <p class="muted" id="sim-rhythm"></p>
       <div class="row" id="sim-mom-box"><label>持有前 <input type="number" id="sim-topn" min="1" max="20" value="${cfg.topN}" style="width:60px"> 只</label>
         <label>回看 <input type="number" id="sim-lookback" min="3" max="12" value="${cfg.lookback}" style="width:60px"> 个月（跳过最近 1 个月）</label></div>
       <div id="sim-sys-box">${sys ? `<div class="table-wrap"><table><thead><tr><th>市场状态</th><th>核心 SPY</th><th>卫星（模型选股）</th><th>对冲 GLD</th><th>现金</th></tr></thead><tbody>${layerRows}</tbody></table></div>
@@ -200,6 +201,15 @@ PAGES.sim = async (r) => {
     [...byId("sim-freq").options].forEach((o) => { o.disabled = o.value === "band" && k !== "rebalance"; });
     byId("sim-mom-box").style.display = k === "momentum" ? "" : "none";
     byId("sim-sys-box").style.display = k === "system_custom" ? "" : "none";
+    const f = byId("sim-freq").value;
+    const fz = { W: "每周最后一个交易日", M: "每月最后一个交易日", Q: "每季最后一个交易日", Y: "每年最后一个交易日" }[f];
+    byId("sim-rhythm").textContent = {
+      hold: "调仓节奏：不调仓（叠加趋势过滤时每月检查一次均线）。",
+      system: "调仓节奏：固定每周——周五（或当周最后一个交易日）收盘产生系统信号，下一个交易日开盘成交；与本系统周报一致，频率不可调。",
+      system_custom: "调仓节奏：固定每周——与系统周报相同，只是四层比例与选股只数按你的设定。",
+    }[k] || (f === "band"
+      ? "调仓节奏：每周检查一次，只有某个标的比例偏离目标超过阈值才调仓。"
+      : `调仓节奏：${fz}收盘产生信号，下一个交易日开盘成交。通用策略常用每月或每季；频率越高换手与成本越高，效果不一定更好。`);
   };
   document.querySelectorAll('input[name="sim-strat"]').forEach((el) => (el.onchange = syncStrategy));
   byId("sim-freq").onchange = syncStrategy;
@@ -352,6 +362,20 @@ function renderSimReport(P, sys, c) {
   sp.notes.forEach((n) => ins.push({ level: "medium", kind: "simulated", text: n }));
   if (stocks.length) ins.push({ level: "info", kind: "simulated", text: `包含个股：候选股票是今天挑出的公司（[[survivorship|幸存者偏差]]），${c.start < "2019-01-01" ? "且起点较早，" : ""}结果偏乐观。` });
 
+  const rebal = res.trades.filter((t) => !t.contribution);
+  const contribN = res.trades.length - rebal.length;
+  const gaps = rebal.slice(1).map((t, k) => (P.idx[t.date] - P.idx[rebal[k].date]));
+  const avgGap = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+  const rhythmSummary = rebal.length
+    ? `共 ${rebal.length} 次调仓${avgGap ? `，平均每 ${avgGap.toFixed(0)} 个交易日一次（约 ${(avgGap / 5).toFixed(1)} 周）` : ""}；年化换手 ${isNum(m.Turnover) ? num(m.Turnover, 1) : "–"} 倍；交易成本合计 ${money(res.costSum)}。换手 = 调仓时买卖金额合计的一半占总资产的比例。`
+    : "区间内没有调仓（买入持有且未触发风控）。";
+  const changeText = (t) => {
+    if (t.contribution) return t.items.map((x) => `${x.ticker} +${money(x.amount)}`).join("、");
+    const keys = [...new Set([...Object.keys(t.before || {}), ...Object.keys(t.after || {})])];
+    return keys.map((k) => ({ k, a: (t.before || {})[k] || 0, b: (t.after || {})[k] || 0 })).filter((x) => Math.abs(x.b - x.a) >= 0.001)
+      .sort((x, y) => Math.abs(y.b - y.a) - Math.abs(x.b - x.a)).slice(0, 6)
+      .map((x) => `${x.k} ${x.a < 0.0005 ? "新进 " : ""}${pct(x.a, 1)}→${pct(x.b, 1)}${x.b < 0.0005 ? "（清仓）" : ""}`).join("；") || "比例微调";
+  };
   const kpi = (label, val, sub = "") => `<div class="kpi"><span class="muted">${label}</span><b>${val}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
   const metricRow = (x) => `<tr><td>${esc(x.name)}</td><td class="num">${pct(x.m.TotalReturn, 1, true)}</td><td class="num">${pct(x.m.CAGR, 1)}</td><td class="num">${pct(x.m.Volatility, 1)}</td>
     <td class="num">${num(x.m.Sharpe, 2)}</td><td class="num">${num(x.m.Sortino, 2)}</td><td class="num neg">${pct(x.m.MaxDrawdown, 1)}</td><td class="num">${num(x.m.Calmar, 2)}</td>
@@ -369,8 +393,20 @@ function renderSimReport(P, sys, c) {
     ${card("指标对比", `<div class="table-wrap"><table><thead><tr><th></th><th class="num">总收益</th><th class="num">年化</th><th class="num">波动</th><th class="num">夏普</th><th class="num">Sortino</th><th class="num">最大回撤</th><th class="num">Calmar</th><th class="num">周胜率</th><th class="num">换手</th><th class="num">期末资产</th></tr></thead><tbody>${runs.map(metricRow).join("")}${noOv ? metricRow({ name: "你的策略（不叠加风控）", ...noOv }) : ""}</tbody></table></div>`, "", ["simulated"])}
     ${card("持仓比例变化（每次调仓后）", chartDiv("c-sim-w"), "", ["simulated"])}
     ${card("月度收益（%）", chartDiv("c-sim-month", "short"), "", ["simulated"])}
-    ${card(`交易明细（共 ${res.trades.length} 次调仓）`, `<div class="row"><button type="button" class="ghost" id="sim-csv">下载 CSV</button><span class="muted">金额为正 = 买入，负 = 卖出；按开盘价成交</span></div>
-      <div class="table-wrap" style="max-height:360px;overflow:auto"><table><thead><tr><th>日期</th><th>标的</th><th class="num">金额</th><th class="num">开盘价</th></tr></thead><tbody>${[...res.trades].reverse().slice(0, 150).flatMap((tr) => tr.items.map((x) => `<tr><td>${tr.date}</td><td>${esc(x.ticker)}</td><td class="num ${cls(x.amount)}">${money(x.amount)}</td><td class="num">${num(x.price, 2)}</td></tr>`)).join("")}</tbody></table></div>`, "", ["simulated"])}`;
+    ${card(`调仓日志（${rebal.length} 次调仓${contribN ? `，另有 ${contribN} 次定投买入` : ""}）`, `<p class="muted">${esc(rhythmSummary)}</p>
+      <div class="row"><button type="button" class="ghost" id="sim-csv">下载全部明细 CSV</button>${contribN ? '<label><input type="checkbox" id="sim-log-contrib"> 显示定投</label>' : ""}
+        <span class="muted">信号日收盘产生信号 → 成交日开盘成交；“主要变化”为调仓前后占总资产比例（按变化大小取前 6 项）</span></div>
+      <div class="table-wrap" style="max-height:420px;overflow:auto"><table><thead><tr><th>成交日</th><th>信号日</th><th>原因</th><th>主要变化</th><th class="num">换手</th><th class="num">成本</th></tr></thead><tbody id="sim-log"></tbody></table></div>
+      <details class="howto"><summary>每笔买卖金额</summary><div class="table-wrap" style="max-height:360px;overflow:auto"><table><thead><tr><th>日期</th><th>标的</th><th class="num">金额</th><th class="num">开盘价</th></tr></thead><tbody>${[...res.trades].reverse().slice(0, 200).flatMap((tr) => tr.items.map((x) => `<tr><td>${tr.date}</td><td>${esc(x.ticker)}</td><td class="num ${cls(x.amount)}">${money(x.amount)}</td><td class="num">${num(x.price, 2)}</td></tr>`)).join("")}</tbody></table></div></details>`, "", ["simulated"])}`;
+  const drawLog = () => {
+    const showC = byId("sim-log-contrib")?.checked;
+    const list = [...res.trades].filter((t) => showC || !t.contribution).reverse();
+    byId("sim-log").innerHTML = list.map((t) => `<tr><td>${esc(t.date)}</td><td>${esc(t.signal || "–")}</td><td class="wrap">${esc(t.reason || "")}</td>
+      <td class="wrap">${esc(changeText(t))}</td><td class="num">${t.contribution ? "–" : pct(t.turnover / 2, 1)}</td><td class="num">${num(t.cost, 2)}</td></tr>`).join("")
+      || '<tr><td colspan="6" class="muted">区间内没有调仓</td></tr>';
+  };
+  drawLog();
+  byId("sim-log-contrib")?.addEventListener("change", drawLog);
   bindGoto();
 
   // 净值
@@ -383,7 +419,10 @@ function renderSimReport(P, sys, c) {
       data: x.res.dates.map((d, k) => [d, x.res.nav[k]]), color: x.key === "noov" ? palette()[2] : colors[x.key],
       lineStyle: { width: x.key === "main" ? 2 : 1.2, type: x.key === "noov" ? "dotted" : dash[x.key] || "solid" },
       endLabel: { show: true, formatter: (p) => `${p.seriesName.slice(0, 6)} ${num(p.value[1], 2)}`, color: css("--ink-2"), fontSize: 11 },
-      labelLayout: { moveOverlap: "shiftY" } })),
+      labelLayout: { moveOverlap: "shiftY" } })).concat(rebal.length && rebal.length <= 150 ? [{
+        name: "调仓", type: "scatter", symbolSize: 6, color: palette()[0], z: 5,
+        data: rebal.map((t) => ({ value: [t.date, res.nav[res.dates.indexOf(t.date)]], reason: t.reason })),
+        tooltip: { trigger: "item", formatter: (p) => `${p.value[0]} 调仓<br>${esc(p.data.reason || "")}` } }] : []),
   });
   // 回撤
   const dd = Sim.drawdown(res.nav);
@@ -426,7 +465,10 @@ function renderSimReport(P, sys, c) {
     series: [{ type: "heatmap", data: cells, label: { show: true, fontSize: 10, color: css("--ink") }, itemStyle: { borderColor: css("--surface"), borderWidth: 2 } }],
   });
   byId("sim-csv").onclick = () => {
-    const lines = ["date,ticker,amount,open_price", ...res.trades.flatMap((tr) => tr.items.map((x) => `${tr.date},${x.ticker},${x.amount.toFixed(2)},${x.price}`))];
+    const q = (x) => `"${String(x ?? "").replace(/"/g, '""')}"`;
+    const lines = ["exec_date,signal_date,reason,ticker,amount,open_price,weight_before,weight_after",
+      ...res.trades.flatMap((tr) => tr.items.map((x) => [tr.date, tr.signal || "", q(tr.reason), x.ticker, x.amount.toFixed(2), x.price,
+        ((tr.before || {})[x.ticker] || 0).toFixed(4), ((tr.after || {})[x.ticker] || 0).toFixed(4)].join(",")))];
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
     a.download = `sim_trades_${res.dates[0]}_${res.dates[res.dates.length - 1]}.csv`;
