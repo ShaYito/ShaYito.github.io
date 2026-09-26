@@ -28,6 +28,7 @@ const SIM_TEMPLATES = {
   classic: { name: "SPY 60% + GLD 20% + 现金 20%", weights: { SPY: 0.6, GLD: 0.2 } },
   pool_ew: { name: "选股池等权（全部股票）" },
   semis: { name: "半导体等权" },
+  ai_infra: { name: "AI 基础设施等权" },
 };
 const SIM_DEFAULT = { mode: "fixed", weights: { SPY: 0.35, QQQ: 0.25, GLD: 0.1, NVDA: 0.1, MSFT: 0.1 }, rebalance: "Q", band: 0.05,
   topN: 3, momentumLookback: 12, overlays: { trend: false, trendMA: 200, volTarget: 0, stop: 0 }, initial: 100000, monthly: 0,
@@ -125,6 +126,7 @@ PAGES.sim = async (r) => {
     const k = e.target.value;
     if (k === "system_now" && sys) weights = { ...sys.targets[sys.targets.length - 1] };
     else if (k === "pool_ew") { const u = META.universe.map((x) => x.ticker); weights = Object.fromEntries(u.map((t) => [t, 1 / u.length])); }
+    else if (k === "ai_infra") { const u = META.universe.filter((x) => x.theme === "ai_infrastructure").map((x) => x.ticker); weights = Object.fromEntries(u.map((t) => [t, 1 / u.length])); }
     else if (k === "semis") { const u = META.universe.filter((x) => x.theme === "semis" || x.theme === "semiconductors").map((x) => x.ticker); weights = Object.fromEntries(u.map((t) => [t, 1 / u.length])); }
     else if (SIM_TEMPLATES[k]?.weights) weights = { ...SIM_TEMPLATES[k].weights };
     if (k && byId("sim-mode").value.startsWith("system")) byId("sim-mode").value = "fixed";
