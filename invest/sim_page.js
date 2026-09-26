@@ -69,6 +69,39 @@ function lastRawClose(P, raw, t, i) {
   for (let k = i; k >= 0; k--) { const v = px.close(k); if (Number.isFinite(v)) return v; }
   return NaN;
 }
+/* 实盘历史仓位：对账起始持仓 + 每个交易日调仓后的持仓（该日收盘后的状态）。
+   现金用对账引擎推算（成交金额、费用、分红、现金利息）；超出价格数据的日期只按成交金额加减。 */
+function reconSnapshots(P, raw) {
+  const st = loadReconStart();
+  if (!st) return [];
+  const trades = loadTrades().filter((t) => t.date > st.date).sort((a, b) => a.date.localeCompare(b.date));
+  const out = [{ label: `建仓 ${st.date}（对账起始持仓）`, date: st.date, positions: { ...st.positions }, cash: st.cash || 0 }];
+  const days = [...new Set(trades.map((t) => t.date))];
+  for (const d of days) {
+    const upto = trades.filter((t) => t.date <= d);
+    let positions, cash, note = "";
+    try {
+      const r = Recon.reconcile(P, raw, st, upto, { end: d });
+      if (P.dates[P.n - 1] < d) throw new Error("beyond");
+      positions = Object.fromEntries(Object.entries(r.final_positions).filter(([, v]) => v > 1e-9));
+      // 对账只计有行情的标的：把无行情标的按成交记录补回
+      const a = Recon.applyTrades(st.positions, st.cash || 0, upto);
+      for (const [t, v] of Object.entries(a.positions)) if (!P.C[t] && v > 0) positions[t] = v;
+      cash = r.final_cash;
+    } catch {
+      const a = Recon.applyTrades(st.positions, st.cash || 0, upto);
+      positions = a.positions; cash = a.cash; note = "（现金未含分红与利息）";
+    }
+    out.push({ label: `${d} 调仓后（${trades.filter((t) => t.date === d).length} 笔）${note}`, date: d, positions, cash: Math.max(0, cash) });
+  }
+  return out;
+}
+function nextSessionDate(P, d) {
+  let k = -1;
+  for (let i = 0; i < P.n && P.dates[i] <= d; i++) k = i;
+  return P.dates[Math.min(k + 1, P.n - 1)] || d;
+}
+
 /* 起始仓位 → {weights, initial, s, notes}；s = 第一个交易日（持仓按 s-1 收盘估值） */
 function simStartPosition(P, raw, c) {
   const s = Math.max(Sim.indexOnOrAfter(P, c.start), P.backtestStart, 1);
@@ -118,13 +151,15 @@ PAGES.sim = async (r) => {
     const lw = (cfg.layers && cfg.layers[rg]) || sys.regime_weights[rg];
     return `<tr><td>${esc(REGIME_ZH[rg])}</td>${["core", "satellite", "hedge", "cash"].map((k) => `<td><input type="number" class="sim-layer" data-rg="${rg}" data-k="${k}" min="0" max="100" step="1" value="${Math.round(lw[k] * 100)}" style="width:64px">%</td>`).join("")}</tr>`;
   }).join("") : "";
+  const histSnaps = reconSnapshots(P, raw);
   const stratRadios = Object.entries(SIM_STRATEGIES).filter(([k]) => sys || !k.startsWith("system")).map(([k, s]) =>
     `<label class="sim-strat"><input type="radio" name="sim-strat" value="${k}" ${k === cfg.strategy ? "checked" : ""}> <b>${esc(s.name)}</b><span class="muted">${esc(s.tip)}</span></label>`).join("");
   app().innerHTML = `
     <h2>模拟经营 <span class="muted">用真实历史价格检验“某个仓位 + 某种操作方式”的结果 · 数据 ${esc(first)} ~ ${esc(lastDate)}</span></h2>
     ${simTabs("bt")}${howto(SIM_HOWTO)}
     <section class="card" id="sim-form"><h3>① 起始仓位 ${badge("simulated")}</h3>
-      <div class="row"><label>载入模板 <select id="sim-tpl"><option value="">— 选择 —</option>${Object.entries(SIM_TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.name)}</option>`).join("")}</select></label>
+      <div class="row"><label>载入模板 <select id="sim-tpl"><option value="">— 选择 —</option>${Object.entries(SIM_TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.name)}</option>`).join("")}
+        ${histSnaps.length ? `<optgroup label="实盘历史仓位（来自实盘对账）">${histSnaps.map((h, i) => `<option value="hist:${i}">${esc(h.label)}</option>`).join("")}</optgroup>` : ""}</select></label>
         <span class="muted" id="sim-tpl-msg"></span></div>
       <div class="row"><span class="muted">输入方式</span><div class="seg" id="sim-posmode"><button type="button" data-m="weight">按比例</button><button type="button" data-m="shares">按股数</button></div>
         <span class="muted" id="sim-posmode-tip"></span></div>
@@ -243,11 +278,19 @@ PAGES.sim = async (r) => {
         posMode = "weight"; weights = Object.fromEntries(vals.map(([t, v]) => [t, v / tot])); cfg.initial = Math.round(tot);
         msg.textContent = `已按当前市值比例载入（初始资金 = 当前总资产 ${Math.round(tot).toLocaleString("zh-CN")}）${skipped.length ? `；${skipped.join("、")} 无历史数据，按现金处理` : ""}`;
       }
+    } else if (k.startsWith("hist:")) {
+      const h = histSnaps[+k.slice(5)];
+      posMode = "shares"; shares = { ...h.positions }; cash = Math.round(h.cash * 100) / 100;
+      const sd = nextSessionDate(P, h.date);
+      byId("sim-start").value = sd;
+      msg.textContent = `已载入 ${h.label} 的仓位（该日收盘后），开始日期设为下一个交易日 ${sd}`;
     } else if (k === "recon") {
       const st = loadReconStart();
       if (!st) { msg.textContent = "还没有对账起始持仓：请先在“实盘对账”标签设置"; return; }
-      posMode = "shares"; shares = { ...st.positions }; cash = st.cash || 0; byId("sim-start").value = st.date;
-      msg.textContent = `已载入 ${st.date} 的对账起始持仓，并把开始日期设为该日`;
+      posMode = "shares"; shares = { ...st.positions }; cash = st.cash || 0;
+      const sd = nextSessionDate(P, st.date);
+      byId("sim-start").value = sd;
+      msg.textContent = `已载入 ${st.date} 收盘后的对账起始持仓，开始日期设为下一个交易日 ${sd}`;
     } else if (k === "system_now" && sys) { posMode = "weight"; weights = { ...sys.targets[sys.targets.length - 1] }; }
     else if (k === "pool_ew") { posMode = "weight"; weights = eq(META.universe.map((x) => x.ticker)); }
     else if (k === "semis") { posMode = "weight"; weights = eq(META.universe.filter((x) => x.theme === "semiconductors").map((x) => x.ticker)); }
