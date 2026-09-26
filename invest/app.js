@@ -49,7 +49,7 @@ function themeColor(key) {
 function themeName(key) { return META.themes.find((x) => x.key === key)?.name ?? key ?? ""; }
 function tickerLabel(t) {
   const u = META.universe.find((x) => x.ticker === t);
-  return `${u?.held ? "● " : ""}${t}${u?.watchlist ? " ★" : ""}`;
+  return `${isHeld(t) ? "● " : ""}${t}${u?.watchlist ? " ★" : ""}`;
 }
 
 // ---------------- 图表工具 ----------------
@@ -152,7 +152,8 @@ function bindGoto() {
     byId(a.dataset.goto)?.closest(".card")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }));
 }
-function heldTickers() { return META.universe.filter((u) => u.held).map((u) => u.ticker); }
+// ● 持仓：本机填写了“我的持仓”时按实际持仓，否则按系统最新建议配置（isHeld 定义于 holdings_page.js）
+function heldTickers() { return META.universe.filter((u) => isHeld(u.ticker)).map((u) => u.ticker); }
 const pp = (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)} 个百分点`;
 
 // ---------------- 路由 ----------------
@@ -955,13 +956,13 @@ function drawSegGraph(el, t, g, sc) {
 function stockSidebar(cur) {
   const groups = META.themes.map((th) => {
     const items = META.universe.filter((u) => u.theme === th.key).map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}`)}">
-      <span class="dot" style="background:${themeColor(th.key)}"></span>${u.held ? "● " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
+      <span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
     return `<h4>${esc(th.name)}</h4>${items}`;
   }).join("");
   return `<aside class="stock-side" aria-label="选择股票">${groups}</aside>`;
 }
 PAGES.stock = async (r) => {
-  const t = r.arg || META.universe.find((u) => u.held)?.ticker || META.universe[0].ticker;
+  const t = r.arg || META.universe.find((u) => isHeld(u.ticker))?.ticker || META.universe[0].ticker;
   const s = await load(`stocks/${t}.json`);
   const seg = await load("segments.json").catch(() => null);
   const sc = seg?.available ? seg.companies[t] : null;
@@ -1115,9 +1116,9 @@ PAGES.performance = async (r) => {
   for (const th of META.themes) {
     const members = META.universe.filter((u) => u.theme === th.key);
     const series = members.map((u, i) => {
-      const focus = u.held || u.watchlist;
+      const focus = isHeld(u.ticker) || u.watchlist;
       return { name: tickerLabel(u.ticker), type: "line", showSymbol: false, color: palette()[i % 8],
-        lineStyle: { width: u.held ? 2.6 : focus ? 1.8 : 1.1, opacity: focus ? 1 : 0.45 }, emphasis: { focus: "series" }, data: idx(u.ticker) };
+        lineStyle: { width: isHeld(u.ticker) ? 2.6 : focus ? 1.8 : 1.1, opacity: focus ? 1 : 0.45 }, emphasis: { focus: "series" }, data: idx(u.ticker) };
     });
     series.push({ name: p.benchmarks[th.key], type: "line", showSymbol: false, color: BENCH_GRAY(), lineStyle: { width: 1.4, type: "dashed" }, data: idx(p.benchmarks[th.key]) });
     if (p.benchmarks[th.key] !== "SPY") series.push({ name: "SPY", type: "line", showSymbol: false, color: BENCH_GRAY(), lineStyle: { width: 1.2, type: "dotted" }, data: spy });
@@ -1188,7 +1189,7 @@ PAGES.risk = async () => {
     mkChart(byId("c-rvol"), { tooltip: { trigger: "axis", valueFormatter: (v) => pct(v, 0) }, legend: { type: "scroll", top: 0 }, grid: { left: 48, right: 16, top: 40, bottom: 30 },
       xAxis: { type: "category", data: hd, boundaryGap: false }, yAxis: { type: "value", axisLabel: { formatter: (v) => pct(v, 0) } },
       series: META.universe.map((u) => ({ name: tickerLabel(u.ticker), type: "line", showSymbol: false, color: themeColor(u.theme),
-        lineStyle: { width: u.held ? 2.4 : 1, opacity: u.held ? 1 : 0.35 }, emphasis: { focus: "series" }, data: k.history.vol[u.ticker] })) });
+        lineStyle: { width: isHeld(u.ticker) ? 2.4 : 1, opacity: isHeld(u.ticker) ? 1 : 0.35 }, emphasis: { focus: "series" }, data: k.history.vol[u.ticker] })) });
     mkChart(byId("c-rcorr"), { legend: { show: false }, tooltip: { trigger: "axis", valueFormatter: (v) => num(v, 2) }, grid: { left: 48, right: 16, top: 16, bottom: 30 },
       xAxis: { type: "category", data: hd, boundaryGap: false }, yAxis: { type: "value", scale: true },
       series: [{ type: "line", showSymbol: false, color: palette()[0], data: k.history.avg_corr, areaStyle: { opacity: 0.12 },

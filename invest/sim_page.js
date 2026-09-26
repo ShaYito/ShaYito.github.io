@@ -22,6 +22,7 @@ const SIM_OVERLAYS = {
     why: "直观、便于执行纪律。", risk: "研究支持弱：单只股票的正常波动也常触发止损，容易卖在低点。仅供对比。" },
 };
 const SIM_TEMPLATES = {
+  mine: { name: "我的持仓（本机）" },
   system_now: { name: "本系统最新配置" },
   spy: { name: "SPY 100%", weights: { SPY: 1 } },
   qqq: { name: "QQQ 100%", weights: { QQQ: 1 } },
@@ -124,6 +125,17 @@ PAGES.sim = async (r) => {
   byId("sim-clear-btn").onclick = () => { weights = {}; drawAssets(); };
   byId("sim-tpl").onchange = (e) => {
     const k = e.target.value;
+    if (k === "mine") {
+      const hh = loadHoldings();
+      const last = (t) => { const c = SIM_DATA.raw.close[t]; if (!c) return null; for (let i = c.length - 1; i >= 0; i--) if (c[i] != null) return c[i]; return null; };
+      const vals = Object.entries(hh?.positions || {}).map(([t, s]) => [t, s * (last(t) || 0)]).filter(([, v]) => v > 0);
+      const skipped = Object.keys(hh?.positions || {}).filter((t) => !last(t));
+      const tot = vals.reduce((a, [, v]) => a + v, 0) + (hh?.cash || 0);
+      weights = tot > 0 ? Object.fromEntries(vals.map(([t, v]) => [t, v / tot])) : {};
+      byId("sim-mode-tip").textContent = hh ? `已载入本机持仓（按最新价格折算比例${skipped.length ? `；${skipped.join("、")} 无历史数据，按现金处理` : ""}）` : "本机没有保存持仓：请先在“我的持仓”页填写";
+      drawAssets();
+      return;
+    }
     if (k === "system_now" && sys) weights = { ...sys.targets[sys.targets.length - 1] };
     else if (k === "pool_ew") { const u = META.universe.map((x) => x.ticker); weights = Object.fromEntries(u.map((t) => [t, 1 / u.length])); }
     else if (k === "ai_infra") { const u = META.universe.filter((x) => x.theme === "ai_infrastructure").map((x) => x.ticker); weights = Object.fromEntries(u.map((t) => [t, 1 / u.length])); }

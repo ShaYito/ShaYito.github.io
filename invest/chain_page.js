@@ -24,7 +24,7 @@ function chainChip(mem, c, mode, hl) {
   const m = c.metrics[mem.ticker];
   const val = mode === "sent" ? (m.news_count ? `情绪 ${num(m.sentiment, 2, true)}` : "无新闻") : `${pct(m.ret_1m, 1, true)}`;
   return `<a class="chain-chip ${hl === mem.ticker ? "hl" : ""}" href="#/stock/${mem.ticker}" style="${chainColor(mode, m)}"
-    title="${esc(`${mem.ticker} ${m.name_zh}：${mem.role}`)}">${m.held ? "● " : ""}<b>${esc(mem.ticker)}</b> ${esc(m.name_zh)}
+    title="${esc(`${mem.ticker} ${m.name_zh}：${mem.role}`)}">${isHeld(mem.ticker) ? "● " : ""}<b>${esc(mem.ticker)}</b> ${esc(m.name_zh)}
     ${mode === "theme" ? "" : `<small>${esc(val)}</small>`}<span class="chain-role">${esc(mem.role)}</span></a>`;
 }
 function chainInsights(c) {
@@ -42,10 +42,10 @@ function chainInsights(c) {
     out.push({ level: "info", kind: "derived", text: `链上个股近 1 月涨幅最大：${ht} ${hm.name_zh}（${pct(hm.ret_1m, 1, true)}）；跌幅最大：${lt} ${lm.name_zh}（${pct(lm.ret_1m, 1, true)}）。` });
   }
   const neg = Object.entries(c.metrics).filter(([, m]) => m.news_count >= 5 && m.sentiment < 0).sort((a, b) => a[1].sentiment - b[1].sentiment);
-  if (neg.length) out.push({ level: neg.some(([, m]) => m.held) ? "high" : "medium", kind: "model",
+  if (neg.length) out.push({ level: neg.some(([t]) => isHeld(t)) ? "high" : "medium", kind: "model",
     text: `近 7 日[[sentiment|新闻情绪]]偏负面：${neg.slice(0, 3).map(([t, m]) => `${t} ${m.name_zh}（${num(m.sentiment, 2, true)}，${m.news_count} 篇）`).join("、")}。` });
-  const held = Object.entries(c.metrics).filter(([, m]) => m.held).map(([t]) => t);
-  if (held.length) out.push({ level: "info", kind: "model", text: `当前建议持仓中位于这条产业链上的：${held.join("、")}。` });
+  const held = Object.keys(c.metrics).filter((t) => isHeld(t));
+  if (held.length) out.push({ level: "info", kind: "model", text: `${holdingsMode() === "mine" ? "你的持仓" : "当前建议持仓"}中位于这条产业链上的：${held.join("、")}。` });
   return out;
 }
 
@@ -65,7 +65,7 @@ PAGES.chain = async (r) => {
     <h2>AI 算力产业链 <span class="muted">价格截至 ${esc(c.asof_price)} · 环节划分 ${esc(c.as_of)}${c.status === "draft" ? "（草稿）" : ""}</span></h2>
     ${howto(CHAIN_HOWTO)}${insightBox(chainInsights(c))}
     <section class="card"><div class="row"><span class="muted">着色</span><div class="seg" id="ch-mode">${[["theme", "主题"], ["ret", "近 1 月涨跌"], ["sent", "近 7 日新闻情绪"]].map(([k, n]) => `<button type="button" data-m="${k}" class="${k === mode ? "on" : ""}">${n}</button>`).join("")}</div>
-      <span class="muted">${mode === "ret" ? "绿 = 上涨，红 = 下跌，颜色越深幅度越大（±20% 封顶）" : mode === "sent" ? "绿 = 偏正面，红 = 偏负面；无底色 = 近 7 日无新闻" : "颜色 = 看板主题"}；● = 当前建议持仓；灰色 = 未纳入看板</span></div>
+      <span class="muted">${mode === "ret" ? "绿 = 上涨，红 = 下跌，颜色越深幅度越大（±20% 封顶）" : mode === "sent" ? "绿 = 偏正面，红 = 偏负面；无底色 = 近 7 日无新闻" : "颜色 = 看板主题"}；● = ${holdingsMode() === "mine" ? "你的持仓" : "当前建议持仓"}；灰色 = 未纳入看板</span></div>
       <h3>主链：从芯片设计到 AI 应用 ${badge("model")}${badge("derived")}</h3>
       <div class="chain-flow">${c.stages.map((s, i) => stageCard(s, i)).join('<div class="chain-arrow" aria-hidden="true">→</div>')}</div>
       <h3 style="margin-top:18px">供给环节 ${badge("model")}${badge("derived")}</h3>
