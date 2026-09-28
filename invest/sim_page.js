@@ -768,49 +768,68 @@ function renderDecisionEval(P, raw, sys, recon, money) {
     host.innerHTML = card("决策评估", `<p class="muted">还没有起始持仓之后的交易，暂无可评估的操作。</p>`, "", ["derived"]);
     return;
   }
-  let horizon = "next", withSys = !!sys;
+  let horizon = "now", withSys = !!sys;
+  const HZ = [["now", "持有至今"], ["252", "12 个月"], ["126", "6 个月"], ["63", "3 个月"], ["next", "到下一次操作"]]; // 数组保证顺序
   const draw = () => {
     const oldEl = byId("c-de");
     const old = oldEl && window.echarts?.getInstanceByDom(oldEl);
     if (old) { charts = charts.filter((x) => x !== old); old.dispose(); }
     const rows = Recon.evaluateDecisions(P, raw, recon, { horizon, sys: withSys ? sys : null });
-    const n = rows.length, up = rows.filter((r) => r.added > 0).length;
-    const total = rows.reduce((a, r) => a + r.added, 0);
+    const n = rows.length;
+    const sum = (f) => rows.reduce((a, r) => a + (isNum(r[f]) ? r[f] : 0), 0);
+    const selRows = rows.filter((r) => isNum(r.selection) && r.legs.some((l) => l.ticker !== "SPY"));
+    const selWin = selRows.filter((r) => r.selection > 0).length;
+    const avgSelPct = selRows.length ? selRows.reduce((a, r) => a + (isNum(r.selection_pct) ? r.selection_pct : 0), 0) / selRows.length : NaN;
+    const timRows = rows.filter((r) => isNum(r.timing) && Math.abs(r.net_buy) > 1);
+    const timWin = timRows.filter((r) => r.timing > 0).length;
+    const shortN = rows.filter((r) => !r.full).length;
     const vsRows = rows.filter((r) => r.vs_c != null);
-    const sysBetter = vsRows.filter((r) => r.vs_c < 0).length;
     const vsTotal = vsRows.reduce((a, r) => a + r.vs_c, 0);
-    const best = [...rows].sort((a, b) => b.added - a.added)[0], worst = [...rows].sort((a, b) => a.added - b.added)[0];
-    const hz = { next: "到下一次操作", 21: "1 个月（21 个交易日）", 63: "3 个月（63 个交易日）" }[horizon];
-    const ins = [
-      { level: total >= 0 ? "good" : "medium", kind: "derived",
-        text: `共 ${n} 次操作（窗口：${hz}）：${up} 次加分、${n - up} 次减分；${horizon === "next" ? "累计增减（即你主动操作相对“一直不动”的总贡献）" : "各次增减合计（窗口互相重叠，仅供参考）"} ${money(total)}。` },
-      { level: "info", kind: "derived", text: `加分最多：${best.date}（${money(best.added)}，${pct(best.added_pct, 2, true)}）；减分最多：${worst.date}（${money(worst.added)}，${pct(worst.added_pct, 2, true)}）。` },
-    ];
+    const overlap = horizon !== "next";
+    const ins = [];
+    if (selRows.length) ins.push({ level: sum("selection") >= 0 ? "good" : "medium", kind: "derived",
+      text: `选股：${selRows.length} 次换股中 ${selWin} 次跑赢大盘（换入的相对 SPY 更好 / 换出的更差）；平均超额 ${pct(avgSelPct, 1, true)}（占当次成交额）；合计 ${money(sum("selection"))}。` });
+    if (timRows.length) ins.push({ level: sum("timing") >= 0 ? "good" : "medium", kind: "derived",
+      text: `择时（加减仓）：${timRows.length} 次改变了股票总仓位，${timWin} 次时机有利；合计 ${money(sum("timing"))}（加仓后大盘上涨、减仓后大盘下跌为正）。` });
+    ins.push({ level: "info", kind: "derived", text: `交易费用合计 ${money(sum("cost"))}；以上三项相加 = 全部操作相对“不操作”的增减 ${money(sum("added"))}${overlap ? "（窗口互相重叠，各次相加仅作汇总参考）" : ""}。` });
     if (vsRows.length) ins.push({ level: vsTotal >= 0 ? "good" : "medium", kind: "simulated",
-      text: `与“同一天按系统建议清单操作”相比：${vsRows.length} 次中系统建议的操作在 ${sysBetter} 次更好；合计你的操作${vsTotal >= 0 ? "多" : "少"}赚 ${money(Math.abs(vsTotal))}。` });
-    if (n < 10) ins.push({ level: "medium", kind: "derived", text: `目前只有 ${n} 次操作，结果受运气影响很大，不能说明判断能力；建议积累 10 次以上再看整体规律。` });
-    if (rows.some((r) => !r.full)) ins.push({ level: "info", kind: "derived", text: "标注“未完”的操作窗口尚未走完（最近一次操作之后的时间不足），数字会随行情继续变化。" });
+      text: `与“同一天按系统建议清单操作”相比：${vsRows.length} 次中系统建议的操作在 ${vsRows.filter((r) => r.vs_c < 0).length} 次更好；合计你的操作${vsTotal >= 0 ? "多" : "少"}赚 ${money(Math.abs(vsTotal))}。` });
+    if (n < 10) ins.push({ level: "medium", kind: "derived", text: `目前只有 ${n} 次操作：单次结果 = 判断 + 运气，看不出规律；建议积累 10 次以上，并主要看“选股跑赢次数占比”和长期窗口的结果。` });
+    if (shortN) ins.push({ level: "info", kind: "derived", text: `${shortN} 次操作距今${horizon === "now" ? "不足 6 个月" : "未走完所选窗口"}（标注“时间太短 / 未完”），结果主要反映短期波动，会随时间变化。` });
     const tradeText = (r) => r.trades.map((t) => `${t.side === "buy" ? "买" : "卖"} ${t.ticker} ${+t.shares.toFixed(4)}`).join("；");
+    const legText = (r) => r.legs.map((l) => `${l.ticker} ${pct(l.r, 1, true)}${isNum(l.excess) && l.ticker !== "SPY" ? `（超额 ${pct(l.excess, 1, true)}）` : ""}`).join("；");
     host.innerHTML = `${insightBox(ins)}
-      <section class="card"><h3>决策评估：每次操作 vs 不操作${withSys ? " vs 系统建议的操作" : ""} ${badge("derived")}${withSys ? badge("simulated") : ""}</h3>
-        <p class="muted">对每次操作，从同一起点价值（操作前持仓按前一交易日收盘估值）出发，比较同一段时间里：<b>A 你的操作</b>（按你的成交价与费用调整后持有）vs <b>B 不操作</b>（继续持有操作前的仓位）${withSys ? " vs <b>C 系统建议的操作</b>（同一天改为按系统建议清单调到建议配置——即当时最近一期系统信号——开盘成交、成本按模拟假设，之后持有）" : ""}。A、B、C 都只在当天调整一次；增减 = A − B，已扣除费用；窗口内的分红与现金利息计入，资金进出不计。</p>
-        <div class="row"><span class="muted">窗口</span><div class="seg" id="de-h">${[["next", "到下一次操作"], ["21", "1 个月"], ["63", "3 个月"]].map(([k, t]) => `<button type="button" data-h="${k}" class="${k === horizon ? "on" : ""}">${t}</button>`).join("")}</div>
-          ${sys ? `<label><input type="checkbox" id="de-sys" ${withSys ? "checked" : ""}> 对比“同一天按系统建议清单操作”</label>` : ""}
-          <span class="muted">“到下一次操作”：各段不重叠，增减相加 = 主动操作的总贡献；固定窗口：每次比较时长相同，但会重叠。</span></div>
+      <section class="card"><h3>决策评估：每次操作长期看对不对 ${badge("derived")}${withSys ? badge("simulated") : ""}</h3>
+        <p class="muted">对每次操作，假设<b>只做这一次调整、之后什么都不做</b>，比较到窗口结束时 <b>A 你的操作</b> 与 <b>B 不操作</b> 的差（增减 = A − B），并拆成三部分：
+          <b>择时</b> = 净买入金额 ×（SPY 收益 − 现金收益），衡量加减仓的时机；<b>选股</b> = 每笔成交额 ×（该股收益 − SPY 收益），衡量换入的是否跑赢大盘、换出的是否跑输大盘，与大盘涨跌无关；<b>成本</b> = 费用。
+          ${withSys ? "C = 同一天改按系统建议清单调仓后持有。" : ""}</p>
+        <div class="row"><span class="muted">窗口</span><div class="seg" id="de-h">${HZ.map(([k, t]) => `<button type="button" data-h="${k}" class="${k === horizon ? "on" : ""}">${t}</button>`).join("")}</div>
+          ${sys ? `<label><input type="checkbox" id="de-sys" ${withSys ? "checked" : ""}> 对比“同一天按系统建议清单操作”</label>` : ""}</div>
+        <div class="kpis">
+          <div class="kpi"><span class="muted">选股合计</span><b class="${cls(sum("selection"))}">${money(sum("selection"))}</b><span class="muted">${selRows.length ? `跑赢 ${selWin}/${selRows.length} 次` : "无换股"}</span></div>
+          <div class="kpi"><span class="muted">择时合计</span><b class="${cls(sum("timing"))}">${money(sum("timing"))}</b><span class="muted">${timRows.length ? `有利 ${timWin}/${timRows.length} 次` : "无加减仓"}</span></div>
+          <div class="kpi"><span class="muted">费用合计</span><b>${money(sum("cost"))}</b></div>
+          <div class="kpi"><span class="muted">增减合计（A − B）</span><b class="${cls(sum("added"))}">${money(sum("added"))}</b><span class="muted">${overlap ? "窗口重叠，仅供参考" : "= 主动操作总贡献"}</span></div></div>
         ${chartDiv("c-de")}
-        <div class="table-wrap"><table><thead><tr><th>操作日</th><th>操作内容</th><th>窗口</th><th class="num">起点价值</th><th class="num">A 操作后</th><th class="num">B 不操作</th><th class="num">增减 A−B</th>${withSys ? '<th class="num">C 系统建议的操作</th><th class="num">你的操作 − 系统建议的操作</th>' : ""}</tr></thead>
-        <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td><td class="wrap">${esc(tradeText(r))}${r.fees ? ` <span class="muted">（费用 ${num(r.fees, 2)}）</span>` : ""}</td>
-          <td>至 ${esc(r.window_end)}（${r.sessions} 个交易日）${r.full ? "" : ' <span class="chip">未完</span>'}</td><td class="num">${money(r.v0)}</td>
-          <td class="num ${cls(r.a_ret)}">${pct(r.a_ret, 2, true)}</td><td class="num ${cls(r.b_ret)}">${pct(r.b_ret, 2, true)}</td>
+        <details class="howto"><summary>逐次明细（${n} 次操作）</summary>
+        <div class="table-wrap"><table><thead><tr><th>操作日</th><th>操作内容</th><th>窗口</th><th class="num">增减 A−B</th><th class="num">择时</th><th class="num">选股</th><th class="num">费用</th><th>各笔收益（相对 SPY 超额）</th>${withSys ? '<th class="num">你 − 系统建议的操作</th>' : ""}</tr></thead>
+        <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td><td class="wrap">${esc(tradeText(r))}</td>
+          <td>至 ${esc(r.window_end)}（${r.sessions} 个交易日）${r.full ? "" : ` <span class="chip">${horizon === "now" ? "时间太短" : "未完"}</span>`}</td>
           <td class="num ${cls(r.added)}"><b>${money(r.added)}</b><br><span class="muted">${pct(r.added_pct, 2, true)}</span></td>
-          ${withSys ? `<td class="num ${cls(r.c_ret)}">${r.c_ret == null ? "–" : pct(r.c_ret, 2, true)}</td><td class="num ${cls(r.vs_c)}">${r.vs_c == null ? "–" : money(r.vs_c)}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+          <td class="num ${cls(r.timing)}">${isNum(r.timing) ? money(r.timing) : "–"}</td>
+          <td class="num ${cls(r.selection)}">${isNum(r.selection) ? money(r.selection) : "–"}${isNum(r.selection_pct) ? `<br><span class="muted">${pct(r.selection_pct, 1, true)}</span>` : ""}</td>
+          <td class="num">${num(r.cost, 2)}</td><td class="wrap muted">${esc(legText(r))}</td>
+          ${withSys ? `<td class="num ${cls(r.vs_c)}">${r.vs_c == null ? "–" : money(r.vs_c)}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+        <p class="muted">SPY 同期收益为大盘基准；只买卖 SPY 的操作没有选股成分。“其他”（分红到账后的利息等）通常接近 0，未单列。</p></details>
       </section>`;
-    let cum = 0;
     const series = [
-      { name: "这次操作的增减（A − B）", type: "bar", barMaxWidth: 22, data: rows.map((r) => ({ value: r.added, itemStyle: { color: r.added >= 0 ? css("--pos") : css("--neg"), borderRadius: 3 } })) },
-      { name: horizon === "next" ? "累计增减" : "增减累加（窗口重叠）", type: "line", symbolSize: 6, color: palette()[1], data: rows.map((r) => (cum += r.added)) },
+      { name: "择时", type: "bar", stack: "d", barMaxWidth: 26, color: palette()[0], data: rows.map((r) => (isNum(r.timing) ? r.timing : 0)) },
+      { name: "选股", type: "bar", stack: "d", barMaxWidth: 26, color: palette()[2], data: rows.map((r) => (isNum(r.selection) ? r.selection : 0)) },
+      { name: "费用", type: "bar", stack: "d", barMaxWidth: 26, color: palette()[7], data: rows.map((r) => -r.cost) },
+      { name: "增减 A − B", type: "scatter", symbol: "diamond", symbolSize: 10, color: css("--ink"), data: rows.map((r) => r.added) },
     ];
-    if (withSys && vsRows.length) series.push({ name: "你的操作 − 系统建议的操作", type: "scatter", symbol: "diamond", symbolSize: 9, color: palette()[6], data: rows.map((r) => r.vs_c) });
+    if (!overlap) { let cum = 0; series.push({ name: "累计增减", type: "line", symbolSize: 5, color: palette()[1], data: rows.map((r) => (cum += r.added)) }); }
+    if (withSys && vsRows.length) series.push({ name: "你 − 系统建议的操作", type: "scatter", symbol: "triangle", symbolSize: 9, color: palette()[6], data: rows.map((r) => r.vs_c) });
     mkChart(byId("c-de"), {
       tooltip: { trigger: "axis", valueFormatter: (v) => (v == null ? "–" : money(v)) }, legend: { top: 0 }, grid: { left: 70, right: 20, top: 40, bottom: 30 },
       xAxis: { type: "category", data: rows.map((r) => r.date) }, yAxis: { type: "value", axisLabel: { formatter: (v) => money(v) } },

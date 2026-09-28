@@ -159,7 +159,9 @@
   /* 决策评估：对每个操作日 d，从同一起点价值（调仓前持仓按 d 前一交易日收盘估值）出发比较
      A = 调仓后持有（你的实际操作，含成交价与费用），B = 调仓前持有（不操作），
      C = 同一天改按系统建议清单调到建议配置后持有（可选；当天开盘成交、成本按模拟假设）。A、C 都只调整一次，比较的是同一天两种操作。
-     窗口：next = 到下一次操作前一日收盘；数字 = 固定交易日数（封顶到数据截止日）。窗口内的资金进出不计入（对 A / B / C 相同）。 */
+     窗口：now = 持有至今（数据截止日）；next = 到下一次操作前一日收盘；数字 = 固定交易日数（封顶到数据截止日）。
+     A − B 拆分为：择时 = 净买入金额 ×（SPY 收益 − 现金收益）——加减仓时机；
+                  选股 = Σ 成交额 ×（该股收益 − SPY 收益）——买入的是否跑赢大盘、卖出的是否跑输大盘；成本 = 费用。窗口内的资金进出不计入（对 A / B / C 相同）。 */
   function evaluateDecisions(P, raw, recon, opts = {}) {
     const { decisions, tickers, end, cashInterest, costBps } = recon._ctx;
     const horizon = opts.horizon || "next";
@@ -179,8 +181,8 @@
     const out = [];
     decisions.forEach((d, n) => {
       const next = decisions[n + 1];
-      const e = horizon === "next" ? (next ? next.i - 1 : end) : Math.min(d.i + (+horizon) - 1, end);
-      const full = horizon === "next" ? !!next : d.i + (+horizon) - 1 <= end;
+      const e = horizon === "next" ? (next ? next.i - 1 : end) : horizon === "now" ? end : Math.min(d.i + (+horizon) - 1, end);
+      const full = horizon === "next" ? !!next : horizon === "now" ? end - d.i + 1 >= 126 : d.i + (+horizon) - 1 <= end;
       const v0 = valueAt(d.pre.shares, d.i - 1) + d.pre.cash;
       const a = hold(d.post.shares, d.post.cash, d.i, Math.max(e, d.i));
       const b = hold(d.pre.shares, d.pre.cash, d.i, Math.max(e, d.i));
@@ -197,9 +199,34 @@
           sysDate = tgt.date;
         } catch { c = null; }
       }
+      // ---- A − B 拆分：择时 / 选股 / 成本（恒等式：A − B = 择时 + 选股 − 成本 + 其他）----
+      const ee = Math.max(e, d.i);
+      let cashG = 1;
+      if (cashInterest) for (let k = d.i + 1; k <= ee; k++) cashG *= 1 + (P.rate[k - 1] || 0) * P.gap[k] / 360;
+      const rCash = cashG - 1;
+      const spyOk = P.C.SPY && Number.isFinite(P.O.SPY[d.i]) && Number.isFinite(P.C.SPY[ee]);
+      const rM = spyOk ? P.C.SPY[ee] / P.O.SPY[d.i] - 1 : NaN; // SPY 从操作日开盘到窗口结束的总收益（含分红）
+      let netBuy = 0, selection = 0;
+      const legs = [];
+      for (const t of d.trades) {
+        if (!px[t.ticker]) continue;
+        const sign = t.side === "sell" ? -1 : 1;
+        const tv = sign * t.shares * t.price; // 买入为正
+        let divs = 0;
+        for (let k = d.i + 1; k <= ee; k++) divs += divAt[t.ticker][k] || 0;
+        const rT = (lastClose(t.ticker, ee) + divs) / t.price - 1; // 该股从成交价到窗口结束的收益（含分红）
+        netBuy += tv;
+        if (Number.isFinite(rM)) selection += tv * (rT - rM);
+        legs.push({ ticker: t.ticker, side: t.side, value: Math.abs(tv), r: rT, excess: Number.isFinite(rM) ? rT - rM : NaN });
+      }
+      const timing = Number.isFinite(rM) ? netBuy * (rM - rCash) : NaN;
+      const cost = d.trades.reduce((x, t) => x + (t.fee || 0), 0) * cashG;
+      const gross = legs.reduce((x, l) => x + l.value, 0);
       out.push({ date: d.date, window_end: P.dates[Math.max(e, d.i)], sessions: Math.max(e, d.i) - d.i + 1, full, trades: d.trades,
         v0, a, b, c, added: a - b, added_pct: (a - b) / v0, a_ret: a / v0 - 1, b_ret: b / v0 - 1, c_ret: c == null ? null : c / v0 - 1,
-        vs_c: c == null ? null : a - c, sys_date: sysDate, fees: d.trades.reduce((x, t) => x + (t.fee || 0), 0) });
+        vs_c: c == null ? null : a - c, sys_date: sysDate,
+        timing, selection: Number.isFinite(rM) ? selection : NaN, cost, other: (a - b) - (timing || 0) - (selection || 0) + cost,
+        net_buy: netBuy, gross, r_market: rM, selection_pct: gross > 0 && Number.isFinite(rM) ? selection / gross : NaN, legs, fees: d.trades.reduce((x, t) => x + (t.fee || 0), 0) });
     });
     return out;
   }
