@@ -129,11 +129,36 @@
     const flowList = Object.entries(cashFlows).map(([i, a]) => ({ date: P.dates[+i], amount: a }));
     return { dates, actual, sim, rows, decomposition, warnings, dividends, interest, fees, model_cost: res.costSum, flows: flowList, flow_total: flowTotal,
       final_positions: { ...shares }, final_cash: cash, start_value: start0,
-      _ctx: { decisions, tickers, s0, end, cashInterest, costBps } };
+      _ctx: { decisions, tickers, s0, end, cashInterest, costBps, cashFlows, w0, start0 } };
+  }
+
+  function latestSystemTarget(P, sys, i) {
+    let k = -1;
+    for (let j = 0; j < sys.dates.length && sys.dates[j] <= P.dates[i]; j++) k = j;
+    return k < 0 ? null : { date: sys.dates[k], weights: sys.targets[k] };
+  }
+
+  /* 整体对比：从对账起始日开始，三条资产曲线（存取款同时计入）
+     actual = 你的实际账户；follow = 起始时一次性换成系统配置、之后每周跟随系统模型；hold = 起始持仓一直不动 */
+  function compareFollow(P, raw, recon, sys) {
+    const { s0, end, costBps, cashFlows, w0, start0, tickers } = recon._ctx;
+    const hold = Sim.run(P, { assets: tickers, lastTarget: null, onClose: () => null },
+      { start: s0 + 1, end, costBps, initial: start0, initialWeights: w0, cashFlows, noCashInterest: !recon._ctx.cashInterest });
+    let follow = null;
+    if (sys) {
+      const strat = Sim.makeStrategy(P, { mode: "system", overlays: {} }, sys);
+      const assets = [...new Set([...strat.assets, ...Object.keys(w0)])];
+      follow = Sim.run(P, { ...strat, assets, onClose: strat.onClose.bind(strat) },
+        { start: s0 + 1, end, costBps, initial: start0, initialWeights: w0, cashFlows, noCashInterest: !recon._ctx.cashInterest });
+    }
+    return { dates: recon.dates, actual: recon.actual, hold: [start0, ...hold.value],
+      follow: follow ? [start0, ...follow.value] : null, followTrades: follow ? follow.trades.filter((t) => !t.contribution).length : 0,
+      followCost: follow ? follow.costSum : 0 };
   }
 
   /* 决策评估：对每个操作日 d，从同一起点价值（调仓前持仓按 d 前一交易日收盘估值）出发比较
-     A = 调仓后持有（你的实际操作，含成交价与费用），B = 调仓前持有（不操作），C = 从调仓前改按系统每周建议（可选）。
+     A = 调仓后持有（你的实际操作，含成交价与费用），B = 调仓前持有（不操作），
+     C = 同一天改按系统建议清单调到建议配置后持有（可选；当天开盘成交、成本按模拟假设）。A、C 都只调整一次，比较的是同一天两种操作。
      窗口：next = 到下一次操作前一日收盘；数字 = 固定交易日数（封顶到数据截止日）。窗口内的资金进出不计入（对 A / B / C 相同）。 */
   function evaluateDecisions(P, raw, recon, opts = {}) {
     const { decisions, tickers, end, cashInterest, costBps } = recon._ctx;
@@ -159,22 +184,22 @@
       const v0 = valueAt(d.pre.shares, d.i - 1) + d.pre.cash;
       const a = hold(d.post.shares, d.post.cash, d.i, Math.max(e, d.i));
       const b = hold(d.pre.shares, d.pre.cash, d.i, Math.max(e, d.i));
-      let c = null;
-      if (opts.sys && e >= d.i) {
+      // C：同一天从同一持仓出发，按系统建议清单调到建议配置（当天开盘成交、成本按模拟假设），之后持有到窗口结束
+      let c = null, sysDate = null;
+      const tgt = opts.sys ? latestSystemTarget(P, opts.sys, d.i - 1) : null;
+      if (tgt && e >= d.i) {
         const w0 = {};
         tickers.forEach((t) => { if ((d.pre.shares[t] || 0) > 0) w0[t] = d.pre.shares[t] * lastClose(t, d.i - 1) / v0; });
-        const strat = Sim.makeStrategy(P, { mode: "system", overlays: {} }, opts.sys);
-        if (strat.assets.length) {
-          try {
-            const res = Sim.run(P, { ...strat, assets: [...new Set([...strat.assets, ...Object.keys(w0)])], onClose: strat.onClose.bind(strat) },
-              { start: d.i, end: Math.max(e, d.i), costBps, initial: v0, initialWeights: w0 });
-            c = res.final;
-          } catch { c = null; }
-        }
+        const assets = [...new Set([...Object.keys(tgt.weights), ...Object.keys(w0)])].filter((t) => P.C[t]);
+        const strat = { assets, lastTarget: null, onClose: (k, st) => (st.first ? tgt.weights : null) };
+        try {
+          c = Sim.run(P, strat, { start: d.i, end: Math.max(e, d.i), costBps, initial: v0, initialWeights: w0, noCashInterest: !cashInterest }).final;
+          sysDate = tgt.date;
+        } catch { c = null; }
       }
       out.push({ date: d.date, window_end: P.dates[Math.max(e, d.i)], sessions: Math.max(e, d.i) - d.i + 1, full, trades: d.trades,
         v0, a, b, c, added: a - b, added_pct: (a - b) / v0, a_ret: a / v0 - 1, b_ret: b / v0 - 1, c_ret: c == null ? null : c / v0 - 1,
-        vs_c: c == null ? null : a - c, fees: d.trades.reduce((x, t) => x + (t.fee || 0), 0) });
+        vs_c: c == null ? null : a - c, sys_date: sysDate, fees: d.trades.reduce((x, t) => x + (t.fee || 0), 0) });
     });
     return out;
   }
@@ -245,7 +270,7 @@
       missingPrice: used.filter((t) => !isFlow(t) && !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
   }
 
-  const api = { reconcile, evaluateDecisions, parseTrades, applyTrades, reverseTrades, rawPrice };
+  const api = { reconcile, evaluateDecisions, compareFollow, parseTrades, applyTrades, reverseTrades, rawPrice };
   root.Recon = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

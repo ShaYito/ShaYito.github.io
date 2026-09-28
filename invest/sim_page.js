@@ -680,6 +680,7 @@ async function renderRecon() {
     try {
       const out = Recon.reconcile(P, raw, start, trades, { costBps: +byId("rc-cost").value || 0, cashInterest: byId("rc-int").checked });
       renderReconReport(out, money);
+      if (out._ctx.decisions.length || out.flows.length) renderFollowCompare(P, raw, sys, out, money);
       renderDecisionEval(P, raw, sys, out, money);
     } catch (e) { console.error(e); byId("rc-msg").textContent = `对账失败：${e.message}`; }
   };
@@ -737,6 +738,29 @@ function renderReconReport(out, money) {
 
 
 // ---------------- 决策评估 ----------------
+function renderFollowCompare(P, raw, sys, recon, money) {
+  const host = document.createElement("div");
+  byId("rc-report").appendChild(host);
+  const cf = Recon.compareFollow(P, raw, recon, sys);
+  const last = cf.dates.length - 1;
+  const a = cf.actual[last], h = cf.hold[last], f = cf.follow ? cf.follow[last] : null;
+  const ins = [{ level: a >= h ? "good" : "medium", kind: "derived", text: `你的实际账户 ${money(a)}，起始持仓一直不动 ${money(h)}：你的全部操作合计${a >= h ? "多赚" : "少赚"} ${money(Math.abs(a - h))}。` }];
+  if (f != null) ins.push({ level: a >= f ? "good" : "medium", kind: "simulated",
+    text: `若起始时一次性换成系统配置并每周跟随系统模型：${money(f)}（调仓 ${cf.followTrades} 次、成本 ${money(cf.followCost)}）；你${a >= f ? "多赚" : "少赚"} ${money(Math.abs(a - f))}。` });
+  ins.push({ level: "info", kind: "derived", text: `对比期 ${cf.dates[0]} ~ ${cf.dates[last]}（${last} 个交易日）；期间的存取款三条曲线同时计入。时间越短，结论越受运气影响。` });
+  host.innerHTML = `${insightBox(ins)}
+    <section class="card"><h3>整体对比：你的账户 vs 一直跟随系统模型 vs 一直不动 ${badge("derived")}${badge("simulated")}</h3>
+      <p class="muted">三条曲线都从对账起始持仓出发：<b>你的实际账户</b>（按你录入的交易与费用）；<b>跟随系统模型</b>（起始日后第一个交易日开盘一次性换成系统建议配置，之后每周按系统信号调仓，成本按模拟假设）；<b>一直不动</b>（起始持仓持有到底）。回答“系统模型值不值得跟随”。</p>
+      ${chartDiv("c-fc")}</section>`;
+  mkChart(byId("c-fc"), {
+    tooltip: { trigger: "axis", valueFormatter: (v) => money(v) }, legend: { top: 0 }, grid: { left: 70, right: 20, top: 40, bottom: 30 },
+    xAxis: { type: "category", data: cf.dates, boundaryGap: false }, yAxis: { type: "value", scale: true, axisLabel: { formatter: (v) => money(v) } },
+    series: [{ name: "你的实际账户", type: "line", showSymbol: false, data: cf.actual, color: palette()[0], lineStyle: { width: 2 } },
+      ...(cf.follow ? [{ name: "跟随系统模型", type: "line", showSymbol: false, data: cf.follow, color: palette()[6], lineStyle: { width: 1.5 } }] : []),
+      { name: "一直不动", type: "line", showSymbol: false, data: cf.hold, color: BENCH_GRAY(), lineStyle: { type: "dashed" } }],
+  });
+}
+
 function renderDecisionEval(P, raw, sys, recon, money) {
   const host = document.createElement("div");
   byId("rc-report").appendChild(host);
@@ -763,18 +787,18 @@ function renderDecisionEval(P, raw, sys, recon, money) {
       { level: "info", kind: "derived", text: `加分最多：${best.date}（${money(best.added)}，${pct(best.added_pct, 2, true)}）；减分最多：${worst.date}（${money(worst.added)}，${pct(worst.added_pct, 2, true)}）。` },
     ];
     if (vsRows.length) ins.push({ level: vsTotal >= 0 ? "good" : "medium", kind: "simulated",
-      text: `与“改按系统每周建议操作”相比：${vsRows.length} 次中系统在 ${sysBetter} 次更好；合计你${vsTotal >= 0 ? "多" : "少"}赚 ${money(Math.abs(vsTotal))}。` });
+      text: `与“同一天按系统建议清单操作”相比：${vsRows.length} 次中系统建议的操作在 ${sysBetter} 次更好；合计你的操作${vsTotal >= 0 ? "多" : "少"}赚 ${money(Math.abs(vsTotal))}。` });
     if (n < 10) ins.push({ level: "medium", kind: "derived", text: `目前只有 ${n} 次操作，结果受运气影响很大，不能说明判断能力；建议积累 10 次以上再看整体规律。` });
     if (rows.some((r) => !r.full)) ins.push({ level: "info", kind: "derived", text: "标注“未完”的操作窗口尚未走完（最近一次操作之后的时间不足），数字会随行情继续变化。" });
     const tradeText = (r) => r.trades.map((t) => `${t.side === "buy" ? "买" : "卖"} ${t.ticker} ${+t.shares.toFixed(4)}`).join("；");
     host.innerHTML = `${insightBox(ins)}
-      <section class="card"><h3>决策评估：每次操作 vs 不操作 ${badge("derived")}${withSys ? badge("simulated") : ""}</h3>
-        <p class="muted">对每次操作，从同一起点价值（操作前持仓按前一交易日收盘估值）出发比较：<b>A 操作后持有</b>（你的实际成交价与费用）vs <b>B 不操作</b>（继续持有操作前的仓位）${withSys ? " vs <b>C 改按系统每周建议</b>（当天开盘调到系统建议配置、之后每周跟随，成本按模拟假设）" : ""}。增减 = A − B，已扣除这次操作的费用；窗口内的分红与现金利息计入，资金进出不计。</p>
+      <section class="card"><h3>决策评估：每次操作 vs 不操作${withSys ? " vs 系统建议的操作" : ""} ${badge("derived")}${withSys ? badge("simulated") : ""}</h3>
+        <p class="muted">对每次操作，从同一起点价值（操作前持仓按前一交易日收盘估值）出发，比较同一段时间里：<b>A 你的操作</b>（按你的成交价与费用调整后持有）vs <b>B 不操作</b>（继续持有操作前的仓位）${withSys ? " vs <b>C 系统建议的操作</b>（同一天改为按系统建议清单调到建议配置——即当时最近一期系统信号——开盘成交、成本按模拟假设，之后持有）" : ""}。A、B、C 都只在当天调整一次；增减 = A − B，已扣除费用；窗口内的分红与现金利息计入，资金进出不计。</p>
         <div class="row"><span class="muted">窗口</span><div class="seg" id="de-h">${[["next", "到下一次操作"], ["21", "1 个月"], ["63", "3 个月"]].map(([k, t]) => `<button type="button" data-h="${k}" class="${k === horizon ? "on" : ""}">${t}</button>`).join("")}</div>
-          ${sys ? `<label><input type="checkbox" id="de-sys" ${withSys ? "checked" : ""}> 对比“改按系统每周建议”</label>` : ""}
+          ${sys ? `<label><input type="checkbox" id="de-sys" ${withSys ? "checked" : ""}> 对比“同一天按系统建议清单操作”</label>` : ""}
           <span class="muted">“到下一次操作”：各段不重叠，增减相加 = 主动操作的总贡献；固定窗口：每次比较时长相同，但会重叠。</span></div>
         ${chartDiv("c-de")}
-        <div class="table-wrap"><table><thead><tr><th>操作日</th><th>操作内容</th><th>窗口</th><th class="num">起点价值</th><th class="num">A 操作后</th><th class="num">B 不操作</th><th class="num">增减 A−B</th>${withSys ? '<th class="num">C 系统建议</th><th class="num">你 − 系统</th>' : ""}</tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>操作日</th><th>操作内容</th><th>窗口</th><th class="num">起点价值</th><th class="num">A 操作后</th><th class="num">B 不操作</th><th class="num">增减 A−B</th>${withSys ? '<th class="num">C 系统建议的操作</th><th class="num">你的操作 − 系统建议的操作</th>' : ""}</tr></thead>
         <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td><td class="wrap">${esc(tradeText(r))}${r.fees ? ` <span class="muted">（费用 ${num(r.fees, 2)}）</span>` : ""}</td>
           <td>至 ${esc(r.window_end)}（${r.sessions} 个交易日）${r.full ? "" : ' <span class="chip">未完</span>'}</td><td class="num">${money(r.v0)}</td>
           <td class="num ${cls(r.a_ret)}">${pct(r.a_ret, 2, true)}</td><td class="num ${cls(r.b_ret)}">${pct(r.b_ret, 2, true)}</td>
@@ -786,7 +810,7 @@ function renderDecisionEval(P, raw, sys, recon, money) {
       { name: "这次操作的增减（A − B）", type: "bar", barMaxWidth: 22, data: rows.map((r) => ({ value: r.added, itemStyle: { color: r.added >= 0 ? css("--pos") : css("--neg"), borderRadius: 3 } })) },
       { name: horizon === "next" ? "累计增减" : "增减累加（窗口重叠）", type: "line", symbolSize: 6, color: palette()[1], data: rows.map((r) => (cum += r.added)) },
     ];
-    if (withSys && vsRows.length) series.push({ name: "你 − 系统建议（C）", type: "scatter", symbol: "diamond", symbolSize: 9, color: palette()[6], data: rows.map((r) => r.vs_c) });
+    if (withSys && vsRows.length) series.push({ name: "你的操作 − 系统建议的操作", type: "scatter", symbol: "diamond", symbolSize: 9, color: palette()[6], data: rows.map((r) => r.vs_c) });
     mkChart(byId("c-de"), {
       tooltip: { trigger: "axis", valueFormatter: (v) => (v == null ? "–" : money(v)) }, legend: { top: 0 }, grid: { left: 70, right: 20, top: 40, bottom: 30 },
       xAxis: { type: "category", data: rows.map((r) => r.date) }, yAxis: { type: "value", axisLabel: { formatter: (v) => money(v) } },

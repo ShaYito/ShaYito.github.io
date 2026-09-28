@@ -58,6 +58,7 @@
      opts: { start, end, costBps, initial, monthly, initialWeights }
        —— start 为第一个可成交日（信号取 start-1 收盘）
        —— initialWeights：起点（start-1 收盘）直接持有这些比例、不计建仓成本（实盘对账用）
+       —— noCashInterest：现金不计息（实盘对账中用户选择现金不计息时，对比路径保持同一假设）
        —— cashFlows：{交易日索引: 金额}，当天开盘前存入（正）/ 取出（负）现金，按单位净值调整份额，不自动投资 */
   function run(P, strategy, opts) {
     const assets = strategy.assets;
@@ -82,7 +83,7 @@
     let pending = strategy.onClose(start - 1, { i: start - 1, weights: {}, nav: cash, first: true });
     let pendingReason = pending ? strategy.reason || "" : "", pendingSignal = P.dates[start - 1];
     for (let i = start; i <= end; i++) {
-      if (i > start || held0) { const acc = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += acc; interest += acc; }
+      if ((i > start || held0) && !opts.noCashInterest) { const acc = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += acc; interest += acc; }
       const contribute = i > start && opts.monthly > 0 && P.dates[i].slice(0, 7) !== P.dates[i - 1].slice(0, 7);
       const flow = (opts.cashFlows && opts.cashFlows[i]) || 0;
       const atOpen = !!pending || contribute || flow !== 0;
