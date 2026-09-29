@@ -984,6 +984,32 @@ function stockSidebar(cur) {
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
   return `<aside class="stock-side" aria-label="选择股票">${mine}${etfs ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
 }
+// K 线价格口径：复权价（默认，含分红再投资，用于各项计算）/ 实际价格（除权不除息，与券商 K 线及你的成本同口径）
+const PRICE_MODE_KEY = "invest.price_mode";
+function priceMode() { try { return localStorage.getItem(PRICE_MODE_KEY) === "raw" ? "raw" : "adj"; } catch { return "adj"; } }
+function pricedView(d) {
+  const f = d.div_factor;
+  if (priceMode() !== "raw" || !f) return d;
+  const div = (v, i) => (v == null ? null : +(v / f[i]).toFixed(3));
+  return { ...d, ohlc: d.ohlc.map((r, i) => r.map((v) => div(v, i))), ma50: d.ma50.map(div), ma200: d.ma200.map(div) };
+}
+function priceModeToggle(d) {
+  if (!d.div_factor) return "";
+  return `<div class="seg" id="px-mode" style="margin:6px 0">${[["adj", "复权价"], ["raw", "实际价格（除权不除息）"]].map(([k, n]) =>
+    `<button type="button" data-m="${k}" class="${priceMode() === k ? "on" : ""}">${n}</button>`).join("")}</div>`;
+}
+function priceModeNote(d) {
+  if (!d.div_factor) return "";
+  return priceMode() === "raw"
+    ? "当前为实际价格：按拆股调整、不扣分红，与券商 K 线和你的成本同口径；均线按同一比例换算（与券商按实际价格计算的均线可能相差不到 1%）。"
+    : "当前为复权价：历史价格扣除了之后的分红（相当于分红再投资），用于收益率、均线、转折点等计算；越早的价格越偏低。";
+}
+function bindPriceMode() {
+  document.querySelectorAll("#px-mode button").forEach((b) => (b.onclick = async () => {
+    try { localStorage.setItem(PRICE_MODE_KEY, b.dataset.m); } catch { /* 忽略 */ }
+    const y = window.scrollY; await route(); window.scrollTo(0, y);
+  }));
+}
 // K 线上的“你的平均成本”水平线（有持仓且知道成本时）；成本已按拆股换算，与复权价格的近期部分同口径
 function myCost(t) {
   if (holdingsMode() !== "mine") return null;
@@ -996,8 +1022,11 @@ function costMarkLine(cost) {
     label: { show: true, position: "insideEndTop", formatter: `你的平均成本 ${num(cost, 2)}`, color: css("--ink"), fontSize: 11 } };
 }
 // y 轴范围包含成本线（否则成本远离近期价格时看不到）
-const yWithCost = (cost) => ({ type: "value", scale: true,
-  min: cost ? (v) => Math.min(v.min, cost) * 0.98 : undefined, max: cost ? (v) => Math.max(v.max, cost) * 1.02 : undefined });
+const yWithCost = (cost) => (cost
+  ? { type: "value", scale: true, min: (v) => Math.floor(Math.min(v.min, cost) * 0.98), max: (v) => Math.ceil(Math.max(v.max, cost) * 1.02),
+      axisLabel: { showMinLabel: false, showMaxLabel: false } }
+  : { type: "value", scale: true });
+const pxLabel = (d) => (d.div_factor && priceMode() === "raw" ? "实际价格，除权不除息" : "复权价格");
 // 个股页：你在这只股票上的持仓（本机账本或个人版），以及它与你持仓的产业链关系
 function myPositionLine(t, s) {
   if (holdingsMode() !== "mine") return "";
@@ -1017,7 +1046,7 @@ function myPositionLine(t, s) {
 PAGES.stock = async (r) => {
   const t = r.arg || META.universe.find((u) => isHeld(u.ticker))?.ticker || META.universe[0].ticker;
   if (isEtf(t)) return renderEtfPage(t); // ETF / 大类资产：专用版式（etf_page.js）
-  const s = await load(`stocks/${t}.json`);
+  const s = pricedView(await load(`stocks/${t}.json`));
   const seg = await load("segments.json").catch(() => null);
   const sc = seg?.available ? seg.companies[t] : null;
   const graphData = (await load("news/index.json").catch(() => null))?.graph;
@@ -1030,7 +1059,7 @@ PAGES.stock = async (r) => {
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...stockInsights(s, t), ...segInsights(sc, t)])}
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（复权价格）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。${myCost(t) ? "紫色实线：你的平均成本（复权价格越早越偏低，成本线请与近期价格对比）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     ${segSection(sc, t)}
     ${segGraphCard(t, graphData)}
@@ -1047,6 +1076,7 @@ PAGES.stock = async (r) => {
     document.querySelectorAll("#seg-mode button").forEach((b) => (b.onclick = () => drawSeg(sc, b.dataset.m)));
   }
   const dirColor = { positive: "#0ca30c", negative: "#d03b3b" };
+  bindPriceMode();
   const closeOn = Object.fromEntries(s.dates.map((d, i) => [d, s.ohlc[i][1]]));
   const cost = myCost(t);
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];

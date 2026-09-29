@@ -43,7 +43,7 @@ function etfInsights(e, t) {
 }
 
 async function renderEtfPage(t) {
-  const e = await load(`etf/${t}.json`);
+  const e = pricedView(await load(`etf/${t}.json`));
   const f = e.fund || {};
   const info = e.info;
   const subtitle = [info.name, KIND_ZH[info.kind], f.family, isNum(f.expense_ratio) ? `[[expense_ratio|费率]] ${pct(f.expense_ratio, 2)}/年` : ""].filter(Boolean).join(" · ");
@@ -63,7 +63,7 @@ async function renderEtfPage(t) {
     ${howto(etfHowto(e))}${insightBox(etfInsights(e, t))}
     <section class="card"><h3>它是什么 · 在系统里的作用 ${badge("fact")}${badge("model")}</h3>
       <p>${esc(info.what)}</p><p><b>在系统里：</b>${esc(info.role)}</p>${info.watch ? `<p class="muted"><b>需要关注：</b>${esc(info.watch)}</p>` : ""}</section>
-    <section class="card"><h3>价格走势 ${badge("fact")}${badge("model")}</h3><p class="muted">${rich(`K 线与 50 / 200 日[[ma|均线]]（复权价格）；背景色 = 系统当时判断的[[regime|市场状态]]（绿 = 进攻，黄 = 中性，红 = 防守）。${myCost(t) ? "紫色实线：你的平均成本（复权价格越早越偏低，成本线请与近期价格对比）。" : ""}`)}</p>${chartDiv("c-etf-k", "tall")}</section>
+    <section class="card"><h3>价格走势 ${badge("fact")}${badge("model")}</h3><p class="muted">${rich(`K 线与 50 / 200 日[[ma|均线]]（${pxLabel(e)}）；背景色 = 系统当时判断的[[regime|市场状态]]（绿 = 进攻，黄 = 中性，红 = 防守）。${myCost(t) ? "紫色实线：你的平均成本。" : ""}`)}</p>${priceModeToggle(e)}${e.div_factor ? `<p class="muted">${esc(priceModeNote(e))}</p>` : ""}${chartDiv("c-etf-k", "tall")}</section>
     <section class="card"><h3>收益与风险（与 SPY / QQQ / GLD 并列）${badge("derived")}</h3>
       <div class="table-wrap"><table><thead><tr><th>标的</th>${cols.map(([, n]) => `<th class="num">${n}</th>`).join("")}</tr></thead>
       <tbody>${statRows.map(([k, s]) => `<tr class="${k === t ? "hl" : ""}"><td><a href="#/stock/${k}"><b>${esc(k)}</b></a></td>${cols.map(([c]) => `<td class="num ${c.startsWith("vol") ? "" : cls(s[c])}">${pct(s[c], 1, !c.startsWith("vol") && !c.startsWith("max") && c !== "dd_now")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
@@ -72,6 +72,7 @@ async function renderEtfPage(t) {
     ${info.kind === "broad" ? spyBlocks(e) : ""}${info.kind === "growth" || info.kind === "sector" ? sectorBlocks(e, t) : ""}${info.kind === "gold" ? goldBlocks(e) : ""}
     </div></div>`;
   document.querySelector(".stock-side a.on")?.scrollIntoView({ block: "nearest", inline: "center" });
+  bindPriceMode();
   drawEtfK(e, t);
   if (role.layer && role.history.dates.length) {
     mkChart(byId("c-etf-role"), { tooltip: { trigger: "axis", valueFormatter: (v) => pct(v, 1) }, legend: { show: false }, grid: { left: 48, right: 20, top: 16, bottom: 30 },
