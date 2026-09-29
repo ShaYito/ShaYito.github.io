@@ -452,7 +452,7 @@ PAGES.matrix = async (r) => {
       if (!raw) return head;
       return `${head}<br><span style="opacity:.75">信号分 ${num(raw.score, 3)} · 12-1 动量 ${pct(raw.mom_12_1, 1)} · 相对 MA200 ${pct(raw.px_ma200, 1, true)}<br>
         12 周相对 SPY ${pct(raw.rs_spy_12w, 1, true)} · 60 日波动 ${pct(raw.vol_60d, 0)} · Forward PE ${num(raw.forward_pe, 1)}<br>
-        7 日新闻情绪 ${num(raw.news_sentiment, 2, true)}（${raw.news_count} 条）· 距财报 ${raw.days_to_earnings ?? "–"} 个交易日</span>`;
+        7 日新闻情绪 ${raw.news_count && !isNum(raw.news_sentiment) ? "样本不足" : num(raw.news_sentiment, 2, true)}（${raw.news_count} 条${isNum(raw.news_llm_share) ? `，AI 打分 ${pct(raw.news_llm_share, 0)}` : ""}）· 距财报 ${raw.days_to_earnings ?? "–"} 个交易日</span>`;
     } },
     legend: { show: false }, grid: { left: 90, right: 20, top: 40, bottom: 60 },
     xAxis: { type: "category", data: dims.map((d) => d.name), position: "top", splitArea: { show: false }, axisLabel: { color: css("--ink-2"), interval: 0 } },
@@ -1070,7 +1070,7 @@ PAGES.stock = async (r) => {
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid">
       ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span></li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
-      ${card("每日新闻情绪（均值，−1 ~ 1）", Object.keys(s.sentiment).length ? chartDiv("c-sent", "short") : empty("近期无相关新闻"))}
+      ${card("每日新闻情绪（相对平常水平，−1 ~ 1）", Object.keys(s.sentiment).length ? `${chartDiv("c-sent", "short")}<p class="muted">${rich("0 = 该打分来源的平常水平（已扣除财经新闻整体偏乐观的倾向）；浅色柱 = 当天少于 3 篇，仅供参考。情绪描述的是正在发生什么，实测对下一周涨跌没有预测力（见[[sentiment|新闻情绪]]）。")}</p>` : empty("近期无相关新闻"))}
     </div>
     <h3 class="section-title">系统模型与产业链</h3>
     <div class="grid">
@@ -1127,9 +1127,12 @@ PAGES.stock = async (r) => {
   });
   if (Object.keys(s.sentiment).length) {
     const ds = Object.keys(s.sentiment).sort();
-    mkChart(byId("c-sent"), { legend: { show: false }, tooltip: { trigger: "axis", formatter: (ps) => `${ps[0].axisValue}<br>情绪 ${num(ps[0].value, 2, true)}（${s.sentiment[ps[0].axisValue].count} 条）` },
+    const sv = (d) => s.sentiment[d];
+    mkChart(byId("c-sent"), { legend: { show: false }, tooltip: { trigger: "axis", formatter: (ps) => { const x = sv(ps[0].axisValue);
+        return `${ps[0].axisValue}<br>情绪 ${num(x.mean, 2, true)}（相对平常水平）<br>${x.count} 篇${x.low ? "（样本不足，仅供参考）" : ""} · AI 打分 ${pct(x.llm_share, 0)}，其余为 FinBERT`; } },
       grid: { left: 44, right: 16, top: 16, bottom: 30 }, xAxis: { type: "category", data: ds }, yAxis: { type: "value", min: -1, max: 1 },
-      series: [{ type: "bar", barMaxWidth: 14, data: ds.map((d) => ({ value: s.sentiment[d].mean, itemStyle: { color: s.sentiment[d].mean >= 0 ? css("--pos") : css("--neg"), borderRadius: 3 } })) }] });
+      series: [{ type: "bar", barMaxWidth: 14, data: ds.map((d) => ({ value: sv(d).mean,
+        itemStyle: { color: sv(d).mean >= 0 ? css("--pos") : css("--neg"), opacity: sv(d).low ? 0.3 : 1, borderRadius: 3 } })) }] });
   }
   if (s.score_history.values?.length) {
     mkChart(byId("c-hist"), { legend: { show: false }, grid: { left: 40, right: 28, top: 16, bottom: 30 },
