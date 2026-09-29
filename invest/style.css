@@ -161,7 +161,13 @@ a.chain-chip:hover { border-color: var(--ink-2); }
 .stock-side a b { color: var(--ink); font-weight: 600; margin-right: 4px; }
 .stock-side a:hover { background: var(--chip); }
 .stock-side a.on { background: var(--chip); box-shadow: inset 3px 0 0 #2a78d6; }
-.stock-side .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.stock-side .dot, .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.chip .cmp-x { margin-left: 4px; text-decoration: none; color: var(--muted); }
+.stock-side label.cmp-item { display: flex; align-items: center; gap: 2px; padding: 3px 6px; border-radius: 6px; color: var(--ink-2); font-size: 13px; white-space: nowrap; overflow: hidden; cursor: pointer; }
+.stock-side label.cmp-item b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+.stock-side label.cmp-item:hover, .stock-side label.cmp-item.on { background: var(--chip); }
+.stock-side label.cmp-item input { margin: 0 4px 0 0; }
+.stock-side a.cmp-entry { font-weight: 600; color: var(--ink); }
 @media (max-width: 900px) {
   .stock-layout { grid-template-columns: minmax(0, 1fr); }
   .stock-side { position: static; max-height: none; display: flex; gap: 4px; overflow-x: auto; padding: 6px; }

@@ -176,7 +176,8 @@ const PAGES = {};
 async function route() {
   const r = parseHash();
   disposeCharts();
-  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === r.page));
+  const navPage = r.page === "compare" ? "stock" : r.page; // 多股对比属于“个股”
+  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === navPage));
   const fn = PAGES[r.page] || PAGES.overview;
   app().innerHTML = empty("加载中…");
   try {
@@ -983,7 +984,8 @@ function stockSidebar(cur) {
   }
   const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
-  return `<aside class="stock-side" aria-label="选择股票">${mine}${etfs ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
+  const cmp = `<a href="#/compare${cur ? `?t=${cur}` : ""}" class="cmp-entry" title="勾选多只股票 / ETF，对比走势与相关性">📊 多股对比</a>`;
+  return `<aside class="stock-side" aria-label="选择股票">${cmp}${mine}${etfs ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
 }
 // K 线价格口径：复权价（默认，含分红再投资，用于各项计算）/ 实际价格（除权不除息，与券商 K 线及你的成本同口径）
 const PRICE_MODE_KEY = "invest.price_mode";
