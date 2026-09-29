@@ -34,8 +34,19 @@ function loadHoldings() {
       else {
         const trades = JSON.parse(b || "[]").filter((t) => t.date > start.date).sort((x, y) => x.date.localeCompare(y.date));
         const r = Recon.applyTrades(start.positions || {}, start.cash || 0, trades);
+        // 平均成本（简化版：起始成本价 + 有成交价的交易；缺成本价或成交价的标的不给成本，拆股在持仓页的完整推算中处理）
+        const sh = { ...(start.positions || {}) }, basis = {}, bad = new Set();
+        for (const [t, n] of Object.entries(sh)) { if (start.cost?.[t] > 0) basis[t] = n * start.cost[t]; else bad.add(t); }
+        for (const x of trades) {
+          if (x.side !== "buy" && x.side !== "sell") continue;
+          const t = x.ticker, cur = sh[t] || 0;
+          if (x.side === "buy" && !(x.price > 0)) bad.add(t); // 卖出不改变平均成本，只有买入需要成交价
+          if (x.side === "buy") { sh[t] = cur + x.shares; basis[t] = (basis[t] || 0) + x.shares * (x.price || 0) + (x.fee || 0); }
+          else { basis[t] = cur > 0 ? (basis[t] || 0) * Math.max(0, cur - x.shares) / cur : 0; sh[t] = cur - x.shares; }
+        }
+        const cost = Object.fromEntries(Object.entries(r.positions).filter(([t, v]) => v > 0 && !bad.has(t) && basis[t] > 0).map(([t, v]) => [t, basis[t] / v]));
         val = { date: trades.length ? trades[trades.length - 1].date : start.date, positions: Object.fromEntries(Object.entries(r.positions).filter(([, v]) => v > 0)),
-          cash: r.cash, prices: {}, cost: {}, note: "由交易记录推算（未含分红与利息）" };
+          cash: r.cash, prices: {}, cost, note: "由交易记录推算（未含分红与利息）" };
       }
     } else if (cached?.positions && !cached.sig) val = cached;
     else if (pv && window.PERSONAL.snapshot) val = { ...window.PERSONAL.snapshot, note: `个人数据包（同步于 ${window.PERSONAL.snapshot.date}）` };

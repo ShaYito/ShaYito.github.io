@@ -291,3 +291,39 @@ function drawValuation(s) {
       ] });
   }
 }
+
+// ---------------- K 线上的“你的买卖点”（本机交易记录；其他设备用已解锁个人版中的账本）----------------
+function myTrades(t) {
+  let tr = null;
+  try { tr = loadReconStart() ? loadTrades() : null; } catch { tr = null; }
+  if (!tr && personalOn()) tr = window.PERSONAL.ledger?.trades || null;
+  return (tr || []).filter((x) => x.ticker === t && (x.side === "buy" || x.side === "sell"));
+}
+/* d = 个股 / ETF 数据（已按当前价格口径换算）。成交价先按拆股换算，再换到图上的口径（复权价 = 实际价 × 分红因子）；
+   未填成交价的按当天开盘价。同一天同方向合并为一个标记。 */
+function tradeMarkPoints(d, t) {
+  const trades = myTrades(t);
+  if (!trades.length) return [];
+  const splitMult = (date) => (d.splits || []).filter(([sd]) => sd > date).reduce((m, [, r]) => m * r, 1);
+  const f = priceMode() === "adj" && d.div_factor ? d.div_factor : null;
+  const groups = {};
+  for (const x of trades) {
+    const i = d.dates.findIndex((dd) => dd >= x.date);
+    if (i < 0) continue; // 晚于图表数据
+    if (x.date < d.dates[0]) continue; // 早于图表区间
+    const m = splitMult(x.date);
+    const px = x.price > 0 ? (x.price / m) * (f ? f[i] : 1) : d.ohlc[i][0];
+    const k = `${i}|${x.side}`;
+    const g = (groups[k] ||= { i, side: x.side, shares: 0, value: 0, raw: [] });
+    g.shares += x.shares * m; g.value += x.shares * m * px; g.raw.push(x);
+  }
+  return Object.values(groups).map((g) => ({
+    kind: "trade", coord: [d.dates[g.i], g.value / g.shares], date: d.dates[g.i], side: g.side, trades: g.raw,
+    symbol: "circle", symbolSize: 17, itemStyle: { color: g.side === "buy" ? css("--pos") : css("--neg"), borderColor: css("--surface"), borderWidth: 2 },
+    label: { show: true, formatter: g.side === "buy" ? "买" : "卖", color: "#fff", fontSize: 10, fontWeight: 600 },
+  }));
+}
+function tradeTooltip(p) {
+  const rows = p.data.trades.map((x) => `${x.side === "buy" ? "买入" : "卖出"} ${+x.shares.toFixed(4)} 股 @ ${x.price > 0 ? num(x.price, 2) : "开盘价"}${x.fee ? `（费用 ${num(x.fee, 2)}）` : ""}`);
+  return `<b>你的交易</b> ${esc(p.data.trades[0].date)}<br>${rows.map(esc).join("<br>")}`;
+}

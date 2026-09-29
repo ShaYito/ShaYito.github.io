@@ -1065,7 +1065,7 @@ PAGES.stock = async (r) => {
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
     ${earningsCard(s)}${revisionsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${valuationCard(s)}
     <h3 class="section-title">事件与转折点</h3>
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
@@ -1110,8 +1110,9 @@ PAGES.stock = async (r) => {
               symbolSize: tp.category === "company" ? 16 : tp.category === "market" ? 12 : 9,
               symbolOffset: [0, tp.kind === "peak" || tp.kind === "gap_down" ? -14 : 14],
               itemStyle: { color: tp.category === "unclear" ? "#898781" : tp.move >= 0 ? dirColor.positive : dirColor.negative, borderColor: css("--surface"), borderWidth: 1 } })),
+            ...tradeMarkPoints(s, t),
           ],
-          tooltip: { formatter: (p) => p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
+          tooltip: { formatter: (p) => p.data.kind === "trade" ? tradeTooltip(p) : p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
             : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
           data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d), ...(earningsLineStyle(s, d) || {}) })),
