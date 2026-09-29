@@ -297,7 +297,158 @@
       missingPrice: used.filter((t) => !isFlow(t) && !(t.price > 0)).map((t) => `${t.date} ${t.ticker}`) };
   }
 
-  const api = { reconcile, evaluateDecisions, compareFollow, parseTrades, applyTrades, reverseTrades, rawPrice };
+  /* 拆股换算：行情与分红都是拆股后口径，把录入的股数 / 成交价换算到同一口径（股数 × 之后发生的拆股比例、价格 ÷ 比例）。
+     拆股生效日当天及之后的交易已是新口径；起始持仓按起始日收盘后的状态换算。 */
+  function splitFactorAfter(P, raw, t, i) {
+    let m = 1;
+    for (const [k, r] of raw.corp?.[t]?.split || []) if (k > i) m *= r;
+    return m;
+  }
+  function splitNormalize(P, raw, start, trades) {
+    const s0 = sessionOnOrBefore(P, start.date);
+    const positions = {}, cost = {};
+    for (const [t, n] of Object.entries(start.positions || {})) {
+      const m = splitFactorAfter(P, raw, t, s0);
+      positions[t] = n * m;
+      if (start.cost?.[t] > 0) cost[t] = start.cost[t] / m;
+    }
+    const tr = trades.map((x) => {
+      if (isFlow(x)) return { ...x };
+      const i = sessionOnOrAfter(P, x.date);
+      const m = i < 0 ? 1 : splitFactorAfter(P, raw, x.ticker, i);
+      return m === 1 ? { ...x } : { ...x, shares: x.shares * m, price: x.price > 0 ? x.price / m : x.price, split_mult: m };
+    });
+    // 非整数比例多为分拆（spin-off，yfinance 按拆股处理）：股数按比例换算后市值连续，但分拆出的新公司股票不单独计算
+    const notes = [];
+    const touched = new Set([...Object.keys(start.positions || {}), ...trades.filter((x) => !isFlow(x)).map((x) => x.ticker)]);
+    for (const t of touched) {
+      for (const [k, r] of raw.corp?.[t]?.split || []) {
+        if (k <= s0) continue;
+        notes.push(Math.abs(r - Math.round(r)) > 1e-6
+          ? `${t} 在 ${P.dates[k]} 有分拆（行情按比例 ${r} 调整），股数已按该比例换算；分拆得到的新公司股票未单独计算`
+          : `${t} 在 ${P.dates[k]} 按 1 拆 ${r} 拆股，之前的股数与成交价已自动换算`);
+      }
+    }
+    return { start: { ...start, positions, cost }, trades: tr, notes };
+  }
+
+  /* 账本：由起始持仓 + 交易记录逐日推算（券商式持仓页用）。
+     - 股数与成本按平均成本法：买入 成本 += 股数 × 成交价 + 费用；卖出按平均成本结转，已实现盈亏 = 卖出净额 − 结转成本
+     - 起始持仓的成本：填写了成本价就用成本价，否则按起始日收盘价（标注为估计）
+     - 现金：起始现金 + 存取款 + 分红 + 利息（可关）− 买入 + 卖出 − 费用
+     - 没有成交价的交易按当天开盘价；晚于价格数据截止日的交易仍计入股数与现金（估值用最新收盘价）
+     - 没有行情的标的：计入股数与成本，市值按最后一笔成交价估计（标注）
+     返回 {rows, closed, account, curve, snapshot, warnings} */
+  function ledgerBook(P, raw, start0, trades0, opts = {}) {
+    const cashInterest = opts.cashInterest !== false;
+    const { start, trades, notes } = splitNormalize(P, raw, start0, trades0);
+    const s0 = sessionOnOrBefore(P, start.date);
+    if (s0 < 0) throw new Error("起始日期早于价格数据范围");
+    const end = P.n - 1;
+    const warnings = [...notes];
+    const sorted = [...trades].sort((a, b) => a.date.localeCompare(b.date));
+    const early = sorted.filter((x) => x.date <= start.date);
+    if (early.length) warnings.push(`${early.length} 笔记录不晚于起始持仓日期（${start.date}），未计入`);
+    const used = sorted.filter((x) => x.date > start.date);
+    const tickers = [...new Set([...Object.keys(start.positions), ...used.filter((x) => !isFlow(x)).map((x) => x.ticker)])];
+    const known = (t) => !!P.C[t];
+    const px = Object.fromEntries(tickers.filter(known).map((t) => [t, rawPrice(P, raw, t)]));
+    const divAt = Object.fromEntries(tickers.map((t) => [t, Object.fromEntries((raw.corp?.[t]?.div || []).map(([k, d]) => [k, d]))]));
+    const lastPx = {}; // 最近可用的估值价格
+    const closeAt = (t, i) => { if (px[t]) { const c = px[t].close(i); if (Number.isFinite(c)) lastPx[t] = c; } return lastPx[t]; };
+    const st = Object.fromEntries(tickers.map((t) => [t, { shares: 0, basis: 0, realized: 0, divs: 0, fees: 0, bought: 0, sold: 0, estCost: false, first: null }]));
+    let cash = start.cash || 0, interest = 0, flows = 0;
+    for (const t of tickers) {
+      const n = start.positions[t] || 0;
+      if (!(n > 0)) continue;
+      const c = start.cost?.[t] > 0 ? start.cost[t] : closeAt(t, s0);
+      st[t].shares = n; st[t].first = start.date;
+      if (Number.isFinite(c)) { st[t].basis = n * c; st[t].estCost = !(start.cost?.[t] > 0); }
+      else warnings.push(`${t} 没有起始日价格也没有填写成本价，成本按 0 计`);
+    }
+    const apply = (x, i) => {
+      if (isFlow(x)) { cash += flowAmount(x); flows += flowAmount(x); return; }
+      const s = st[x.ticker];
+      let p = x.price > 0 ? x.price : NaN;
+      if (!Number.isFinite(p) && px[x.ticker] && i != null) p = px[x.ticker].open(i);
+      if (!Number.isFinite(p)) { warnings.push(`${x.date} ${x.ticker} 没有成交价也没有行情，按 0 计，请补填成交价`); p = 0; }
+      if (!px[x.ticker] || lastPx[x.ticker] == null) lastPx[x.ticker] = p;
+      const fee = x.fee > 0 ? x.fee : 0;
+      s.fees += fee;
+      if (x.side === "sell") {
+        const n = Math.min(x.shares, s.shares);
+        if (x.shares > s.shares + 1e-9) warnings.push(`${x.date} ${x.ticker} 卖出 ${x.shares} 股多于持有 ${+s.shares.toFixed(4)} 股，按持有股数结转成本`);
+        const out = s.shares > 0 ? s.basis * n / s.shares : 0;
+        s.realized += x.shares * p - fee - out;
+        s.basis -= out; s.shares -= x.shares; s.sold += x.shares * p;
+        if (Math.abs(s.shares) < 1e-9) { s.shares = 0; s.basis = 0; }
+        cash += x.shares * p - fee;
+      } else {
+        if (!(s.shares > 0)) s.first = x.date;
+        s.shares += x.shares; s.basis += x.shares * p + fee; s.bought += x.shares * p;
+        cash -= x.shares * p + fee;
+      }
+    };
+    const byDay = {}, late = [];
+    for (const x of used) { const i = sessionOnOrAfter(P, x.date); if (i < 0) late.push(x); else (byDay[i] ||= []).push(x); }
+    const value = (i) => tickers.reduce((a, t) => a + (st[t].shares ? st[t].shares * (closeAt(t, i) ?? 0) : 0), 0) + cash;
+    const curve = { dates: [P.dates[s0]], value: [value(s0)], flow: [0], twr: [1] };
+    let twr = 1;
+    for (let i = s0 + 1; i <= end; i++) {
+      const prev = curve.value[curve.value.length - 1];
+      if (cashInterest) { const a = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += a; interest += a; }
+      for (const t of tickers) { const d = divAt[t][i]; if (d && st[t].shares > 0) { cash += st[t].shares * d; st[t].divs += st[t].shares * d; } }
+      let f = 0;
+      for (const x of byDay[i] || []) { if (isFlow(x)) f += flowAmount(x); apply(x, i); }
+      const v = value(i);
+      // 时间加权：资金在开盘前进出，当天收益 = 收盘价值 ÷（前一日价值 + 当天资金流）
+      if (prev + f > 0) twr *= v / (prev + f);
+      curve.dates.push(P.dates[i]); curve.value.push(v); curve.flow.push(f); curve.twr.push(twr);
+    }
+    if (late.length) {
+      warnings.push(`${late.length} 笔记录晚于价格数据截止日（${P.dates[end]}），已计入股数与现金，估值用最新收盘价`);
+      for (const x of late) apply(x, null);
+    }
+    if (cash < -1e-6) warnings.push("现金为负：可能漏录了卖出或存入资金");
+    // ---------- 汇总 ----------
+    const last = (t) => (px[t] ? closeAt(t, end) : lastPx[t]);
+    const prevClose = (t) => { if (!px[t]) return NaN; for (let k = end - 1; k >= 0; k--) { const v = px[t].close(k); if (Number.isFinite(v)) return v; } return NaN; };
+    const lateToday = new Set(late.filter((x) => !isFlow(x)).map((x) => x.ticker));
+    const todayTraded = new Set((byDay[end] || []).filter((x) => !isFlow(x)).map((x) => x.ticker));
+    const total = value(end) + 0; // value() 已含现金
+    const rows = [], closed = [];
+    for (const t of tickers) {
+      const s = st[t], p = last(t);
+      const base = { ticker: t, realized: s.realized, divs: s.divs, fees: s.fees, has_data: !!px[t] };
+      if (s.shares > 1e-9) {
+        const mv = s.shares * (p ?? NaN), pc = prevClose(t);
+        const dayChg = Number.isFinite(pc) && !todayTraded.has(t) && !lateToday.has(t) ? s.shares * (p - pc) : NaN;
+        rows.push({ ...base, shares: s.shares, price: p, prev_close: pc, day_change: dayChg, day_pct: Number.isFinite(pc) ? p / pc - 1 : NaN,
+          market_value: mv, cost_basis: s.basis, avg_cost: s.basis / s.shares, unrealized: mv - s.basis, unrealized_pct: s.basis > 0 ? mv / s.basis - 1 : NaN,
+          weight: total > 0 ? mv / total : NaN, total_gain: mv - s.basis + s.realized + s.divs, est_cost: s.estCost, since: s.first });
+      } else if (Math.abs(s.realized) > 1e-9 || s.divs > 0) closed.push({ ...base, total_gain: s.realized + s.divs });
+    }
+    rows.sort((a, b) => (b.market_value || 0) - (a.market_value || 0));
+    const sum = (arr, k) => arr.reduce((a, r) => a + (Number.isFinite(r[k]) ? r[k] : 0), 0);
+    const all = [...rows, ...closed];
+    const n = curve.value.length;
+    const startValue = curve.value[0];
+    const account = {
+      asof: P.dates[end], start_date: P.dates[s0], total_value: total, cash, invested: total - cash,
+      day_change: n >= 2 ? curve.value[n - 1] - curve.value[n - 2] - curve.flow[n - 1] : NaN,
+      day_pct: n >= 2 && curve.value[n - 2] + curve.flow[n - 1] > 0 ? curve.value[n - 1] / (curve.value[n - 2] + curve.flow[n - 1]) - 1 : NaN,
+      start_value: startValue, net_flows: flows, total_gain: total - startValue - flows, twr: curve.twr[n - 1] - 1,
+      unrealized: sum(rows, "unrealized"), realized: sum(all, "realized"), dividends: sum(all, "divs"), interest, fees: sum(all, "fees"),
+      cost_basis: sum(rows, "cost_basis"), late: late.length,
+    };
+    const snapshot = { date: late.length ? late[late.length - 1].date : P.dates[end],
+      positions: Object.fromEntries(rows.map((r) => [r.ticker, +r.shares.toFixed(6)])), cash: Math.round(cash * 100) / 100,
+      cost: Object.fromEntries(rows.filter((r) => Number.isFinite(r.avg_cost)).map((r) => [r.ticker, +r.avg_cost.toFixed(4)])),
+      prices: Object.fromEntries(rows.filter((r) => !r.has_data && Number.isFinite(r.price)).map((r) => [r.ticker, r.price])), note: "由交易记录推算" };
+    return { rows, closed, account, curve, snapshot, warnings };
+  }
+
+  const api = { reconcile, evaluateDecisions, compareFollow, parseTrades, applyTrades, reverseTrades, rawPrice, splitNormalize, ledgerBook };
   root.Recon = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

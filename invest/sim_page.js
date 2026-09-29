@@ -27,7 +27,7 @@ const SIM_OVERLAYS = {
 const SIM_TEMPLATES = {
   mine: { name: "我的持仓（按当前市值比例）" },
   mine_shares: { name: "我的持仓（按股数）" },
-  recon: { name: "对账起始持仓（按股数与日期）" },
+  recon: { name: "交易记录的起始持仓（按股数与日期）" },
   system_now: { name: "本系统最新建议配置" },
   spy: { name: "SPY 100%", weights: { SPY: 1 } },
   qqq: { name: "QQQ 100%", weights: { QQQ: 1 } },
@@ -72,9 +72,12 @@ function lastRawClose(P, raw, t, i) {
 /* 实盘历史仓位：对账起始持仓 + 每个交易日调仓后的持仓（该日收盘后的状态）。
    现金用对账引擎推算（成交金额、费用、分红、现金利息）；超出价格数据的日期只按成交金额加减。 */
 function reconSnapshots(P, raw) {
-  const st = loadReconStart();
-  if (!st) return [];
-  const trades = loadTrades().filter((t) => t.date > st.date).sort((a, b) => a.date.localeCompare(b.date));
+  const st0 = loadReconStart();
+  if (!st0) return [];
+  // 股数 / 成交价换算到拆股后口径（与行情一致）
+  const norm = Recon.splitNormalize(P, raw, st0, loadTrades());
+  const st = norm.start;
+  const trades = norm.trades.filter((t) => t.date > st.date).sort((a, b) => a.date.localeCompare(b.date));
   const out = [{ label: `建仓 ${st.date}（对账起始持仓）`, date: st.date, positions: { ...st.positions }, cash: st.cash || 0 }];
   const days = [...new Set(trades.map((t) => t.date))];
   for (const d of days) {
@@ -142,7 +145,7 @@ function simEngineCfg(c, w) {
 }
 
 PAGES.sim = async (r) => {
-  if (r.query.tab === "recon") return renderRecon();
+  if (r.query.tab === "recon") { location.replace("#/holdings?tab=recon"); return; } // 实盘对账已移到“我的持仓”
   const { P, raw, sys } = await simData();
   const cfg = { ...structuredClone(SIM_DEFAULT), ...(r.query.c ? simUpgrade(simDecode(r.query.c)) || {} : {}) };
   cfg.overlays = { ...SIM_DEFAULT.overlays, ...(cfg.overlays || {}) };
@@ -160,10 +163,10 @@ PAGES.sim = async (r) => {
     `<label class="sim-strat"><input type="radio" name="sim-strat" value="${k}" ${k === cfg.strategy ? "checked" : ""}> <b>${esc(s.name)}</b><span class="muted">${esc(s.tip)}</span></label>`).join("");
   app().innerHTML = `
     <h2>模拟经营 <span class="muted">用真实历史价格检验“某个仓位 + 某种操作方式”的结果 · 数据 ${esc(first)} ~ ${esc(lastDate)}</span></h2>
-    ${simTabs("bt")}${howto(SIM_HOWTO)}
+    ${howto(SIM_HOWTO)}
     <section class="card" id="sim-form"><h3>① 起始仓位 ${badge("simulated")}</h3>
       <div class="row"><label>载入模板 <select id="sim-tpl"><option value="">— 选择 —</option>${Object.entries(SIM_TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.name)}</option>`).join("")}
-        ${histSnaps.length ? `<optgroup label="实盘历史仓位（来自实盘对账）">${histSnaps.map((h, i) => `<option value="hist:${i}">${esc(h.label)}</option>`).join("")}</optgroup>` : ""}</select></label>
+        ${histSnaps.length ? `<optgroup label="实盘历史仓位（来自我的持仓 · 交易记录）">${histSnaps.map((h, i) => `<option value="hist:${i}">${esc(h.label)}</option>`).join("")}</optgroup>` : ""}</select></label>
         <span class="muted" id="sim-tpl-msg"></span></div>
       <div class="row"><span class="muted">输入方式</span><div class="seg" id="sim-posmode"><button type="button" data-m="weight">按比例</button><button type="button" data-m="shares">按股数</button></div>
         <span class="muted" id="sim-posmode-tip"></span></div>
@@ -290,7 +293,7 @@ PAGES.sim = async (r) => {
       msg.textContent = `已载入 ${h.label} 的仓位（该日收盘后），开始日期设为下一个交易日 ${sd}`;
     } else if (k === "recon") {
       const st = loadReconStart();
-      if (!st) { msg.textContent = "还没有对账起始持仓：请先在“实盘对账”标签设置"; return; }
+      if (!st) { msg.textContent = "还没有起始持仓：请先在“我的持仓 → 交易记录”设置"; return; }
       posMode = "shares"; shares = { ...st.positions }; cash = st.cash || 0;
       const sd = nextSessionDate(P, st.date);
       byId("sim-start").value = sd;
@@ -521,322 +524,4 @@ function renderSimReport(P, sys, c) {
     a.download = `sim_trades_${res.dates[0]}_${res.dates[res.dates.length - 1]}.csv`;
     a.click();
   };
-}
-
-// ---------------- 实盘对账 ----------------
-const TRADES_KEY = "invest.trades.v1";
-const RECON_START_KEY = "invest.recon.start.v1";
-const RECON_HOWTO = [
-  "用你的真实调仓来检验模拟运算：从一份“起始持仓”出发，录入之后每一笔实际交易（日期、买卖、股数、成交价、费用），系统同时计算两条资产曲线——",
-  "① 实际：按原始股价估值，按你的成交价与费用成交，除息日收到现金分红；② 模拟：同一起始持仓、在同一天调到同样的比例，但按模拟经营的规则成交（当天开盘价、单边 0.1% 成本、分红再投资）。",
-  "两条曲线的差额被拆成：成交价差（你的成交价 vs 当天开盘价）、费用差（实际费用 vs 模拟成本假设）、现金利息差、其他（差额在之后的复利、分红到账方式、整股等）。没有交易时两条曲线应完全一致；差额主要来自成交价和费用，说明模拟的规则是对的，只是成交假设和你的实际不同。",
-  "期间有资金转入转出时，在交易记录里选“存入现金 / 取出现金”并填金额：它在当天开盘前同时计入实际与模拟两条曲线，不会被算成差额。",
-  "数据只保存在本机浏览器。录完交易后可点“应用到我的持仓”更新股数与现金，再到“我的持仓”页同步到后台（现金请以券商显示为准）。",
-];
-function loadTrades() { try { return JSON.parse(localStorage.getItem(TRADES_KEY) || "[]"); } catch { return []; } }
-function saveTrades(t) { try { localStorage.setItem(TRADES_KEY, JSON.stringify(t)); } catch { /* 忽略 */ } }
-function loadReconStart() { try { return JSON.parse(localStorage.getItem(RECON_START_KEY) || "null"); } catch { return null; } }
-function saveReconStart(s) { try { localStorage.setItem(RECON_START_KEY, JSON.stringify(s)); } catch { /* 忽略 */ } }
-function simTabs(active) {
-  return `<div class="seg" style="margin-bottom:12px"><button type="button" class="${active === "bt" ? "on" : ""}" onclick="location.hash='#/sim'">策略回测</button>
-    <button type="button" class="${active === "recon" ? "on" : ""}" onclick="location.hash='#/sim?tab=recon'">实盘对账</button></div>`;
-}
-
-async function renderRecon() {
-  const { P, raw, sys } = await simData();
-  let start = loadReconStart();
-  const mine = loadHoldings();
-  if (!start && mine) { start = { date: mine.date, positions: { ...mine.positions }, cash: mine.cash || 0 }; saveReconStart(start); }
-  let trades = loadTrades();
-  const money = (v) => (isNum(v) ? `${v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("zh-CN", { maximumFractionDigits: 0 })}` : "–");
-  app().innerHTML = `
-    <h2>模拟经营 <span class="muted">实盘对账 · 价格数据截至 ${esc(P.dates[P.n - 1])}</span></h2>
-    ${simTabs("recon")}${howto(RECON_HOWTO)}
-    <section class="card" id="rc-start"><h3>起始持仓（过去某日收盘后）${badge("fact")}</h3>
-      <div class="row"><label>日期 <input type="date" id="rs-date" min="${esc(P.dates[Math.max(P.backtestStart, 1)])}" max="${esc(P.dates[P.n - 1])}" value="${esc(start?.date || "")}"></label>
-        <label>现金 <input type="number" id="rs-cash" min="0" step="100" value="${start?.cash ?? 0}" style="width:120px"></label></div>
-      <div class="table-wrap"><table><thead><tr><th>代码</th><th>名称</th><th class="num">股数</th><th></th></tr></thead><tbody id="rs-rows"></tbody></table></div>
-      <div class="row"><input type="text" id="rs-new" placeholder="代码" style="width:100px"><input type="number" id="rs-new-n" placeholder="股数" min="0" step="1" style="width:90px">
-        <button type="button" class="ghost" id="rs-add">添加</button>
-        <details class="howto" style="flex:1 1 300px"><summary>粘贴导入（每行“代码 股数”，现金写“现金 金额”）</summary>
-          <textarea id="rs-paste" rows="4" style="width:100%" placeholder="NVDA 40\nSPY 30\n现金 8000"></textarea>
-          <div class="row"><button type="button" class="ghost" id="rs-paste-btn">解析并覆盖</button></div></details></div>
-      <div class="row"><button type="button" class="primary" id="rs-save">保存起始持仓</button>
-        <button type="button" class="ghost" id="rs-copy">从“我的持仓”复制</button>
-        <button type="button" class="ghost" id="rs-reverse">由当前持仓倒推到该日期</button><span class="muted" id="rs-msg"></span></div>
-      <p class="muted">起始持仓与“我的持仓”分开保存。倒推 = 用“我的持仓”（${mine ? `${esc(mine.date)} 的持仓` : "尚未填写"}）撤销该日期之后、${mine ? esc(mine.date) : "当前"}之前的交易记录，现金按成交价与费用反推；请先录入这段时间的全部交易。</p></section>
-    <section class="card"><h3>交易记录 ${badge("fact")}</h3>
-      <div class="table-wrap"><table><thead><tr><th>日期</th><th>方向</th><th>代码</th><th class="num">股数</th><th class="num">成交价</th><th class="num">费用</th><th></th></tr></thead><tbody id="rc-rows"></tbody></table></div>
-      <div class="row"><input type="date" id="rc-d" value="${esc(P.dates[P.n - 1])}"><select id="rc-side"><option value="buy">买入</option><option value="sell">卖出</option><option value="deposit">存入现金</option><option value="withdraw">取出现金</option></select>
-        <input type="text" id="rc-t" placeholder="代码" style="width:90px"><input type="number" id="rc-n" placeholder="股数" min="0" step="1" style="width:90px">
-        <input type="number" id="rc-p" placeholder="成交价" min="0" step="0.01" style="width:100px"><input type="number" id="rc-f" placeholder="费用" min="0" step="0.01" style="width:80px">
-        <button type="button" class="ghost" id="rc-add">添加</button></div>
-      <details class="howto"><summary>粘贴导入（每行“日期 买/卖 代码 股数 成交价 费用”；资金写“日期 存入/取出 金额”）</summary>
-        <textarea id="rc-paste" rows="5" style="width:100%" placeholder="2026-09-29 买 NVDA 10 180.50 1.00\n2026-09-29 卖 SPY 5 700.20 0.50\n2026-10-01 存入 5000\n2026-10-15 取出 2000"></textarea>
-        <div class="row"><button type="button" class="ghost" id="rc-paste-btn">解析并追加</button><span class="muted" id="rc-paste-msg"></span></div></details>
-      <div class="row"><label title="模拟那条曲线每笔买卖按成交额扣除的成本比例，不是某一笔交易的费用">模拟成本假设 <input type="number" id="rc-cost" min="0" max="100" value="10" style="width:56px"> bps</label>
-        <label><input type="checkbox" id="rc-int" checked> 现金计息（放在 SPAXX 等货币基金中）</label>
-        <button type="button" class="primary" id="rc-run">运行对账</button>
-        <button type="button" class="ghost" id="rc-apply">应用到我的持仓</button><span class="muted" id="rc-msg"></span></div>
-      <p class="muted"><b>模拟成本假设</b>：模拟曲线每笔买卖按成交额扣除的成本比例（1 bp = 0.01%，默认 10 bps = 0.1%，与策略回测相同），对所有交易统一生效；你每笔的实际费用填在交易记录的“费用”栏，两者之差即结果中的“费用差”。
-        填 10 看默认假设与你的实际差多少；填 0 只验证计算逻辑；调到“费用差”接近 0 的值，可作为你在策略回测中设置成本的参考。</p>
-      <p class="muted">成交价留空时按当天开盘价计；交易日期若不是交易日，按之后第一个交易日计。只计入起始持仓日期之后、价格数据截止日之前的交易。</p></section>
-    <div id="rc-report"></div>`;
-  const draw = () => {
-    trades.sort((a, b) => a.date.localeCompare(b.date));
-    const SIDE = { buy: ["买入", "pos"], sell: ["卖出", "neg"], deposit: ["存入现金", "pos"], withdraw: ["取出现金", "neg"] };
-    const flowSide = (t) => t.side === "deposit" || t.side === "withdraw";
-    byId("rc-rows").innerHTML = trades.map((t, i) => `<tr><td>${esc(t.date)}</td><td class="${SIDE[t.side]?.[1] || ""}">${SIDE[t.side]?.[0] || esc(t.side)}</td>
-      <td><b>${flowSide(t) ? "现金" : esc(t.ticker)}</b></td><td class="num">${flowSide(t) ? `金额 ${money(t.shares)}` : t.shares}</td>
-      <td class="num">${flowSide(t) ? "–" : t.price > 0 ? num(t.price, 2) : "开盘价"}</td><td class="num">${flowSide(t) ? "–" : num(t.fee || 0, 2)}</td>
-      <td><button type="button" class="ghost rc-del" data-i="${i}">删除</button></td></tr>`).join("") || `<tr><td colspan="7" class="muted">还没有交易记录</td></tr>`;
-    document.querySelectorAll(".rc-del").forEach((b) => (b.onclick = () => { trades.splice(+b.dataset.i, 1); saveTrades(trades); draw(); }));
-  };
-  const syncSide = () => {
-    const f = ["deposit", "withdraw"].includes(byId("rc-side").value);
-    byId("rc-t").disabled = f; byId("rc-p").disabled = f; byId("rc-f").disabled = f;
-    byId("rc-t").placeholder = f ? "现金" : "代码"; byId("rc-n").placeholder = f ? "金额" : "股数";
-  };
-  byId("rc-side").onchange = syncSide;
-  byId("rc-add").onclick = () => {
-    const side = byId("rc-side").value;
-    if (side === "deposit" || side === "withdraw") {
-      const amt = +byId("rc-n").value;
-      if (!(amt > 0)) { byId("rc-msg").textContent = "请填写金额"; return; }
-      trades.push({ date: byId("rc-d").value, side, ticker: "CASH", shares: amt, price: null, fee: 0 });
-      saveTrades(trades); draw(); byId("rc-msg").textContent = ""; byId("rc-n").value = "";
-      return;
-    }
-    const t = byId("rc-t").value.trim().toUpperCase().replace(/\./g, "-"), n = +byId("rc-n").value;
-    if (!/^[A-Z0-9^][A-Z0-9\-=^]{0,11}$/.test(t) || !(n > 0)) { byId("rc-msg").textContent = "请填写代码与股数"; return; }
-    trades.push({ date: byId("rc-d").value, side: byId("rc-side").value, ticker: t, shares: n, price: +byId("rc-p").value || null, fee: +byId("rc-f").value || 0 });
-    saveTrades(trades); draw(); byId("rc-msg").textContent = "";
-  };
-  byId("rc-paste-btn").onclick = () => {
-    const p = Recon.parseTrades(byId("rc-paste").value);
-    trades.push(...p.trades); saveTrades(trades); draw();
-    byId("rc-paste-msg").textContent = `追加 ${p.trades.length} 笔${p.errors.length ? `；${p.errors.length} 行无法识别：${p.errors.slice(0, 2).join("；")}` : ""}`;
-  };
-  // ---------- 起始持仓编辑器 ----------
-  let sp = start ? { ...start.positions } : {};
-  const drawStart = () => {
-    byId("rs-rows").innerHTML = Object.keys(sp).sort().map((t) => `<tr><td><b>${esc(t)}</b>${P.C[t] ? "" : ' <span class="chip">无行情，不参与对账</span>'}</td>
-      <td>${esc(META.names_zh?.[t] || "")}</td><td class="num"><input type="number" class="rs-sh" data-t="${t}" min="0" step="1" value="${sp[t]}" style="width:100px"></td>
-      <td><button type="button" class="ghost rs-del" data-t="${t}">移除</button></td></tr>`).join("") || `<tr><td colspan="4" class="muted">尚未填写</td></tr>`;
-    document.querySelectorAll(".rs-sh").forEach((el) => (el.onchange = () => { sp[el.dataset.t] = Math.max(0, +el.value || 0); }));
-    document.querySelectorAll(".rs-del").forEach((el) => (el.onclick = () => { delete sp[el.dataset.t]; drawStart(); }));
-  };
-  const commitStart = (msg) => {
-    const d = byId("rs-date").value;
-    if (!d) { byId("rs-msg").textContent = "请填写日期"; return false; }
-    start = { date: d, positions: Object.fromEntries(Object.entries(sp).filter(([, v]) => v > 0)), cash: Math.max(0, +byId("rs-cash").value || 0) };
-    saveReconStart(start);
-    byId("rs-msg").textContent = msg || `已保存 ${d} 的起始持仓（${Object.keys(start.positions).length} 个标的）`;
-    byId("rc-run").click();
-    return true;
-  };
-  byId("rs-add").onclick = () => {
-    const t = byId("rs-new").value.trim().toUpperCase().replace(/\./g, "-"), n = +byId("rs-new-n").value;
-    if (!/^[A-Z0-9^][A-Z0-9\-=^]{0,11}$/.test(t) || !(n > 0)) { byId("rs-msg").textContent = "请填写代码与股数"; return; }
-    sp[t] = n; byId("rs-new").value = ""; byId("rs-new-n").value = ""; drawStart();
-  };
-  byId("rs-paste-btn").onclick = () => {
-    const p = HoldingsCalc.parsePasted(byId("rs-paste").value);
-    sp = { ...p.positions }; if (p.cash != null) byId("rs-cash").value = p.cash;
-    byId("rs-msg").textContent = `识别 ${Object.keys(sp).length} 个标的${p.errors.length ? `；${p.errors.length} 行无法识别` : ""}（记得点“保存起始持仓”）`;
-    drawStart();
-  };
-  byId("rs-save").onclick = () => commitStart();
-  byId("rs-copy").onclick = () => {
-    const h = loadHoldings();
-    if (!h) { byId("rs-msg").textContent = "本机没有“我的持仓”"; return; }
-    sp = { ...h.positions }; byId("rs-cash").value = h.cash || 0; byId("rs-date").value = h.date; drawStart();
-    commitStart(`已复制“我的持仓”（${h.date}）作为起始持仓`);
-  };
-  byId("rs-reverse").onclick = () => {
-    const h = loadHoldings(), d = byId("rs-date").value;
-    if (!h) { byId("rs-msg").textContent = "请先在“我的持仓”页填写当前持仓"; return; }
-    if (!d || d >= h.date) { byId("rs-msg").textContent = `请先选择早于 ${h.date} 的日期`; return; }
-    const r = Recon.reverseTrades(h.positions, h.cash || 0, trades, d, h.date);
-    sp = { ...r.positions }; byId("rs-cash").value = Math.max(0, Math.round(r.cash * 100) / 100); drawStart();
-    const notes = [`已由 ${h.date} 的持仓撤销 ${r.used} 笔交易，倒推出 ${d} 的持仓`];
-    if (r.missingPrice.length) notes.push(`${r.missingPrice.length} 笔没有成交价，现金无法反推，请手动核对`);
-    if (r.negative.length) notes.push(`${r.negative.join("、")} 倒推后为负，可能漏录了买入`);
-    if (r.cash < 0) notes.push("倒推现金为负，可能漏录了卖出或期间有资金存入");
-    commitStart(notes.join("；"));
-  };
-  drawStart();
-  byId("rc-apply").onclick = () => {
-    if (!start) return;
-    const after = trades.filter((t) => t.date > start.date);
-    if (!after.length) { byId("rc-msg").textContent = "没有起始日期之后的交易"; return; }
-    const r = Recon.applyTrades(start.positions, start.cash, after);
-    const h = loadHoldings() || { prices: {}, cost: {}, note: "" };
-    saveHoldings({ ...h, date: after[after.length - 1].date, positions: r.positions, cash: Math.max(0, Math.round(r.cash * 100) / 100), note: "由交易记录更新" });
-    byId("rc-msg").innerHTML = `已更新“我的持仓”（${esc(after[after.length - 1].date)}）${r.missingPrice.length ? `；${r.missingPrice.length} 笔没有成交价，现金未扣减，请手动核对` : ""}。现金未含分红与利息，请以券商显示为准后到 <a href="#/holdings">我的持仓</a> 同步。`;
-  };
-  byId("rc-run").onclick = () => {
-    if (!start) { byId("rc-msg").textContent = "请先设置起始持仓"; return; }
-    try {
-      const out = Recon.reconcile(P, raw, start, trades, { costBps: +byId("rc-cost").value || 0, cashInterest: byId("rc-int").checked });
-      renderReconReport(out, money);
-      if (out._ctx.decisions.length || out.flows.length) renderFollowCompare(P, raw, sys, out, money);
-      renderDecisionEval(P, raw, sys, out, money);
-    } catch (e) { console.error(e); byId("rc-msg").textContent = `对账失败：${e.message}`; }
-  };
-  draw(); syncSide();
-  if (start) byId("rc-run").click();
-}
-
-function renderReconReport(out, money) {
-  const d = out.decomposition;
-  const last = out.actual.length - 1;
-  const rel = d.total / out.sim[last];
-  const ins = [];
-  if (out.flows.length) ins.push({ level: "info", kind: "fact", text: `期间资金净${out.flow_total >= 0 ? "存入" : "取出"} ${money(Math.abs(out.flow_total))}（${out.flows.map((f) => `${f.date} ${f.amount >= 0 ? "+" : ""}${money(f.amount)}`).join("，")}），实际与模拟两条曲线同时计入。` });
-  ins.push({ level: Math.abs(rel) < 0.002 ? "good" : "info", kind: "derived",
-    text: `实际期末资产 ${money(out.actual[last])}，模拟 ${money(out.sim[last])}，相差 ${money(d.total)}（${(rel * 100).toFixed(2)}%）。` });
-  if (out.rows.length) {
-    const parts = [["成交价差", d.fill], ["费用差", d.fee], ["现金利息差", d.interest], ["其他", d.other]].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-    ins.push({ level: "info", kind: "derived", text: `差额主要来自「${parts[0][0]}」${money(parts[0][1])}；成交价差为正表示你的成交价比当天开盘价更有利。` });
-    const slip = out.rows.filter((r) => isNum(r.slip_bps) && r.price_given);
-    if (slip.length) {
-      const avg = slip.reduce((a, r) => a + r.slip_bps * r.shares * r.open, 0) / slip.reduce((a, r) => a + r.shares * r.open, 0);
-      ins.push({ level: Math.abs(avg) > 20 ? "medium" : "info", kind: "derived", text: `按成交额加权，你的成交价平均比开盘价${avg > 0 ? "差" : "好"} ${Math.abs(avg).toFixed(1)} 个基点（${avg > 0 ? "买得更贵 / 卖得更便宜" : "买得更便宜 / 卖得更贵"}）。` });
-    }
-    ins.push({ level: "info", kind: "derived", text: `实际费用 ${num(out.fees, 2)}，按模拟成本假设计 ${num(out.model_cost, 2)}${out.fees < out.model_cost ? "：该成本假设比你的实际费用偏保守" : out.fees > out.model_cost ? "：该成本假设低于你的实际费用" : ""}。` });
-  } else ins.push({ level: "info", kind: "derived", text: "还没有起始日期之后的交易：两条曲线应一致（差额来自分红到账方式等细节）。" });
-  byId("rc-report").innerHTML = `${insightBox(ins)}
-    ${out.warnings.length ? `<section class="card"><p class="warn">${out.warnings.map(esc).join("<br>")}</p></section>` : ""}
-    <section class="card"><h3>对账结果 ${badge("derived")}${badge("simulated")}</h3><div class="kpis">
-      <div class="kpi"><span class="muted">实际期末资产</span><b>${money(out.actual[last])}</b></div>
-      <div class="kpi"><span class="muted">模拟期末资产</span><b>${money(out.sim[last])}</b></div>
-      <div class="kpi"><span class="muted">差额（实际 − 模拟）</span><b class="${cls(d.total)}">${money(d.total)}</b><span class="muted">${(rel * 100).toFixed(2)}%</span></div>
-      <div class="kpi"><span class="muted">期间分红 / 利息</span><b>${money(out.dividends)} / ${money(out.interest)}</b></div>
-      ${out.flows.length ? `<div class="kpi"><span class="muted">资金净存入（${out.flows.length} 笔）</span><b class="${cls(out.flow_total)}">${money(out.flow_total)}</b><span class="muted">两条曲线同时计入，不影响差额</span></div>` : ""}</div>
-      <div class="grid two"><div>${chartDiv("c-rc-nav")}</div><div>${chartDiv("c-rc-dec")}</div></div></section>
-    ${out.rows.length ? card("逐笔对比：你的成交 vs 模拟假设", `<div class="table-wrap"><table><thead><tr><th>日期</th><th>方向</th><th>代码</th><th class="num">股数</th><th class="num">成交价</th><th class="num">当天开盘价</th><th class="num">价差（bps）</th><th class="num">实际费用</th><th class="num">模拟成本</th></tr></thead>
-      <tbody>${out.rows.map((r) => `<tr><td>${esc(r.date)}</td><td>${r.side === "buy" ? "买入" : "卖出"}</td><td><b>${esc(r.ticker)}</b></td><td class="num">${r.shares}</td>
-        <td class="num">${num(r.price, 2)}${r.price_given ? "" : " <span class=\"muted\">(开盘)</span>"}</td><td class="num">${num(r.open, 2)}</td>
-        <td class="num ${cls(-r.slip_bps)}">${isNum(r.slip_bps) ? r.slip_bps.toFixed(1) : "–"}</td><td class="num">${num(r.fee, 2)}</td><td class="num">${num(r.model_cost, 2)}</td></tr>`).join("")}</tbody></table></div>
-      <p class="muted">价差 = 你的成交价相对开盘价的偏离（买入为正表示买贵了，卖出为正表示卖便宜了）。</p>`, "", ["fact", "derived"]) : ""}`;
-  bindGoto();
-  mkChart(byId("c-rc-nav"), {
-    tooltip: { trigger: "axis", valueFormatter: (v) => money(v) }, legend: { top: 0 }, grid: { left: 70, right: 16, top: 36, bottom: 30 },
-    xAxis: { type: "category", data: out.dates, boundaryGap: false }, yAxis: { type: "value", scale: true, axisLabel: { formatter: (v) => money(v) } },
-    series: [{ name: "实际", type: "line", showSymbol: false, data: out.actual, color: palette()[0], lineStyle: { width: 2 } },
-      { name: "模拟", type: "line", showSymbol: false, data: out.sim, color: BENCH_GRAY(), lineStyle: { type: "dashed" } }],
-  });
-  const items = [["成交价差", d.fill], ["费用差", d.fee], ["现金利息差", d.interest], ["其他", d.other], ["合计", d.total]];
-  mkChart(byId("c-rc-dec"), {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => money(v) }, legend: { show: false }, grid: { left: 90, right: 60, top: 10, bottom: 20 },
-    xAxis: { type: "value", axisLabel: { formatter: (v) => money(v) } }, yAxis: { type: "category", inverse: true, data: items.map(([n]) => n) },
-    series: [{ type: "bar", barMaxWidth: 16, data: items.map(([n, v]) => ({ value: v, itemStyle: { color: n === "合计" ? palette()[0] : v >= 0 ? css("--pos") : css("--neg"), borderRadius: 3 } })),
-      label: { show: true, position: "right", formatter: (p) => money(p.value), fontSize: 11, color: css("--ink-2") } }],
-  });
-}
-
-
-// ---------------- 决策评估 ----------------
-function renderFollowCompare(P, raw, sys, recon, money) {
-  const host = document.createElement("div");
-  byId("rc-report").appendChild(host);
-  const cf = Recon.compareFollow(P, raw, recon, sys);
-  const last = cf.dates.length - 1;
-  const a = cf.actual[last], h = cf.hold[last], f = cf.follow ? cf.follow[last] : null;
-  const ins = [{ level: a >= h ? "good" : "medium", kind: "derived", text: `你的实际账户 ${money(a)}，起始持仓一直不动 ${money(h)}：你的全部操作合计${a >= h ? "多赚" : "少赚"} ${money(Math.abs(a - h))}。` }];
-  if (f != null) ins.push({ level: a >= f ? "good" : "medium", kind: "simulated",
-    text: `若起始时一次性换成系统配置并每周跟随系统模型：${money(f)}（调仓 ${cf.followTrades} 次、成本 ${money(cf.followCost)}）；你${a >= f ? "多赚" : "少赚"} ${money(Math.abs(a - f))}。` });
-  ins.push({ level: "info", kind: "derived", text: `对比期 ${cf.dates[0]} ~ ${cf.dates[last]}（${last} 个交易日）；期间的存取款三条曲线同时计入。时间越短，结论越受运气影响。` });
-  host.innerHTML = `${insightBox(ins)}
-    <section class="card"><h3>整体对比：你的账户 vs 一直跟随系统模型 vs 一直不动 ${badge("derived")}${badge("simulated")}</h3>
-      <p class="muted">三条曲线都从对账起始持仓出发：<b>你的实际账户</b>（按你录入的交易与费用）；<b>跟随系统模型</b>（起始日后第一个交易日开盘一次性换成系统建议配置，之后每周按系统信号调仓，成本按模拟假设）；<b>一直不动</b>（起始持仓持有到底）。回答“系统模型值不值得跟随”。</p>
-      ${chartDiv("c-fc")}</section>`;
-  mkChart(byId("c-fc"), {
-    tooltip: { trigger: "axis", valueFormatter: (v) => money(v) }, legend: { top: 0 }, grid: { left: 70, right: 20, top: 40, bottom: 30 },
-    xAxis: { type: "category", data: cf.dates, boundaryGap: false }, yAxis: { type: "value", scale: true, axisLabel: { formatter: (v) => money(v) } },
-    series: [{ name: "你的实际账户", type: "line", showSymbol: false, data: cf.actual, color: palette()[0], lineStyle: { width: 2 } },
-      ...(cf.follow ? [{ name: "跟随系统模型", type: "line", showSymbol: false, data: cf.follow, color: palette()[6], lineStyle: { width: 1.5 } }] : []),
-      { name: "一直不动", type: "line", showSymbol: false, data: cf.hold, color: BENCH_GRAY(), lineStyle: { type: "dashed" } }],
-  });
-}
-
-function renderDecisionEval(P, raw, sys, recon, money) {
-  const host = document.createElement("div");
-  byId("rc-report").appendChild(host);
-  if (!recon._ctx.decisions.length) {
-    host.innerHTML = card("决策评估", `<p class="muted">还没有起始持仓之后的交易，暂无可评估的操作。</p>`, "", ["derived"]);
-    return;
-  }
-  let horizon = "now", withSys = !!sys;
-  const HZ = [["now", "持有至今"], ["252", "12 个月"], ["126", "6 个月"], ["63", "3 个月"], ["next", "到下一次操作"]]; // 数组保证顺序
-  const draw = () => {
-    const oldEl = byId("c-de");
-    const old = oldEl && window.echarts?.getInstanceByDom(oldEl);
-    if (old) { charts = charts.filter((x) => x !== old); old.dispose(); }
-    const rows = Recon.evaluateDecisions(P, raw, recon, { horizon, sys: withSys ? sys : null });
-    const n = rows.length;
-    const sum = (f) => rows.reduce((a, r) => a + (isNum(r[f]) ? r[f] : 0), 0);
-    const selRows = rows.filter((r) => isNum(r.selection) && r.legs.some((l) => l.ticker !== "SPY"));
-    const selWin = selRows.filter((r) => r.selection > 0).length;
-    const avgSelPct = selRows.length ? selRows.reduce((a, r) => a + (isNum(r.selection_pct) ? r.selection_pct : 0), 0) / selRows.length : NaN;
-    const timRows = rows.filter((r) => isNum(r.timing) && Math.abs(r.net_buy) > 1);
-    const timWin = timRows.filter((r) => r.timing > 0).length;
-    const shortN = rows.filter((r) => !r.full).length;
-    const vsRows = rows.filter((r) => r.vs_c != null);
-    const vsTotal = vsRows.reduce((a, r) => a + r.vs_c, 0);
-    const overlap = horizon !== "next";
-    const ins = [];
-    if (selRows.length) ins.push({ level: sum("selection") >= 0 ? "good" : "medium", kind: "derived",
-      text: `选股：${selRows.length} 次换股中 ${selWin} 次跑赢大盘（换入的相对 SPY 更好 / 换出的更差）；平均超额 ${pct(avgSelPct, 1, true)}（占当次成交额）；合计 ${money(sum("selection"))}。` });
-    if (timRows.length) ins.push({ level: sum("timing") >= 0 ? "good" : "medium", kind: "derived",
-      text: `择时（加减仓）：${timRows.length} 次改变了股票总仓位，${timWin} 次时机有利；合计 ${money(sum("timing"))}（加仓后大盘上涨、减仓后大盘下跌为正）。` });
-    ins.push({ level: "info", kind: "derived", text: `交易费用合计 ${money(sum("cost"))}；以上三项相加 = 全部操作相对“不操作”的增减 ${money(sum("added"))}${overlap ? "（窗口互相重叠，各次相加仅作汇总参考）" : ""}。` });
-    if (vsRows.length) ins.push({ level: vsTotal >= 0 ? "good" : "medium", kind: "simulated",
-      text: `与“同一天按系统建议清单操作”相比：${vsRows.length} 次中系统建议的操作在 ${vsRows.filter((r) => r.vs_c < 0).length} 次更好；合计你的操作${vsTotal >= 0 ? "多" : "少"}赚 ${money(Math.abs(vsTotal))}。` });
-    if (n < 10) ins.push({ level: "medium", kind: "derived", text: `目前只有 ${n} 次操作：单次结果 = 判断 + 运气，看不出规律；建议积累 10 次以上，并主要看“选股跑赢次数占比”和长期窗口的结果。` });
-    if (shortN) ins.push({ level: "info", kind: "derived", text: `${shortN} 次操作距今${horizon === "now" ? "不足 6 个月" : "未走完所选窗口"}（标注“时间太短 / 未完”），结果主要反映短期波动，会随时间变化。` });
-    const tradeText = (r) => r.trades.map((t) => `${t.side === "buy" ? "买" : "卖"} ${t.ticker} ${+t.shares.toFixed(4)}`).join("；");
-    const legText = (r) => r.legs.map((l) => `${l.ticker} ${pct(l.r, 1, true)}${isNum(l.excess) && l.ticker !== "SPY" ? `（超额 ${pct(l.excess, 1, true)}）` : ""}`).join("；");
-    host.innerHTML = `${insightBox(ins)}
-      <section class="card"><h3>决策评估：每次操作长期看对不对 ${badge("derived")}${withSys ? badge("simulated") : ""}</h3>
-        <p class="muted">对每次操作，假设<b>只做这一次调整、之后什么都不做</b>，比较到窗口结束时 <b>A 你的操作</b> 与 <b>B 不操作</b> 的差（增减 = A − B），并拆成三部分：
-          <b>择时</b> = 净买入金额 ×（SPY 收益 − 现金收益），衡量加减仓的时机；<b>选股</b> = 每笔成交额 ×（该股收益 − SPY 收益），衡量换入的是否跑赢大盘、换出的是否跑输大盘，与大盘涨跌无关；<b>成本</b> = 费用。
-          ${withSys ? "C = 同一天改按系统建议清单调仓后持有。" : ""}</p>
-        <div class="row"><span class="muted">窗口</span><div class="seg" id="de-h">${HZ.map(([k, t]) => `<button type="button" data-h="${k}" class="${k === horizon ? "on" : ""}">${t}</button>`).join("")}</div>
-          ${sys ? `<label><input type="checkbox" id="de-sys" ${withSys ? "checked" : ""}> 对比“同一天按系统建议清单操作”</label>` : ""}</div>
-        <div class="kpis">
-          <div class="kpi"><span class="muted">选股合计</span><b class="${cls(sum("selection"))}">${money(sum("selection"))}</b><span class="muted">${selRows.length ? `跑赢 ${selWin}/${selRows.length} 次` : "无换股"}</span></div>
-          <div class="kpi"><span class="muted">择时合计</span><b class="${cls(sum("timing"))}">${money(sum("timing"))}</b><span class="muted">${timRows.length ? `有利 ${timWin}/${timRows.length} 次` : "无加减仓"}</span></div>
-          <div class="kpi"><span class="muted">费用合计</span><b>${money(sum("cost"))}</b></div>
-          <div class="kpi"><span class="muted">增减合计（A − B）</span><b class="${cls(sum("added"))}">${money(sum("added"))}</b><span class="muted">${overlap ? "窗口重叠，仅供参考" : "= 主动操作总贡献"}</span></div></div>
-        ${chartDiv("c-de")}
-        <details class="howto"><summary>逐次明细（${n} 次操作）</summary>
-        <div class="table-wrap"><table><thead><tr><th>操作日</th><th>操作内容</th><th>窗口</th><th class="num">增减 A−B</th><th class="num">择时</th><th class="num">选股</th><th class="num">费用</th><th>各笔收益（相对 SPY 超额）</th>${withSys ? '<th class="num">你 − 系统建议的操作</th>' : ""}</tr></thead>
-        <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td><td class="wrap">${esc(tradeText(r))}</td>
-          <td>至 ${esc(r.window_end)}（${r.sessions} 个交易日）${r.full ? "" : ` <span class="chip">${horizon === "now" ? "时间太短" : "未完"}</span>`}</td>
-          <td class="num ${cls(r.added)}"><b>${money(r.added)}</b><br><span class="muted">${pct(r.added_pct, 2, true)}</span></td>
-          <td class="num ${cls(r.timing)}">${isNum(r.timing) ? money(r.timing) : "–"}</td>
-          <td class="num ${cls(r.selection)}">${isNum(r.selection) ? money(r.selection) : "–"}${isNum(r.selection_pct) ? `<br><span class="muted">${pct(r.selection_pct, 1, true)}</span>` : ""}</td>
-          <td class="num">${num(r.cost, 2)}</td><td class="wrap muted">${esc(legText(r))}</td>
-          ${withSys ? `<td class="num ${cls(r.vs_c)}">${r.vs_c == null ? "–" : money(r.vs_c)}</td>` : ""}</tr>`).join("")}</tbody></table></div>
-        <p class="muted">SPY 同期收益为大盘基准；只买卖 SPY 的操作没有选股成分。“其他”（分红到账后的利息等）通常接近 0，未单列。</p></details>
-      </section>`;
-    const series = [
-      { name: "择时", type: "bar", stack: "d", barMaxWidth: 26, color: palette()[0], data: rows.map((r) => (isNum(r.timing) ? r.timing : 0)) },
-      { name: "选股", type: "bar", stack: "d", barMaxWidth: 26, color: palette()[2], data: rows.map((r) => (isNum(r.selection) ? r.selection : 0)) },
-      { name: "费用", type: "bar", stack: "d", barMaxWidth: 26, color: palette()[7], data: rows.map((r) => -r.cost) },
-      { name: "增减 A − B", type: "scatter", symbol: "diamond", symbolSize: 10, color: css("--ink"), data: rows.map((r) => r.added) },
-    ];
-    if (!overlap) { let cum = 0; series.push({ name: "累计增减", type: "line", symbolSize: 5, color: palette()[1], data: rows.map((r) => (cum += r.added)) }); }
-    if (withSys && vsRows.length) series.push({ name: "你 − 系统建议的操作", type: "scatter", symbol: "triangle", symbolSize: 9, color: palette()[6], data: rows.map((r) => r.vs_c) });
-    mkChart(byId("c-de"), {
-      tooltip: { trigger: "axis", valueFormatter: (v) => (v == null ? "–" : money(v)) }, legend: { top: 0 }, grid: { left: 70, right: 20, top: 40, bottom: 30 },
-      xAxis: { type: "category", data: rows.map((r) => r.date) }, yAxis: { type: "value", axisLabel: { formatter: (v) => money(v) } },
-      series,
-    });
-    document.querySelectorAll("#de-h button").forEach((b) => (b.onclick = () => { horizon = b.dataset.h; draw(); }));
-    byId("de-sys")?.addEventListener("change", (e) => { withSys = e.target.checked; draw(); });
-  };
-  draw();
 }
