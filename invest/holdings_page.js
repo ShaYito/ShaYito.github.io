@@ -17,12 +17,13 @@ function ledgerSig(a, b) { let h = 5381; const s = `${a}|${b}`; for (let i = 0; 
 
 /* 当前持仓（供全站 ● 标记等同步调用）：
    有账本 → 优先用持仓页算好的快照（含拆股换算、分红与利息）；账本改过但还没打开持仓页 → 直接按交易记录加减股数
-   没有账本 → 旧版手动填写的持仓 */
+   没有账本 → 旧版手动填写的持仓 → 已解锁的个人数据包（其他设备：后台最近一次同步的持仓） */
 let HOLD_MEMO = { key: null, val: null };
 function loadHoldings() {
   let a, b, c;
   try { a = localStorage.getItem(RECON_START_KEY); b = localStorage.getItem(TRADES_KEY); c = localStorage.getItem(HOLD_KEY); } catch { return null; }
-  const key = `${a}\u0000${b}\u0000${c}`;
+  const pv = typeof window !== "undefined" && window.PERSONAL ? window.PERSONAL.generated_at : "";
+  const key = `${a}\u0000${b}\u0000${c}\u0000${pv}`;
   if (HOLD_MEMO.key === key) return HOLD_MEMO.val;
   let val = null;
   try {
@@ -37,6 +38,7 @@ function loadHoldings() {
           cash: r.cash, prices: {}, cost: {}, note: "由交易记录推算（未含分红与利息）" };
       }
     } else if (cached?.positions && !cached.sig) val = cached;
+    else if (pv && window.PERSONAL.snapshot) val = { ...window.PERSONAL.snapshot, note: `个人数据包（同步于 ${window.PERSONAL.snapshot.date}）` };
   } catch { val = null; }
   HOLD_MEMO = { key, val };
   return val;
@@ -113,10 +115,14 @@ PAGES.holdings = async (r) => {
     ${err ? `<p class="warn">账本推算失败：${esc(err)}（请检查“交易记录”里的起始持仓日期）</p>` : ""}
     <div id="h-body"></div>`;
   document.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { location.hash = `#/holdings?tab=${b.dataset.tab}`; }));
-  const empty = `<section class="card"><p>还没有账本。请先到 <a href="#/holdings?tab=ledger">交易记录</a> 填写起始持仓（过去某日收盘后的股数与现金），再录入之后的交易。</p></section>`;
+  const restorable = !start && personalOn() && window.PERSONAL.ledger;
+  const empty = `<section class="card"><p>这台设备上还没有账本。${restorable
+    ? `个人数据包里有后台最近一次同步的账本（起始持仓 ${esc(window.PERSONAL.ledger.start.date)}，${window.PERSONAL.ledger.trades.length} 条记录）：<button type="button" class="primary" id="h-restore">恢复到这台设备</button>`
+    : `请先到 <a href="#/holdings?tab=ledger">交易记录</a> 填写起始持仓（过去某日收盘后的股数与现金），再录入之后的交易；或在其他设备“导出备份”后在这里导入、或解锁右上角的个人版恢复。`}</p></section>`;
+  const bindRestore = () => { const b = byId("h-restore"); if (b) b.onclick = () => { saveReconStart(window.PERSONAL.ledger.start); saveTrades(window.PERSONAL.ledger.trades); route(); }; };
   if (tab === "ledger") return renderLedgerTab(P, raw);
-  if (tab === "recon") return start ? renderReconTab(P, raw, sys, start) : (byId("h-body").innerHTML = empty);
-  if (!book) { byId("h-body").innerHTML = empty; return; }
+  if (tab === "recon") { if (start) return renderReconTab(P, raw, sys, start); byId("h-body").innerHTML = empty; return bindRestore(); }
+  if (!book) { byId("h-body").innerHTML = empty; return bindRestore(); }
   if (tab === "plan") return renderPlanTab(book);
   return renderPositionsTab(P, raw, book);
 };

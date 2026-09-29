@@ -36,7 +36,15 @@ const REL_ZH = { supplier: "上游供应商", customer: "下游客户", competit
   investor: "股东", holding: "持股对象", industry: "行业层面" };
 const EVENT_ZH = { earnings: "财报", guidance: "业绩指引", regulation_export: "监管/出口管制", m_and_a: "并购",
   product: "产品发布", legal: "诉讼/法律", analyst: "分析师评级", macro: "宏观", other: "其他" };
-const PRIORITY_ZH = { holding: "持仓", watchlist: "关注列表", other: "其他" };
+const PRIORITY_ZH = { holding: "持仓", related: "持仓相关", watchlist: "关注列表", other: "其他" };
+// 事件标签：本机有持仓或解锁个人版时按实际持仓重新判断（存档中的标签按系统建议配置）
+function eventPriority(e) {
+  if (holdingsMode() !== "mine") return e.priority;
+  const ts = e.tickers || [];
+  if (ts.some((t) => isHeld(t))) return "holding";
+  if (ts.some((t) => isRelated(t))) return "related";
+  return ts.some((t) => META.universe.find((u) => u.ticker === t)?.watchlist) ? "watchlist" : "other";
+}
 const TIER_ZH = { gemini: "Gemini", groq: "Groq", rule: "规则降级", extractive: "标题摘录" };
 
 let META = null;
@@ -182,7 +190,7 @@ async function route() {
 
 // ---------------- 1. 总览 ----------------
 PAGES.overview = async () => {
-  const o = await load("overview.json");
+  const o = { ...(await load("overview.json")) }; // 浅拷贝：个人版会替换穿透暴露，不改缓存
   if (!o.available) {
     app().innerHTML = `<h2>总览</h2>${howto(OVERVIEW_HOWTO)}${insightBox(overviewInsights(o))}${card("当前配置", empty("尚无正式周报存档：首份周报（周六自动运行）生成后显示当前配置、调仓与穿透暴露。"))}
       ${card("过去 26 周的配置变化（回测模拟）", o.allocation_history ? chartDiv("c-ahist") : empty("暂无"))}
@@ -194,10 +202,14 @@ PAGES.overview = async () => {
     return;
   }
   const d = o.regime_detail || {};
-  const warnings = (o.lookthrough?.warnings || []).map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("");
+  const mineLt = personalOn() && window.PERSONAL.lookthrough; // 个人版：穿透暴露按实际持仓
+  if (mineLt) o.lookthrough = window.PERSONAL.lookthrough;
+  const ltWho = mineLt ? "你的实际持仓" : "系统建议配置";
+  const warnings = (o.lookthrough?.warnings || []).map((w) => `<div class="warn">⚠ ${esc(ltWho)}：${esc(w)}</div>`).join("");
   app().innerHTML = `
     <h2>总览 <span class="muted">信号日 ${esc(o.signal_date)} · 建议 ${esc(o.exec_date)} 开盘执行</span></h2>
     ${howto(OVERVIEW_HOWTO)}${insightBox(overviewInsights(o))}
+    ${personalOverview(o)}
     <section class="card"><h3>市场状态与三项依据 ${badge("model")}${badge("fact")}</h3><div class="kpis">
       <div class="kpi"><span class="muted">${term("regime", "市场状态")}（模型判断）</span><b style="color:${REGIME_COLOR[o.regime] || "inherit"}">${esc(REGIME_ZH[o.regime] || o.regime)}</b></div>
       <div class="kpi"><span class="muted">Regime 总分</span><b>${num(d.score, 0, true)}</b></div>
@@ -208,8 +220,8 @@ PAGES.overview = async () => {
     <div class="grid two">
       ${card("总资产配置（层 → 标的）", chartDiv("c-alloc"))}
       ${card(`调仓变化（对比 ${o.prev_signal_date || "无上期"}）`, o.changes.filter((c) => c.action !== "持平").length ? chartDiv("c-changes") : empty(o.prev_signal_date ? "与上期相同" : "首期建议，无上期可比"))}
-      ${card("穿透暴露：个股（直接 + 经 SPY）", o.lookthrough ? chartDiv("c-lt") : empty("暂无"))}
-      ${card("穿透暴露：主题", o.lookthrough ? chartDiv("c-lt-theme", "short") : empty("暂无"))}
+      ${card(`穿透暴露：个股（${ltWho}；直接 + 经 SPY）`, o.lookthrough ? chartDiv("c-lt") : empty("暂无"))}
+      ${card(`穿透暴露：主题（${ltWho}）`, o.lookthrough ? chartDiv("c-lt-theme", "short") : empty("暂无"))}
     </div>
     ${card("过去 26 周的配置变化（卫星按主题汇总；背景色 = 回测模拟区间，首份正式周报之前）", o.allocation_history ? chartDiv("c-ahist") : empty("暂无"))}
     ${card("Regime 历史（总分与状态）", o.regimes ? chartDiv("c-regime", "short") : empty("暂无"))}
@@ -522,6 +534,7 @@ PAGES.news = async (r) => {
       <span class="muted">深度事件 ${events.length} · 其他要闻 ${briefs.length} · 相关报道 ${articles.length}</span></div>
       <p class="muted">历史回补的新闻：情绪由 FinBERT 判断；每周仅对最重要的 2–3 个事件做 LLM 深度分析。</p></section>
     ${howto(NEWS_HOWTO)}${insightBox(newsInsights(events))}
+    ${personalNewsCard(personalNews(pickDays.map((d) => d.date)).filter((n) => !ticker || (n.lines || []).some((l) => l.startsWith(ticker))))}
     ${digestHtml}
     <div class="grid" style="grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start;">
       <section class="card"><h3>深度分析（点击事件，在右侧产业链图中查看传导）${badge("fact")}${badge("model")}</h3>
@@ -576,14 +589,14 @@ function eventCard(e) {
   const direct = (e.direct_impacts || []).map((d) => `<li><b>${esc(d.node)}</b> <span class="${d.direction === "positive" ? "pos" : d.direction === "negative" ? "neg" : ""}">${DIR_ZH[d.direction]}</span> · 程度${LEVEL_ZH[d.magnitude]} · ${HORIZON_ZH[d.horizon]}：${esc(d.rationale)}</li>`).join("");
   const prop = (e.propagation || []).map((p) => `<li>${esc(REL_ZH[p.relation] || p.relation)} <b>${esc(p.node)}</b> <span class="${p.direction === "positive" ? "pos" : p.direction === "negative" ? "neg" : ""}">${DIR_ZH[p.direction]}</span>（置信度${LEVEL_ZH[p.confidence]}）：${esc(p.rationale)}</li>`).join("");
   return `<article class="event ${overallDirection(e)}" data-id="${esc(e.event_id)}">
-    <div><span class="chip">${esc(e.date)}</span><span class="chip ${e.priority === "holding" ? "holding" : ""}">${esc(PRIORITY_ZH[e.priority] || "")}</span>
+    <div><span class="chip">${esc(e.date)}</span><span class="chip ${eventPriority(e) === "holding" ? "holding" : ""}">${esc(PRIORITY_ZH[eventPriority(e)] || "")}</span>
       <span class="chip">${esc((e.tickers || []).join("/") || "行业")}</span><span class="chip">${esc(EVENT_ZH[e.event_type] || e.event_type)}</span>
       <span class="chip">${esc(TIER_ZH[e.tier] || e.tier)}</span></div>
     <h4>${esc(e.headline)}</h4><p>${esc(e.summary)}</p>
     ${facts ? `<b>关键事实</b><ul>${facts}</ul>` : ""}
     ${direct ? `<b>直接影响</b><ul>${direct}</ul>` : ""}
     ${prop ? `<b>产业链传导（推断）</b><ul>${prop}</ul>` : ""}
-    <p><b>对组合的含义：</b>${esc(e.portfolio_implication)}</p>
+    <p><b>对组合的含义${holdingsMode() === "mine" ? "（按系统建议配置；按你持仓的解读见上方“与你持仓相关”）" : ""}：</b>${esc(e.portfolio_implication)}</p>
     <p><b>需跟踪的信号：</b>${(e.watch_items || []).map(esc).join("；")}</p>
     <p><b>与量化信号：</b>${esc(e.signal_consistency)}</p>
     <p class="src">来源：${srcLinks(e.sources, 5)}</p></article>`;
@@ -959,7 +972,31 @@ function stockSidebar(cur) {
       <span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
     return `<h4>${esc(th.name)}</h4>${items}`;
   }).join("");
-  return `<aside class="stock-side" aria-label="选择股票">${groups}</aside>`;
+  // 按实际持仓时：顶部加“你的持仓 / 与持仓相关”两组
+  let mine = "";
+  if (holdingsMode() === "mine") {
+    const link = (u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}"><span class="dot" style="background:${themeColor(u.theme)}"></span><b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}</a>`;
+    const held = META.universe.filter((u) => isHeld(u.ticker));
+    const rel = META.universe.filter((u) => isRelated(u.ticker));
+    mine = `${held.length ? `<h4>你的持仓</h4>${held.map(link).join("")}` : ""}${rel.length ? `<h4 title="产业链上与你的持仓直接相连（上下游 / 合作 / 竞争）">与持仓相关</h4>${rel.map(link).join("")}` : ""}`;
+  }
+  return `<aside class="stock-side" aria-label="选择股票">${mine}${groups}</aside>`;
+}
+// 个股页：你在这只股票上的持仓（本机账本或个人版），以及它与你持仓的产业链关系
+function myPositionLine(t, s) {
+  if (holdingsMode() !== "mine") return "";
+  const h = loadHoldings();
+  const sh = h?.positions?.[t] || 0;
+  const last = s.ohlc?.length ? s.ohlc[s.ohlc.length - 1][1] : null;
+  const parts = [];
+  if (sh > 0) {
+    const cost = h.cost?.[t];
+    const w = personalOn() ? window.PERSONAL.weights?.[t] : null;
+    parts.push(`你持有 <b>${+sh.toFixed(4)}</b> 股${isNum(w) ? `，约占账户 ${pct(w, 1)}` : ""}${cost > 0 ? `，平均成本 ${num(cost, 2)}` : ""}${cost > 0 && isNum(last) ? `，浮动 <span class="${cls(last / cost - 1)}">${pct(last / cost - 1, 1, true)}</span>` : ""}`);
+  }
+  const rel = personalRelated().get(t);
+  if (rel && !(sh > 0)) parts.push(`与你的持仓相关：${rel.slice(0, 4).map((l) => `${esc(l.via)} 的${esc(l.relation)}${l.note ? `（${esc(l.note)}）` : ""}`).join("；")}`);
+  return parts.length ? `<p class="card" style="padding:8px 12px">💼 ${parts.join("。")}。<a href="#/holdings">我的持仓 →</a></p>` : "";
 }
 PAGES.stock = async (r) => {
   const t = r.arg || META.universe.find((u) => isHeld(u.ticker))?.ticker || META.universe[0].ticker;
@@ -974,6 +1011,7 @@ PAGES.stock = async (r) => {
   app().innerHTML = `
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
+    ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...stockInsights(s, t), ...segInsights(sc, t)])}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（复权价格）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
