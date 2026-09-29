@@ -984,6 +984,20 @@ function stockSidebar(cur) {
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
   return `<aside class="stock-side" aria-label="选择股票">${mine}${etfs ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
 }
+// K 线上的“你的平均成本”水平线（有持仓且知道成本时）；成本已按拆股换算，与复权价格的近期部分同口径
+function myCost(t) {
+  if (holdingsMode() !== "mine") return null;
+  const h = loadHoldings();
+  const c = h?.cost?.[t];
+  return (h?.positions?.[t] || 0) > 0 && c > 0 ? c : null;
+}
+function costMarkLine(cost) {
+  return { yAxis: cost, lineStyle: { color: palette()[6], type: "solid", width: 1.6 },
+    label: { show: true, position: "insideEndTop", formatter: `你的平均成本 ${num(cost, 2)}`, color: css("--ink"), fontSize: 11 } };
+}
+// y 轴范围包含成本线（否则成本远离近期价格时看不到）
+const yWithCost = (cost) => ({ type: "value", scale: true,
+  min: cost ? (v) => Math.min(v.min, cost) * 0.98 : undefined, max: cost ? (v) => Math.max(v.max, cost) * 1.02 : undefined });
 // 个股页：你在这只股票上的持仓（本机账本或个人版），以及它与你持仓的产业链关系
 function myPositionLine(t, s) {
   if (holdingsMode() !== "mine") return "";
@@ -1016,7 +1030,7 @@ PAGES.stock = async (r) => {
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...stockInsights(s, t), ...segInsights(sc, t)])}
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（复权价格）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（复权价格）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。${myCost(t) ? "紫色实线：你的平均成本（复权价格越早越偏低，成本线请与近期价格对比）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p>${chartDiv("c-k", "tall")}</section>
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     ${segSection(sc, t)}
     ${segGraphCard(t, graphData)}
@@ -1034,11 +1048,12 @@ PAGES.stock = async (r) => {
   }
   const dirColor = { positive: "#0ca30c", negative: "#d03b3b" };
   const closeOn = Object.fromEntries(s.dates.map((d, i) => [d, s.ohlc[i][1]]));
+  const cost = myCost(t);
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];
   const k = mkChart(byId("c-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     grid: { left: 56, right: 20, top: 36, bottom: 60 },
-    xAxis: { type: "category", data: s.dates, boundaryGap: true }, yAxis: { type: "value", scale: true },
+    xAxis: { type: "category", data: s.dates, boundaryGap: true }, yAxis: yWithCost(cost),
     dataZoom: [{ type: "inside", start: 40, end: 100 }, { type: "slider", start: 40, end: 100, height: 18, bottom: 10 }],
     series: [
       { name: t, type: "candlestick", data: s.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") },
@@ -1056,7 +1071,8 @@ PAGES.stock = async (r) => {
           tooltip: { formatter: (p) => p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
             : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
-          data: s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d) })) } },
+          data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d) })),
+            ...(cost ? [costMarkLine(cost)] : [])] } },
       { name: "MA50", type: "line", showSymbol: false, data: s.ma50, color: palette()[0], lineStyle: { width: 1.4 } },
       { name: "MA200", type: "line", showSymbol: false, data: s.ma200, color: palette()[1], lineStyle: { width: 1.4 } },
     ],

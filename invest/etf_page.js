@@ -63,7 +63,7 @@ async function renderEtfPage(t) {
     ${howto(etfHowto(e))}${insightBox(etfInsights(e, t))}
     <section class="card"><h3>它是什么 · 在系统里的作用 ${badge("fact")}${badge("model")}</h3>
       <p>${esc(info.what)}</p><p><b>在系统里：</b>${esc(info.role)}</p>${info.watch ? `<p class="muted"><b>需要关注：</b>${esc(info.watch)}</p>` : ""}</section>
-    <section class="card"><h3>价格走势 ${badge("fact")}${badge("model")}</h3><p class="muted">${rich("K 线与 50 / 200 日[[ma|均线]]（复权价格）；背景色 = 系统当时判断的[[regime|市场状态]]（绿 = 进攻，黄 = 中性，红 = 防守）。")}</p>${chartDiv("c-etf-k", "tall")}</section>
+    <section class="card"><h3>价格走势 ${badge("fact")}${badge("model")}</h3><p class="muted">${rich(`K 线与 50 / 200 日[[ma|均线]]（复权价格）；背景色 = 系统当时判断的[[regime|市场状态]]（绿 = 进攻，黄 = 中性，红 = 防守）。${myCost(t) ? "紫色实线：你的平均成本（复权价格越早越偏低，成本线请与近期价格对比）。" : ""}`)}</p>${chartDiv("c-etf-k", "tall")}</section>
     <section class="card"><h3>收益与风险（与 SPY / QQQ / GLD 并列）${badge("derived")}</h3>
       <div class="table-wrap"><table><thead><tr><th>标的</th>${cols.map(([, n]) => `<th class="num">${n}</th>`).join("")}</tr></thead>
       <tbody>${statRows.map(([k, s]) => `<tr class="${k === t ? "hl" : ""}"><td><a href="#/stock/${k}"><b>${esc(k)}</b></a></td>${cols.map(([c]) => `<td class="num ${c.startsWith("vol") ? "" : cls(s[c])}">${pct(s[c], 1, !c.startsWith("vol") && !c.startsWith("max") && c !== "dd_now")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
@@ -98,10 +98,11 @@ function drawEtfK(e, t) {
   }
   mkChart(byId("c-etf-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } }, grid: { left: 56, right: 20, top: 36, bottom: 60 },
-    xAxis: { type: "category", data: e.dates, boundaryGap: true }, yAxis: { type: "value", scale: true },
+    xAxis: { type: "category", data: e.dates, boundaryGap: true }, yAxis: yWithCost(myCost(t)),
     dataZoom: [{ type: "inside", start: 40, end: 100 }, { type: "slider", start: 40, end: 100, height: 18, bottom: 10 }],
     series: [
-      { name: t, type: "candlestick", data: e.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") }, markArea: { silent: true, data: areas } },
+      { name: t, type: "candlestick", data: e.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") }, markArea: { silent: true, data: areas },
+        ...(myCost(t) ? { markLine: { symbol: "none", silent: true, data: [costMarkLine(myCost(t))] } } : {}) },
       { name: "MA50", type: "line", showSymbol: false, data: e.ma50, color: palette()[0], lineStyle: { width: 1.4 } },
       { name: "MA200", type: "line", showSymbol: false, data: e.ma200, color: palette()[1], lineStyle: { width: 1.4 } },
     ],
