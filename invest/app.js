@@ -1061,8 +1061,9 @@ PAGES.stock = async (r) => {
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
     ${myPositionLine(t, s)}
-    ${howto(STOCK_HOWTO)}${insightBox([...stockInsights(s, t), ...segInsights(sc, t)])}
+    ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 6)}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
+    ${earningsCard(s)}${revisionsCard(s)}
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     ${segSection(sc, t)}
     ${segGraphCard(t, graphData)}
@@ -1080,6 +1081,7 @@ PAGES.stock = async (r) => {
   }
   const dirColor = { positive: "#0ca30c", negative: "#d03b3b" };
   bindPriceMode();
+  drawEarnings(s); drawRevisions(s);
   const closeOn = Object.fromEntries(s.dates.map((d, i) => [d, s.ohlc[i][1]]));
   const cost = myCost(t);
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];
@@ -1104,7 +1106,7 @@ PAGES.stock = async (r) => {
           tooltip: { formatter: (p) => p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
             : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
-          data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d) })),
+          data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d), ...(earningsLineStyle(s, d) || {}) })),
             ...(cost ? [costMarkLine(cost)] : [])] } },
       { name: "MA50", type: "line", showSymbol: false, data: s.ma50, color: palette()[0], lineStyle: { width: 1.4 } },
       { name: "MA200", type: "line", showSymbol: false, data: s.ma200, color: palette()[1], lineStyle: { width: 1.4 } },
