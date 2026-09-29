@@ -65,6 +65,7 @@ function baseOption(extra) {
   const ink2 = css("--ink-2"), grid = css("--grid"), axis = css("--axis");
   const o = {
     backgroundColor: "transparent",
+    animation: false, // 直接显示，不做绘制动画
     textStyle: { color: ink2, fontFamily: "system-ui, -apple-system, 'PingFang SC', sans-serif" },
     tooltip: { trigger: "axis", confine: true, backgroundColor: css("--surface"), borderColor: css("--border"),
       textStyle: { color: css("--ink") } },
