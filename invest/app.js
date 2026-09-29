@@ -977,13 +977,12 @@ function stockSidebar(cur) {
       <span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
     return `<h4>${esc(th.name)}</h4>${items}`;
   }).join("");
-  // 按实际持仓时：顶部加“你的持仓 / 与持仓相关”两组
+  // 按实际持仓时：顶部加“你的持仓”一组
   let mine = "";
   if (holdingsMode() === "mine") {
     const link = (u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}"><span class="dot" style="background:${themeColor(u.theme)}"></span><b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}</a>`;
     const held = META.universe.filter((u) => isHeld(u.ticker));
-    const rel = META.universe.filter((u) => isRelated(u.ticker));
-    mine = `${held.length ? `<h4>你的持仓</h4>${held.map(link).join("")}` : ""}${rel.length ? `<h4 title="产业链上与你的持仓直接相连（上下游 / 合作 / 竞争）">与持仓相关</h4>${rel.map(link).join("")}` : ""}`;
+    mine = held.length ? `<h4>你的持仓</h4>${held.map(link).join("")}` : "";
   }
   const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
