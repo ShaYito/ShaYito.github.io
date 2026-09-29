@@ -49,6 +49,8 @@ h3 { font-size: 14px; margin: 0 0 8px; color: var(--ink-2); }
 .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
 .grid > .card { margin-bottom: 0; }
 .grid.two { grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); margin-bottom: 14px; }
+.grid.three { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+tr.hl td, th.hl { background: color-mix(in srgb, var(--accent, #2a78d6) 8%, transparent); }
 .kpis { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .kpi { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
 .kpi b { display: block; font-size: 20px; }
@@ -79,7 +81,7 @@ td.wrap { white-space: normal; }
 .src { font-size: 12px; }
 .empty { color: var(--muted); padding: 24px 0; text-align: center; }
 @media (max-width: 640px) {
-  .grid, .grid.two { grid-template-columns: 1fr; }
+  .grid, .grid.two, .grid.three { grid-template-columns: 1fr; }
   .chart { height: 280px; }
   .chart.tall { height: 380px; }
   th, td { padding: 4px 6px; }

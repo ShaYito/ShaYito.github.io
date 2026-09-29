@@ -980,7 +980,9 @@ function stockSidebar(cur) {
     const rel = META.universe.filter((u) => isRelated(u.ticker));
     mine = `${held.length ? `<h4>你的持仓</h4>${held.map(link).join("")}` : ""}${rel.length ? `<h4 title="产业链上与你的持仓直接相连（上下游 / 合作 / 竞争）">与持仓相关</h4>${rel.map(link).join("")}` : ""}`;
   }
-  return `<aside class="stock-side" aria-label="选择股票">${mine}${groups}</aside>`;
+  const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
+    <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
+  return `<aside class="stock-side" aria-label="选择股票">${mine}${etfs ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
 }
 // 个股页：你在这只股票上的持仓（本机账本或个人版），以及它与你持仓的产业链关系
 function myPositionLine(t, s) {
@@ -1000,6 +1002,7 @@ function myPositionLine(t, s) {
 }
 PAGES.stock = async (r) => {
   const t = r.arg || META.universe.find((u) => isHeld(u.ticker))?.ticker || META.universe[0].ticker;
+  if (isEtf(t)) return renderEtfPage(t); // ETF / 大类资产：专用版式（etf_page.js）
   const s = await load(`stocks/${t}.json`);
   const seg = await load("segments.json").catch(() => null);
   const sc = seg?.available ? seg.companies[t] : null;
