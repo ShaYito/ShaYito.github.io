@@ -788,29 +788,32 @@ function segChart(el, g, kind, mode, currency) {
       axisLabel: { formatter: (v) => (mode === "share" ? `${v}%` : v) } },
     series });
 }
-function segTable(c) {
+function segTable(c, kinds = ["business", "geography"]) {
   const block = (g, label) => g ? g.latest.map((r, i) => `<tr><td>${i === 0 ? label : ""}</td><td>${esc(r.name)}</td>
     <td class="num">${isNum(r.value) ? num(r.value / 1e9, 2) : "–"}</td><td class="num">${pct(r.share, 1)}</td>
     <td class="num ${cls(r.yoy)}">${pct(r.yoy, 0, true)}</td><td class="num ${cls(r.share_chg)}">${ppText(r.share_chg)}</td></tr>`).join("") : "";
-  const b = c.business, g = c.geography;
+  const b = kinds.includes("business") ? c.business : null, g = kinds.includes("geography") ? c.geography : null;
   const head = [b && `业务：${periodLabel(b.periods.at(-1), b.frequency)}${b.year_ago ? ` 对比 ${periodLabel(b.year_ago, b.frequency)}` : ""}`,
     g && `地区：${periodLabel(g.periods.at(-1), g.frequency)}${g.year_ago ? ` 对比 ${periodLabel(g.year_ago, g.frequency)}` : ""}`].filter(Boolean).join("；");
   return `<p class="muted">${esc(head)}。收入单位：${esc(CUR_ZH[c.currency] || c.currency)}；占比变化单位：个百分点。</p>
     <div class="table-wrap"><table><thead><tr><th></th><th>项目</th><th class="num">收入</th><th class="num">占比</th><th class="num">${term("yoy", "同比")}</th><th class="num">${term("share_change", "占比变化")}</th></tr></thead>
     <tbody>${block(b, "业务")}${block(g, "地区")}</tbody></table></div>`;
 }
-function segSection(c, t) {
-  if (!c) return card("收入结构（公司财报）", empty(`${t} 暂无分业务 / 分地区收入数据`), "", ["fact"]);
-  const notes = [c.note, c.business?.note && `业务：${c.business.note}`, c.geography?.note && `地区：${c.geography.note}`].filter(Boolean);
-  const freqNote = [c.business, c.geography].some((g) => g?.frequency === "annual") ? "标注“财年”的为年度数据（该公司季报未披露此拆分）。" : "";
-  return `<section class="card" id="seg-card"><h3>收入结构（公司财报） ${badge("fact")}${badge("derived")}</h3>
-    <p class="muted">收入金额来自公司向 SEC 提交的季报 / 年报（${term("fact", "事实")}）；占比、同比为${term("derived", "计算")}；业务名称已映射为统一分类。横轴为各期截止日期（${term("fiscal_quarter", "财季")}）。${freqNote}</p>
+function segSection(c, t, kind = "business") {
+  const biz = kind === "business";
+  const title = biz ? "业务收入结构（占比与增速）" : "地区风险暴露（收入按地区）";
+  if (!c || !c[kind]) return biz ? card(title, empty(`${t} 暂无分业务收入数据`), "", ["fact"]) : "";
+  const g = c[kind];
+  const notes = [biz && c.note, g.note].filter(Boolean);
+  const freqNote = g.frequency === "annual" ? "标注“财年”的为年度数据（该公司季报未披露此拆分）。" : "";
+  const intro = biz
+    ? `收入金额来自公司向 SEC 提交的季报 / 年报（${term("fact", "事实")}）；占比、同比为${term("derived", "计算")}；业务名称已映射为统一分类。横轴为各期截止日期（${term("fiscal_quarter", "财季")}）。${freqNote}`
+    : `地区收入平时对股价影响不大，但遇到出口管制、关税、地缘政治或美元大幅波动时很关键：重点看中国（含香港）等敏感地区的占比及变化（${term("geo_revenue", "分地区收入")}）。${freqNote}`;
+  return `<section class="card" id="${biz ? "seg-card" : "geo-card"}"><h3>${title} ${badge("fact")}${badge("derived")}</h3>
+    <p class="muted">${intro}</p>
     ${notes.length ? `<p class="muted">${notes.map(esc).join("<br>")}</p>` : ""}
-    <div class="seg" id="seg-mode"><button type="button" data-m="share" class="on">占比</button><button type="button" data-m="amount">金额</button></div>
-    <div class="grid two">
-      <div><h4>${term("segment_revenue", "分业务收入")}</h4>${c.business ? chartDiv("c-segb") : empty("未披露或暂无数据")}</div>
-      <div><h4>${term("geo_revenue", "分地区收入")}</h4>${c.geography ? chartDiv("c-segg") : empty("未披露或暂无数据")}</div>
-    </div>${segTable(c)}</section>`;
+    <div class="seg seg-mode"><button type="button" data-m="share" class="on">占比</button><button type="button" data-m="amount">金额</button></div>
+    ${chartDiv(biz ? "c-segb" : "c-segg", biz ? "" : "short")}${segTable(c, [kind])}</section>`;
 }
 function drawSeg(c, mode) {
   for (const [id, kind] of [["c-segb", "business"], ["c-segg", "geography"]]) {
@@ -820,7 +823,7 @@ function drawSeg(c, mode) {
     if (old) { charts = charts.filter((x) => x !== old); old.dispose(); }
     segChart(el, c[kind], kind, mode, c.currency);
   }
-  document.querySelectorAll("#seg-mode button").forEach((b) => b.classList.toggle("on", b.dataset.m === mode));
+  document.querySelectorAll(".seg-mode button").forEach((b) => b.classList.toggle("on", b.dataset.m === mode));
 }
 function segInsights(c, t) {
   const out = [];
@@ -1061,27 +1064,32 @@ PAGES.stock = async (r) => {
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
     ${myPositionLine(t, s)}
-    ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 6)}
+    ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日。${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
-    ${earningsCard(s)}${revisionsCard(s)}
+    ${earningsCard(s)}${revisionsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${valuationCard(s)}
+    <h3 class="section-title">事件与转折点</h3>
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
-    ${segSection(sc, t)}
-    ${segGraphCard(t, graphData)}
     <div class="grid">
+      ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span></li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
       ${card("每日新闻情绪（均值，−1 ~ 1）", Object.keys(s.sentiment).length ? chartDiv("c-sent", "short") : empty("近期无相关新闻"))}
+    </div>
+    <h3 class="section-title">系统模型与产业链</h3>
+    <div class="grid">
       ${card("综合信号分位历史（周）", s.score_history.values?.length ? chartDiv("c-hist", "short") : empty("暂无"))}
       ${card("最新一期各模型贡献（截面排名 × 权重）", s.contributions ? chartDiv("c-contrib", "short") : empty("暂无"))}
-      ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span></li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
-    </div></div></div>`;
+    </div>
+    ${segGraphCard(t, graphData)}
+    ${segSection(sc, t, "geography")}
+    </div></div>`;
   document.querySelector(".stock-side a.on")?.scrollIntoView({ block: "nearest", inline: "center" });
   if (byId("c-sg")) drawSegGraph(byId("c-sg"), t, graphData, sc);
   if (sc) {
     drawSeg(sc, "share");
-    document.querySelectorAll("#seg-mode button").forEach((b) => (b.onclick = () => drawSeg(sc, b.dataset.m)));
+    document.querySelectorAll(".seg-mode button").forEach((b) => (b.onclick = () => drawSeg(sc, b.dataset.m)));
   }
   const dirColor = { positive: "#0ca30c", negative: "#d03b3b" };
   bindPriceMode();
-  drawEarnings(s); drawRevisions(s);
+  drawEarnings(s); drawRevisions(s); drawProfitGrowth(sc); drawValuation(s);
   const closeOn = Object.fromEntries(s.dates.map((d, i) => [d, s.ohlc[i][1]]));
   const cost = myCost(t);
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];

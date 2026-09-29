@@ -133,3 +133,161 @@ function earningsLineStyle(s, date) {
   return { lineStyle: { color: h.surprise >= 0 ? css("--pos") : css("--neg"), type: "dashed" },
     label: { formatter: `财报 ${h.surprise >= 0 ? "超" : "低于"}预期`, color: h.surprise >= 0 ? css("--pos") : css("--neg") } };
 }
+
+// ---------------- 业务：利润与增长（segments.json 的 profit / growth）----------------
+const bn = (v) => (isNum(v) ? `${num(v / 1e9, Math.abs(v) >= 1e10 ? 1 : 2)}B` : "–");
+function profitInsights(c) {
+  const out = [];
+  if (!c) return out;
+  const p = c.profit, g = c.growth;
+  if (g?.engine) {
+    const r = g.rows.find((x) => x.key === g.engine);
+    if (r) out.push({ level: "medium", kind: "derived", target: "pg-card",
+      text: `主要增长引擎：「${r.name}」贡献了${g.basis}收入增量的 ${pct(r.contrib_pos, 0)}（该业务增长 ${pct(r.growth, 0, true)}）。关于它的新闻和指标对股价影响最大。` });
+  }
+  if (p) {
+    const tilt = p.segments.filter((s) => isNum(s.tilt) && s.tilt >= p.tilt).sort((a, b) => b.tilt - a.tilt)[0];
+    if (tilt) out.push({ level: "medium", kind: "fact", target: "pg-card",
+      text: `利润主力与收入主体不一致：「${tilt.label}」收入只占 ${pct(tilt.rev_share, 0)}，却贡献 ${pct(tilt.oi_share, 0)} 的分部营业利润（利润率 ${pct(tilt.margin, 0)}）。` });
+    const loss = p.segments.filter((s) => s.op_income < 0);
+    if (loss.length) out.push({ level: "info", kind: "fact", target: "pg-card", text: `亏损分部：${loss.map((s) => `「${s.label}」${bn(s.op_income)}`).join("、")}（${p.basis}）。` });
+  }
+  if (g) {
+    const last = g.rows.map((r) => [r, g.flags[r.key]?.at(-1), g.yoy[r.key]?.at(-1)]).filter(([, f]) => f);
+    if (last.length) out.push({ level: "good", kind: "derived", target: "pg-card",
+      text: `最新一期显著增长：${last.map(([r, f, y]) => `「${r.name}」同比 ${pct(y, 0, true)}${f === "accel" ? "（加速）" : ""}`).join("、")}。` });
+  }
+  return out;
+}
+
+function profitGrowthCard(c, t) {
+  if (!c || (!c.profit && !c.growth)) return "";
+  const p = c.profit, g = c.growth;
+  const tag = (s) => (s.op_income < 0 ? '<span class="chip warnchip">亏损</span>' : isNum(s.tilt) && s.tilt >= p.tilt ? '<span class="chip">利润主力</span>' : "");
+  const eng = g?.rows.find((r) => r.key === g.engine);
+  const totalGrowth = g ? g.total_delta / g.rows.reduce((a, r) => a + r.ttm_prev, 0) : null;
+  return `<section class="card" id="pg-card"><h3>业务：利润与增长 ${badge("fact")}${badge("derived")}</h3>
+    <p class="muted">${rich("股价反映的是未来能赚多少钱，所以要看：哪块业务在赚钱（利润占比，而不只是收入占比）、哪块业务贡献了增长（增量贡献），以及增长是否在加速。数据来自公司向 SEC 提交的财报。")}</p>
+    ${p ? `<h4>收入 vs 营业利润（报告分部，${esc(p.basis)}）</h4>
+      <p class="muted">按公司财报的“报告分部”划分（可能与下方收入结构的业务分类不同，例如有的公司只按地区披露利润）；利润占比 = 该分部营业利润 ÷ 盈利分部合计。${isNum(p.corporate) && isNum(p.total_op_income) && Math.abs(p.corporate) > Math.abs(p.total_op_income) * 0.01 ? `另有未分摊到分部的总部费用等 ${bn(p.corporate)}。` : ""}${p.measure === "税前利润" ? "该公司以分部税前利润衡量各分部，下表“营业利润”一栏为分部税前利润。" : ""}</p>
+      <div class="grid two">${chartDiv("c-pg-profit", "short")}<div class="table-wrap"><table>
+        <thead><tr><th>分部</th><th class="num">收入</th><th class="num">营业利润</th><th class="num">利润率</th><th></th></tr></thead>
+        <tbody>${p.segments.map((s) => `<tr><td>${esc(s.label)}</td><td class="num">${bn(s.revenue)}</td><td class="num ${cls(s.op_income)}">${bn(s.op_income)}</td><td class="num">${pct(s.margin, 0)}</td><td>${tag(s)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
+    ${g ? `<h4>增量贡献（${esc(g.basis)}）${eng ? ` · 主要增长引擎：<span class="chip hlchip">${esc(eng.name)}</span>` : ""}</h4>
+      <p class="muted">收入增加了多少、来自哪块业务。总收入${isNum(totalGrowth) ? `增长 ${pct(totalGrowth, 1, true)}` : "变化"}（${bn(g.total_delta)}）；贡献 ≥ ${pct(0.4, 0)} 的业务标为“主要增长引擎”。</p>
+      ${chartDiv("c-pg-contrib", "short")}
+      <h4>各业务同比增速与显著增长期</h4>
+      <p class="muted">● 大圆点 = 同比 ≥ ${pct(g.fast, 0)}（显著增长）；▲ = 同比比上一期提高 ≥ ${pct(g.accel, 0)}（加速）；${eng ? `底色 = 主要增长引擎「${esc(eng.name)}」处于显著增长的时期。` : ""}</p>
+      ${chartDiv("c-pg-yoy")}` : ""}
+  </section>`;
+}
+
+function drawProfitGrowth(c) {
+  if (!c) return;
+  const p = c.profit, g = c.growth;
+  if (p && byId("c-pg-profit")) {
+    const segs = [...p.segments].reverse();
+    mkChart(byId("c-pg-profit"), { tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => pct(v, 1) },
+      legend: { top: 0 }, grid: { left: 110, right: 40, top: 30, bottom: 20 },
+      xAxis: { type: "value", axisLabel: { formatter: (v) => pct(v, 0) } }, yAxis: { type: "category", data: segs.map((s) => s.label) },
+      series: [
+        { name: "收入占比", type: "bar", barMaxWidth: 10, color: BENCH_GRAY(), itemStyle: { borderRadius: 3 }, data: segs.map((s) => s.rev_share) },
+        { name: "营业利润占比", type: "bar", barMaxWidth: 10, color: palette()[0], itemStyle: { borderRadius: 3 }, data: segs.map((s) => s.oi_share),
+          label: { show: true, position: "right", fontSize: 10, color: css("--ink-2"), textBorderWidth: 0, formatter: (x) => (isNum(x.value) ? pct(x.value, 0) : "") } },
+      ] });
+  }
+  if (g && byId("c-pg-contrib")) {
+    const rows = g.rows;
+    mkChart(byId("c-pg-contrib"), { tooltip: { trigger: "axis", axisPointer: { type: "shadow" },
+        formatter: (ps) => { const r = rows[ps[0].dataIndex]; return `${esc(r.name)}<br>增量 ${bn(r.delta)}（占总增量 ${pct(r.contrib, 0)}）<br>该业务增长 ${pct(r.growth, 1, true)}`; } },
+      legend: { show: false }, grid: { left: 120, right: 60, top: 8, bottom: 20 },
+      xAxis: { type: "value", axisLabel: { formatter: (v) => bn(v) } }, yAxis: { type: "category", inverse: true, data: rows.map((r) => r.name) },
+      series: [{ type: "bar", barMaxWidth: 14, data: rows.map((r) => ({ value: r.delta,
+        itemStyle: { color: r.key === g.engine ? palette()[0] : r.delta >= 0 ? css("--pos") : css("--neg"), opacity: r.key === g.engine ? 1 : 0.55, borderRadius: 3 } })),
+        label: { show: true, position: "right", fontSize: 10, color: css("--ink-2"), textBorderWidth: 0, formatter: (x) => (isNum(rows[x.dataIndex].contrib) ? pct(rows[x.dataIndex].contrib, 0) : "") } }] });
+  }
+  if (g && byId("c-pg-yoy")) {
+    const b = c.business;
+    const top = [...b.meta].sort((x, y) => (b.latest.find((r) => r.key === y.key)?.share ?? 0) - (b.latest.find((r) => r.key === x.key)?.share ?? 0)).slice(0, 6);
+    const labels = b.periods.map((d) => periodLabel(d, b.frequency));
+    const areas = [];
+    if (g.engine) {
+      const f = g.flags[g.engine] || [];
+      let s = -1;
+      for (let i = 0; i <= f.length; i++) {
+        const on = i < f.length && f[i] === "fast";
+        if (on && s < 0) s = i;
+        if (!on && s >= 0) { areas.push([{ xAxis: labels[s], itemStyle: { color: palette()[0], opacity: 0.08 } }, { xAxis: labels[i - 1] }]); s = -1; }
+      }
+    }
+    mkChart(byId("c-pg-yoy"), { tooltip: { trigger: "axis", valueFormatter: (v) => pct(v, 1, true) }, legend: { type: "scroll", top: 0 },
+      grid: { left: 52, right: 20, top: 36, bottom: 30 }, xAxis: { type: "category", data: labels, boundaryGap: false },
+      yAxis: { type: "value", axisLabel: { formatter: (v) => pct(v, 0) } },
+      series: top.map((m, i) => ({ name: m.name, type: "line", color: palette()[i % 8], lineStyle: { width: m.key === g.engine ? 2.6 : 1.6 },
+        symbol: (v, pp) => (g.flags[m.key]?.[pp.dataIndex] === "accel" ? "triangle" : "circle"),
+        symbolSize: (v, pp) => (g.flags[m.key]?.[pp.dataIndex] ? 11 : 4),
+        data: g.yoy[m.key],
+        ...(i === 0 ? { markArea: { silent: true, data: areas }, markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }, { yAxis: g.fast }] } } : {}) })) });
+  }
+}
+
+// ---------------- 估值与利润率（stocks/<t>.json 的 valuation）----------------
+function valuationInsights(s) {
+  const v = s.valuation, out = [];
+  if (!v) return out;
+  if (v.pe) {
+    const p = v.pe.pct;
+    if (v.pe.oneoff) out.push({ level: "medium", kind: "derived", target: "val-card",
+      text: `预期市盈率（${num(v.forward_pe, 1)}）明显高于 TTM 市盈率（${num(v.pe.now, 1)}）：近 4 季 EPS 可能含一次性收益，TTM 市盈率与历史百分位会偏低，以预期市盈率为准。` });
+    else out.push({ level: p >= 0.85 ? "medium" : p <= 0.15 ? "good" : "info", kind: "derived", target: "val-card",
+      text: `市盈率（TTM）${num(v.pe.now, 1)}，处于自身近 ${v.pe.years} 年的第 ${Math.round(p * 100)} 百分位（中位数 ${num(v.pe.median, 0)}）${p >= 0.85 ? "：偏贵，对业绩失望更敏感" : p <= 0.15 ? "：处于历史低位" : ""}。` });
+  }
+  const m = v.margins;
+  if (m?.op_margin?.length >= 5) {
+    const a = m.op_margin.at(-1), b = m.op_margin.at(m.frequency === "annual" ? -2 : -5);
+    if (isNum(a) && isNum(b) && Math.abs(a - b) >= 0.03) out.push({ level: a > b ? "good" : "medium", kind: "fact", target: "val-card",
+      text: `营业利润率 ${pct(a, 1)}，较一年前${a > b ? "提高" : "下降"} ${Math.abs((a - b) * 100).toFixed(1)} 个百分点（利润率${a > b ? "扩张通常推动盈利超预期" : "收缩会拖累盈利"}）。` });
+  }
+  return out;
+}
+
+function valuationCard(s) {
+  const v = s.valuation;
+  if (!v) return "";
+  const kpi = (label, val, sub = "") => `<div class="kpi"><span class="muted">${label}</span><b>${val}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
+  return `<section class="card" id="val-card"><h3>估值与利润率 ${badge("fact")}${badge("derived")}</h3>
+    <p class="muted">${rich("估值决定“同样的好消息还能涨多少”：市盈率处于自身历史高位时，市场已经预期了很多，稍有失望就容易大跌；处于低位时相反。利润率扩张意味着每一美元收入赚得更多，常常是盈利超预期的来源。")}</p>
+    <div class="kpis">
+      ${kpi("市盈率（TTM）", num(v.pe?.now ?? v.trailing_pe, 1), v.pe ? (v.pe.oneoff ? "⚠ 可能受一次性收益影响" : `近 ${v.pe.years} 年第 ${Math.round(v.pe.pct * 100)} 百分位`) : "")}
+      ${kpi("预期市盈率", num(v.forward_pe, 1), "按未来 12 个月 EPS 预期")}
+      ${kpi("市销率（TTM）", num(v.ps, 1))}
+      ${kpi("PEG", num(v.peg, 2), "市盈率 ÷ 盈利增速；约 1 为合理")}
+    </div>
+    <div class="grid two">${v.pe ? chartDiv("c-val-pe", "short") : empty("暂无历史市盈率（亏损或数据不足）")}${v.margins?.periods?.length ? chartDiv("c-val-margin", "short") : empty("暂无利润率数据")}</div>
+    <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && v.pe.max > v.pe.median * 3 ? `；图表纵轴截断在中位数的 3 倍（历史最高 ${num(v.pe.max, 0)}，出现在盈利很低的时期）` : ""}。利润率来自 SEC 财报（公司合计）。</p></section>`;
+}
+
+function drawValuation(s) {
+  const v = s.valuation;
+  if (!v) return;
+  if (v.pe && byId("c-val-pe")) {
+    mkChart(byId("c-val-pe"), { title: { text: `市盈率（TTM）· 近 ${v.pe.years} 年`, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+      tooltip: { trigger: "axis", valueFormatter: (x) => num(x, 1) }, legend: { show: false }, grid: { left: 44, right: 60, top: 30, bottom: 24 },
+      xAxis: { type: "category", data: v.pe.dates, boundaryGap: false },
+      yAxis: { type: "value", scale: true, max: v.pe.max > v.pe.median * 3 ? Math.ceil(v.pe.median * 3) : null }, // 早期极端值（盈利很低时）截断，避免压扁近期走势
+      series: [{ name: "市盈率", type: "line", showSymbol: false, color: palette()[0], lineStyle: { width: 1.8 }, data: v.pe.values,
+        markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { color: css("--muted"), fontSize: 10, position: "end" },
+          data: [{ yAxis: v.pe.median, label: { formatter: `中位数 ${num(v.pe.median, 0)}` } }] } }] });
+  }
+  const m = v.margins;
+  if (m?.periods?.length && byId("c-val-margin")) {
+    const labels = m.periods.map((d) => periodLabel(d, m.frequency));
+    mkChart(byId("c-val-margin"), { title: { text: "毛利率 / 营业利润率", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+      tooltip: { trigger: "axis", valueFormatter: (x) => pct(x, 1) }, legend: { top: 0, right: 0 }, grid: { left: 48, right: 16, top: 30, bottom: 24 },
+      xAxis: { type: "category", data: labels, boundaryGap: false }, yAxis: { type: "value", scale: true, axisLabel: { formatter: (x) => pct(x, 0) } },
+      series: [
+        ...(m.gross_margin?.some(isNum) ? [{ name: "毛利率", type: "line", color: palette()[2], symbolSize: 5, data: m.gross_margin }] : []),
+        ...(m.op_margin?.some(isNum) ? [{ name: "营业利润率", type: "line", color: palette()[0], symbolSize: 5, lineStyle: { width: 2.2 }, data: m.op_margin }] : []),
+      ] });
+  }
+}
