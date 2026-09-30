@@ -307,6 +307,16 @@
         const k = sysIdx[i];
         const regime = sys.regime[k];
         const layers = (cfg.layers && cfg.layers[regime]) || sys.regime_weights[regime];
+        if (sys.method === "equal" && !cfg.topN) {
+          // 当前系统：选股池全部可交易股票等权（受单股上限约束）
+          const pool = sys.tickers.filter((t) => valid(t, i));
+          let sat = Object.fromEntries(pool.map((t) => [t, layers.satellite / pool.length]));
+          sat = capWeights(sat, sys.max_single);
+          const w = { ...sat };
+          sys.core.forEach((t) => { w[t] = (w[t] || 0) + layers.core / sys.core.length; });
+          sys.hedge.forEach((t) => { w[t] = (w[t] || 0) + layers.hedge / sys.hedge.length; });
+          return w;
+        }
         const n = cfg.topN || sys.top_n;
         const ranked = sys.tickers.map((t, j) => ({ t, s: sys.scores[k]?.[j] })).filter((x) => x.s != null && valid(x.t, i)).sort((a, b) => b.s - a.s);
         const keep = ranked.slice(0, n + sys.turnover_buffer).filter((x) => cur.has(x.t)).map((x) => x.t);
@@ -390,7 +400,8 @@
           return null;
         }
         let due;
-        if (cfg.mode === "system" || cfg.mode === "system_custom") due = sysIdx[i] != null;
+        // 系统只在调仓周调仓（季末或市场状态变化；旧数据没有 rebalance 字段时每周调仓）
+        if (cfg.mode === "system" || cfg.mode === "system_custom") due = sysIdx[i] != null && (!sys.rebalance || sys.rebalance[sysIdx[i]] !== false);
         else if (state.first) due = true;
         else if (cfg.rebalance === "band") due = periodEnd(P, i, "W") && lastBase && Object.keys({ ...lastBase, ...state.weights })
           .some((t) => Math.abs((state.weights[t] || 0) - (lastBase[t] || 0)) > (cfg.band || 0.05));

@@ -43,10 +43,11 @@ PAGES.model = async () => {
   const lw = m.layers.weights;
   const R = m.rules;
   const cur = m.current || {};
+  const equal = m.satellite.method === "equal";
   const ew = cur.ensemble_weights || {};
   const si = cur.sentiment_weight_info;
   const states = [["risk_on", "进攻"], ["neutral", "中性"], ["risk_off", "防守"]];
-  const layerZh = { core: `核心（${m.layers.core.join("/")}）`, satellite: "卫星（选股）", hedge: `对冲（${m.layers.hedge.join("/")}）`, cash: `现金（${m.layers.cash.join("/")}）` };
+  const layerZh = { core: `核心（${m.layers.core.join("/")}）`, satellite: equal ? "卫星（选股池等权）" : "卫星（选股）", hedge: `对冲（${m.layers.hedge.join("/")}）`, cash: `现金（${m.layers.cash.join("/")}）` };
   const p2 = (v) => pct(v, 1), sr = (v) => num(v, 2), ic = (v) => (isNum(v) ? num(v, 3, true) : "–");
   const dSharpe = (a, b) => (isNum(pf(a).Sharpe) && isNum(pf(b).Sharpe) ? pf(a).Sharpe - pf(b).Sharpe : null);
   const dDD = (a, b) => (isNum(pf(a).MaxDrawdown) && isNum(pf(b).MaxDrawdown) ? pf(a).MaxDrawdown - pf(b).MaxDrawdown : null);
@@ -70,9 +71,9 @@ PAGES.model = async () => {
   ];
   const insights = [
     { level: "high", kind: "derived", text: `选股模型在[[oos|样本外]]没有稳定的预测力：${models.filter(([k]) => isNum(sel(k).RankIC)).map(([k, n]) => `${n.split(" ")[0]} ${ic(sel(k).RankIC)}`).join("、")}（[[rank_ic|Rank IC]]，0 = 没有预测力），命中率都在 50% 上下。` },
-    { level: "medium", kind: "simulated", text: `把卫星层换成选股池[[allocation|等权]]，样本外夏普 ${sr(pf("Regime_EW").Sharpe)}，反而略高于按模型选股的 ${sr(pf("Regime_Quant").Sharpe)}。` },
+    { level: equal ? "good" : "medium", kind: "simulated", text: `${equal ? "当前卫星层已改为选股池等权：" : "把卫星层换成选股池等权，"}样本外夏普 ${sr((pf("Regime_EW_Q").Sharpe != null ? pf("Regime_EW_Q") : pf("Regime_EW")).Sharpe)}，高于按模型选股的 ${sr(pf("Regime_Quant").Sharpe)}，年换手 ${num((pf("Regime_EW_Q").Turnover ?? pf("Regime_EW").Turnover), 1)}× 对 ${num(pf("Regime_Quant").Turnover, 1)}×。` },
     { level: "good", kind: "simulated", text: `市场状态调仓的价值更明确：相对固定比例，夏普提高 ${num(dSharpe("Regime_Quant", "Static_Quant"), 2, true)}（模型选股）/ ${num(dSharpe("Regime_EW", "Static_EW"), 2, true)}（等权）；最大回撤变化 ${ppText(dDD("Regime_Quant", "Static_Quant"))} / ${ppText(dDD("Regime_EW", "Static_EW"))} 个百分点（正 = 回撤更小）。` },
-    { level: "medium", kind: "simulated", text: `相对 SPY 的大幅超额（年化 ${p2(pf("Regime_Quant").CAGR)} vs ${p2(pf("SPY").CAGR)}）主要来自选股池本身：选股池等权年化 ${p2(sel("Pool_EW").CAGR)}，这是“用今天的赢家回测过去”的[[survivorship|幸存者偏差]]，不能当作未来预期。` },
+    { level: "medium", kind: "simulated", text: `相对 SPY 的大幅超额（年化 ${p2(pf(equal && pf("Regime_EW_Q").CAGR != null ? "Regime_EW_Q" : "Regime_Quant").CAGR)} vs ${p2(pf("SPY").CAGR)}）主要来自选股池本身：选股池等权年化 ${p2(sel("Pool_EW").CAGR)}，这是“用今天的赢家回测过去”的[[survivorship|幸存者偏差]]，不能当作未来预期。` },
   ];
   // 表格等处的 [[术语|文字]] 统一换成可点击的术语链接
   const terms = (html) => html.replace(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/g, (_, id, t) => term(id, t));
@@ -80,8 +81,9 @@ PAGES.model = async () => {
     <h2>系统模型 <span class="muted">定义、依据与实测 · 参数与系统配置同步${ev ? ` · 回测数据截至 ${esc(ev.data_end)}` : ""}</span></h2>
     ${howto(MODEL_HOWTO)}${ev ? insightBox(insights, 4) : ""}
     <section class="card"><h3>一句话概括</h3>
-      <p>每周五收盘后，先根据大盘趋势、恐慌指数和收益率曲线判断市场处于<b>进攻 / 中性 / 防守</b>，据此决定四层资金比例；再从 ${m.universe.n} 只股票中用四个模型打分、按各自的历史表现加权融合，选出前 ${m.satellite.top_n} 只，按“波动越小、分数越高给得越多”分配卫星层资金，并限制单只和单主题上限。建议在下周一开盘执行。</p>
-      <div class="flow">${["数据（周五收盘）", "① 市场状态", "② 四层比例", "③ 选股打分与融合", "④ 组合构建", "每周建议"].map((x) => `<span>${x}</span>`).join('<b aria-hidden="true">→</b>')}</div></section>
+      <p>每周五收盘后，先根据大盘趋势、恐慌指数和收益率曲线判断市场处于<b>进攻 / 中性 / 防守</b>，据此决定四层资金比例；${equal ? `卫星层<b>等权持有选股池全部 ${m.universe.n} 只股票</b>，只在<b>季末或市场状态变化时</b>调回目标比例（约每年 6–8 次），其余周持有不动。四个选股模型仍每周打分，作为研究参考，不再决定持仓` : `再从 ${m.universe.n} 只股票中用四个模型打分、按各自的历史表现加权融合，选出前 ${m.satellite.top_n} 只，按“波动越小、分数越高给得越多”分配卫星层资金`}，并限制单只和单主题上限。建议在下周一开盘执行。</p>
+      <div class="flow">${["数据（周五收盘）", "① 市场状态", "② 四层比例", equal ? "③ 卫星层等权" : "③ 选股打分与融合", "④ 组合构建", equal ? "调仓周才调整" : "每周建议"].map((x) => `<span>${x}</span>`).join('<b aria-hidden="true">→</b>')}</div>
+      ${equal ? `<p class="muted">2026-09-29 起卫星层由“模型选前 ${m.satellite.top_n} 只”改为“选股池等权”：模型选股在样本外没有预测力，等权的风险调整后收益更高、换手低一个数量级（见下方实测）。</p>` : ""}</section>
 
     <section class="card"><h3>时间与数据纪律 ${badge("fact")}</h3><ul>
       <li>信号日 = 周五收盘；建议按下一个交易日（通常周一）开盘价执行，回测也按开盘价成交，每次买卖扣 ${num(m.backtest.cost_bps, 0)} bps（0.1%）成本；不计税。</li>
@@ -103,7 +105,8 @@ PAGES.model = async () => {
       </tbody></table></div>
       <p class="muted">这些比例是按常识设定的（进攻时多配股票、防守时多配现金和黄金），<b>没有用回测去优化</b>，以避免过拟合；证据强度：${evid("weak")}（属于经验设定）。${ev ? `敏感性：卫星层比例 ±10 个百分点，夏普 ${(ev.sensitivity || []).filter((x) => x.parameter === "satellite_shift").map((x) => `${x.value}：${sr(x.Sharpe)}`).join("，")}，变化平滑。` : ""}</p></section>
 
-    <section class="card"><h3>③ 选股：四个模型打分，按历史表现融合 ${badge("model")}</h3>
+    <section class="card"><h3>③ ${equal ? "选股模型（研究参考，当前不决定卫星层持仓）" : "选股：四个模型打分，按历史表现融合"} ${badge("model")}</h3>
+      ${equal ? `<p class="warn">当前卫星层采用等权，以下四个模型每周仍计算，用于评分矩阵、个股页等研究参考，并持续积累样本外记录；若将来检验出稳定的预测力，可以再讨论是否恢复。</p>` : ""}
       <p>候选：${m.universe.n} 只股票，分 ${m.universe.themes.length} 个主题（${m.universe.themes.map((t) => `${esc(t.name)} ${t.n} 只`).join("、")}）；上市不足 ${m.universe.min_history_days} 个交易日的不参与。预测目标：未来 ${m.backtest.forward_days} 个交易日相对 SPY 的超额收益<b>排名</b>（只比相对强弱，不预测大盘涨跌）。</p>
       <h4>模型 A：${ruleRows.length} 条透明规则（分值加总）</h4>
       <div class="table-wrap"><table><thead><tr><th>规则</th><th class="num">分值</th><th>逻辑</th><th>依据</th><th>证据强度</th></tr></thead>
@@ -121,19 +124,22 @@ PAGES.model = async () => {
       </tbody></table></div>
       <p class="muted">Rank IC 衡量“分数高的股票之后是否真的涨得多”：0 = 没有预测力；常见的经验是长期稳定在 0.03–0.05 以上才有实用价值。样本内（2016–2018）B、C 有一点预测力，到了样本外全部消失；融合后样本外 Rank IC ≈ 0。</p>` : ""}</section>
 
-    <section class="card"><h3>④ 卫星层组合构建 ${badge("model")}</h3><ul>
+    <section class="card"><h3>④ 卫星层组合构建 ${badge("model")}</h3>${equal ? `<ul>
+      <li>选股池中所有上市满 ${m.universe.min_history_days} 个交易日的股票<b>等权</b>：卫星层比例 ÷ 股票只数（例如进攻状态 ${pct(lw.risk_on.satellite, 0)} ÷ ${m.universe.n} ≈ 每只 ${pct(lw.risk_on.satellite / m.universe.n, 1)}）。等权不设最小仓位，避免随意剔除股票。依据：简单等权在多数样本外检验中很难被复杂方法稳定打败${cite("dgu")}。${evid("mid")}</li>
+      <li><b>调仓时机</b>：季末最后一个信号周、市场状态变化的那一周、选股池成员变化时，才把卫星层调回等权；其余周<b>持有不动</b>，权重随涨跌自然漂移。回测中这比每周调回等权的夏普几乎相同，换手减半。</li>
+      <li>约束：单只个股 ≤ 总资产 ${pct(m.satellite.max_single, 0)}，单个主题 ≤ ${pct(m.satellite.max_theme, 0)}（等权下自然满足）。</li></ul>` : `<ul>
       <li>取融合分数前 ${m.satellite.top_n} 只；已持有的股票只要排名还在前 ${m.satellite.top_n + m.satellite.buffer} 名就继续持有（减少换手）。</li>
       <li>权重 ∝ 1 / 波动率（年化波动下限 ${pct(m.satellite.vol_floor, 0)}）×（1 + ${m.satellite.tilt} × 分数 z 值），即波动越小、分数越高给得越多。依据：风险平价思想${cite("mrt")}；但简单等权往往很难被打败${cite("dgu")}。${evid("mid")}</li>
       <li>约束：单只个股 ≤ 总资产 ${pct(m.satellite.max_single, 0)}，单个主题 ≤ ${pct(m.satellite.max_theme, 0)}，低于 ${pct(m.satellite.min_position, 0)} 不建仓；超出部分转入现金。</li>
-      ${ev ? `<li class="muted">敏感性：选股只数 ${(ev.sensitivity || []).filter((x) => x.parameter === "top_n").map((x) => `${x.value} 只 → 夏普 ${sr(x.Sharpe)}`).join("，")}；结果平滑，没有“只有某个参数才有效”的尖峰。</li>` : ""}</ul></section>
+      ${ev ? `<li class="muted">敏感性：选股只数 ${(ev.sensitivity || []).filter((x) => x.parameter === "top_n").map((x) => `${x.value} 只 → 夏普 ${sr(x.Sharpe)}`).join("，")}；结果平滑，没有“只有某个参数才有效”的尖峰。</li>` : ""}</ul>`}</section>
 
     ${ev ? `<section class="card"><h3>完整组合的样本外结果（${esc(ev.oos_start)} 至 ${esc(ev.data_end)}）${badge("simulated")}</h3>
       <div class="table-wrap"><table><thead><tr><th>方案</th><th class="num">年化</th><th class="num">波动</th><th class="num">夏普</th><th class="num">最大回撤</th></tr></thead><tbody>
-      ${[["Regime_Quant", "系统模型（市场状态 + 模型选股）"], ["Static_Quant", "固定比例 + 模型选股"], ["Regime_EW", "市场状态 + 选股池等权"], ["Static_EW", "固定比例 + 选股池等权"], ["SPY", "SPY"], ["QQQ", "QQQ"]].map(([k, n]) => `<tr class="${k === "Regime_Quant" ? "hl" : ""}"><td>${n}</td><td class="num">${p2(pf(k).CAGR)}</td><td class="num">${p2(pf(k).Volatility)}</td><td class="num">${sr(pf(k).Sharpe)}</td><td class="num neg">${p2(pf(k).MaxDrawdown)}</td></tr>`).join("")}
+      ${[...(pf("Regime_EW_Q").CAGR != null ? [["Regime_EW_Q", "当前系统：市场状态 + 选股池等权（季末或状态变化时调仓）"]] : []), ["Regime_EW", "市场状态 + 选股池等权（每周调回）"], ["Regime_Quant", `${equal ? "旧版：" : "系统模型："}市场状态 + 模型选股`], ["Static_Quant", "固定比例 + 模型选股"], ["Static_EW", "固定比例 + 选股池等权"], ["SPY", "SPY"], ["QQQ", "QQQ"]].map(([k, n]) => `<tr class="${k === (equal ? "Regime_EW_Q" : "Regime_Quant") ? "hl" : ""}"><td>${n}</td><td class="num">${p2(pf(k).CAGR)}</td><td class="num">${p2(pf(k).Volatility)}</td><td class="num">${sr(pf(k).Sharpe)}</td><td class="num neg">${p2(pf(k).MaxDrawdown)}</td></tr>`).join("")}
       </tbody></table></div>
       <h4>结论（按证据由强到弱）</h4><ol>
         <li><b>分散与市场状态调仓有实际价值</b>：相比 SPY 与 QQQ，最大回撤明显更小；市场状态调仓让夏普提高、回撤降低，且对参数不敏感。</li>
-        <li><b>模型选股目前没有可验证的价值</b>：样本外 Rank IC ≈ 0，按模型选股不如选股池等权；看起来很高的收益主要来自选股池本身的幸存者偏差。</li>
+        <li><b>模型选股目前没有可验证的价值</b>：样本外 Rank IC ≈ 0，按模型选股不如选股池等权${equal ? "，因此当前卫星层已改为等权" : ""}；看起来很高的收益主要来自选股池本身的幸存者偏差。</li>
         <li><b>绝对收益水平不可信</b>：选股池是今天挑出的公司，回测年化会被明显高估；真实可期待的是“相对 SPY 更低的回撤和相近或略好的收益”，而不是回测数字。</li>
         <li><b>实盘记录还很短</b>：从 2026 年 9 月才开始，至少需要 1–2 年才能与回测对照。</li></ol>
       <p class="muted">完整回测图表见 <a href="#/backtest">回测与实盘</a>；用你自己的持仓或其他策略做对比，见 <a href="#/sim">模拟经营</a>。</p></section>` : ""}
