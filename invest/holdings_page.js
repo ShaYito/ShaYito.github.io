@@ -76,7 +76,7 @@ const shareFmt = (n) => (isNum(n) ? (Math.abs(n - Math.round(n)) < 1e-6 ? String
 const TICKER_RE = /^[A-Z0-9^][A-Z0-9\-=^]{0,11}$/;
 const normTicker = (s) => s.trim().toUpperCase().replace(/\./g, "-");
 
-const HOLD_TABS = [["positions", "持仓"], ["ledger", "交易记录"], ["recon", "实盘对账"], ["plan", "调仓建议"]];
+const HOLD_TABS = [["positions", "持仓"], ["attrib", "收益归因"], ["lots", "持有期与税务"], ["ledger", "交易记录"], ["recon", "实盘对账"], ["plan", "调仓建议"]];
 const HOLD_HOWTO = {
   positions: [
     "本页由“交易记录”标签里的起始持仓与每一笔交易自动推算：当前股数、[[avg_cost|平均成本]]、现金（含分红与现金利息）、[[unrealized|浮动盈亏]]与[[realized|已实现盈亏]]。价格为最新收盘价（每天更新一次）。",
@@ -93,6 +93,16 @@ const HOLD_HOWTO = {
     "用你的真实调仓来检验模拟运算：同一起始持仓、同一批交易，分别按“实际”（原始股价估值、你的成交价与费用、除息日收到现金分红）和“模拟”（当天开盘价、单边成本假设、分红再投资）计算两条资产曲线。",
     "两条曲线的差额被拆成：成交价差（你的成交价 vs 当天开盘价）、费用差（实际费用 vs 模拟成本假设）、现金利息差、其他。没有交易时两条曲线应完全一致。",
     "期间的资金存取在当天开盘前同时计入两条曲线，不会被算成差额。下方还有“整体对比：跟随系统模型”和每次操作的“决策评估”。",
+  ],
+  attrib: [
+    "把一段时间内账户的盈亏拆到每只持仓：盈亏 = 期末市值 − 期初市值 − 买入花费 + 卖出所得 + 分红（含费用）。",
+    "“相对 SPY”回答“如果这些钱当时放在 SPY，会多赚还是少赚”：每天把每只持仓前一天的市值按 SPY 当天的涨跌（含分红）算一份机会成本，盈亏减去它就是这只持仓相对 SPY 的超额。现金一项 = 利息 − 同样的钱放在 SPY 的收益。",
+    "各项超额相加 ≈ 账户盈亏 − 把同样的资金（同一天存取）一直放在 SPY 的盈亏。这是[[fact|事实]]数据的拆分，不涉及模型判断。",
+  ],
+  lots: [
+    "按“先买先卖”（FIFO）把每只持仓拆成买入批次，计算每个批次已持有多少天、还有多少天满 1 年。",
+    "美国税法：持有超过 1 年再卖出属于长期资本利得，税率通常明显低于短期（按普通收入计税）。批次快满 1 年又有较大浮盈时，推迟几天卖出可能更划算。",
+    "仅供参考，不构成税务建议：券商可能按其他方式（如指定批次）匹配卖出；洗售规则（wash sale：亏损卖出前后 30 天内买回同一股票，亏损不能抵税）未计入；起始持仓的实际买入日未知，按起始日计（标“起始”），请以券商的成本与持有期为准。",
   ],
   plan: [
     "把系统模型的最新建议配置换算成你的股数：只调整系统覆盖范围内的标的，范围外持仓保持不动；整股计算，零头留在现金，成本按单边 0.1% 估算。",
@@ -135,6 +145,8 @@ PAGES.holdings = async (r) => {
   if (tab === "recon") { if (start) return renderReconTab(P, raw, sys, start); byId("h-body").innerHTML = empty; return bindRestore(); }
   if (!book) { byId("h-body").innerHTML = empty; return bindRestore(); }
   if (tab === "plan") return renderPlanTab(book);
+  if (tab === "attrib") return renderAttribTab(P, raw, start, loadTrades());
+  if (tab === "lots") return renderLotsTab(P, raw, start, loadTrades(), book);
   return renderPositionsTab(P, raw, book);
 };
 const HOLD_CFG = { cashInterest: true };

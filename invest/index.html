@@ -5,21 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>量化研究看板</title>
-<link rel="stylesheet" href="style.css?v=202610012343">
+<link rel="stylesheet" href="style.css?v=202610020103">
 <script src="https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js" defer></script>
-<script src="glossary.js?v=202610012343" defer></script>
-<script src="app.js?v=202610012343" defer></script>
-<script src="sim.js?v=202610012343" defer></script>
-<script src="recon.js?v=202610012343" defer></script>
-<script src="sim_page.js?v=202610012343" defer></script>
-<script src="chain_page.js?v=202610012343" defer></script>
-<script src="etf_page.js?v=202610012343" defer></script>
-<script src="compare_page.js?v=202610012343" defer></script>
-<script src="stock_fund.js?v=202610012343" defer></script>
-<script src="model_page.js?v=202610012343" defer></script>
-<script src="holdings_calc.js?v=202610012343" defer></script>
-<script src="holdings_page.js?v=202610012343" defer></script>
-<script src="personal.js?v=202610012343" defer></script>
+<script src="glossary.js?v=202610020103" defer></script>
+<script src="app.js?v=202610020103" defer></script>
+<script src="sim.js?v=202610020103" defer></script>
+<script src="recon.js?v=202610020103" defer></script>
+<script src="sim_page.js?v=202610020103" defer></script>
+<script src="chain_page.js?v=202610020103" defer></script>
+<script src="etf_page.js?v=202610020103" defer></script>
+<script src="compare_page.js?v=202610020103" defer></script>
+<script src="stock_fund.js?v=202610020103" defer></script>
+<script src="model_page.js?v=202610020103" defer></script>
+<script src="holdings_calc.js?v=202610020103" defer></script>
+<script src="holdings_page.js?v=202610020103" defer></script>
+<script src="holdings_extra.js?v=202610020103" defer></script>
+<script src="personal.js?v=202610020103" defer></script>
+<script src="home_page.js?v=202610020103" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -29,22 +31,16 @@
   </div>
   <nav id="nav">
     <a href="#/overview" data-page="overview">总览</a>
-    <a href="#/matrix" data-page="matrix">评分矩阵</a>
-    <a href="#/news" data-page="news">新闻与产业链</a>
-    <a href="#/chain" data-page="chain">AI 产业链</a>
-    <a href="#/signal-news" data-page="signal-news">信号 × 新闻</a>
-    <a href="#/stock" data-page="stock">个股</a>
-    <a href="#/performance" data-page="performance">相对表现</a>
-    <a href="#/risk" data-page="risk">风险与集中度</a>
-    <a href="#/backtest" data-page="backtest">回测与实盘</a>
-    <a href="#/model" data-page="model">系统模型</a>
-    <a href="#/sim" data-page="sim">模拟经营</a>
     <a href="#/holdings" data-page="holdings">我的持仓</a>
-    <a href="#/glossary" data-page="glossary">术语与说明</a>
+    <a href="#/stock" data-page="stock">个股</a>
+    <a href="#/market" data-page="market">市场</a>
+    <a href="#/news" data-page="news">新闻</a>
+    <a href="#/lab" data-page="lab">模型与回测</a>
   </nav>
+  <a id="glossary-link" class="ghost-link" href="#/glossary" title="术语与说明">?</a>
   <button id="theme-toggle" class="ghost" type="button" title="切换浅色 / 深色">◐</button>
 </header>
-<main id="app"></main>
+<main><nav id="subnav" class="subnav" hidden></nav><div id="app"></div></main>
 <footer class="foot muted" id="footer">仅为量化研究信号，不构成投资建议。</footer>
 </body>
 </html>

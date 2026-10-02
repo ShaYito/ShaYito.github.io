@@ -147,10 +147,11 @@ function howto(lines) {
   return `<details class="howto"><summary>如何阅读本页</summary>${lines.map((l) => `<p>${rich(l)}</p>`).join("")}
     <p class="muted">标签说明：${badges(["fact", "derived", "model", "simulated"])} —— 点击标签或带下划虚线的术语可查看解释。</p></details>`;
 }
-// 重点：{level: high|medium|good|info, text, kind?, target?}；按严重度排序，最多 max 条
+// 重点：{level: high|medium|good|info, text, kind?, target?}；按严重度排序，同一严重度内事实 / 计算优先于模型 / 模拟，最多 max 条
 function insightBox(list, max = 5) {
   const order = { high: 0, medium: 1, good: 2, info: 3 };
-  const items = list.filter(Boolean).sort((a, b) => order[a.level] - order[b.level]).slice(0, max);
+  const conf = { fact: 0, derived: 1, model: 2, simulated: 3 };
+  const items = list.filter(Boolean).sort((a, b) => order[a.level] - order[b.level] || (conf[a.kind] ?? 2) - (conf[b.kind] ?? 2)).slice(0, max);
   if (!items.length) return "";
   return `<section class="insights"><h3>本页重点</h3><ul>${items.map((x) => `<li class="${x.level}">${rich(x.text)}${x.kind ? badge(x.kind) : ""}${
     x.target ? `<a class="goto" href="#" data-goto="${x.target}">查看图表 ↓</a>` : ""}</li>`).join("")}</ul></section>`;
@@ -173,11 +174,31 @@ function parseHash() {
   return { page: parts[0] || "overview", arg: parts[1], query: Object.fromEntries(new URLSearchParams(qs || "")) };
 }
 const PAGES = {};
+// 导航分组（按重要性排序）：主标签 → 子标签 [页面, 名称]；第一个子标签是分组入口
+const NAV_GROUPS = {
+  overview: [],
+  holdings: [],
+  stock: [],
+  market: [["performance", "相对表现"], ["risk", "风险与集中度"]],
+  news: [["news", "新闻"], ["chain", "AI 产业链"]],
+  lab: [["advice", "配置建议"], ["matrix", "评分矩阵"], ["signal-news", "信号 × 新闻"], ["backtest", "回测与实盘"], ["model", "系统模型说明"], ["sim", "模拟经营"]],
+};
+const PAGE_GROUP = { compare: "stock", glossary: "glossary" };
+for (const [g, subs] of Object.entries(NAV_GROUPS)) for (const [p] of subs) PAGE_GROUP[p] = g;
+function renderSubnav(page, group) {
+  const el = byId("subnav");
+  const subs = NAV_GROUPS[group] || [];
+  el.hidden = subs.length < 2;
+  el.innerHTML = subs.map(([p, n]) => `<a href="#/${p}" class="${p === page ? "on" : ""}">${n}</a>`).join("");
+}
 async function route() {
   const r = parseHash();
   disposeCharts();
-  const navPage = r.page === "compare" ? "stock" : r.page; // 多股对比属于“个股”
-  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === navPage));
+  if (NAV_GROUPS[r.page]?.length) r.page = NAV_GROUPS[r.page][0][0]; // #/market → 第一个子标签
+  const group = PAGE_GROUP[r.page] || r.page;
+  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === group));
+  byId("glossary-link")?.classList.toggle("active", group === "glossary");
+  renderSubnav(r.page, group);
   const fn = PAGES[r.page] || PAGES.overview;
   app().innerHTML = empty("加载中…");
   try {
@@ -190,11 +211,11 @@ async function route() {
   if (!(r.page === "glossary" && r.query.t)) window.scrollTo(0, 0);
 }
 
-// ---------------- 1. 总览 ----------------
-PAGES.overview = async () => {
+// ---------------- 模型与回测 → 配置建议（系统模型的本周建议、穿透暴露与历史）----------------
+PAGES.advice = async () => {
   const o = { ...(await load("overview.json")) }; // 浅拷贝：个人版会替换穿透暴露，不改缓存
   if (!o.available) {
-    app().innerHTML = `<h2>总览</h2>${howto(OVERVIEW_HOWTO)}${insightBox(overviewInsights(o))}${card("当前配置", empty("尚无正式周报存档：首份周报（周六自动运行）生成后显示当前配置、调仓与穿透暴露。"))}
+    app().innerHTML = `<h2>配置建议（系统模型）</h2>${howto(OVERVIEW_HOWTO)}${insightBox(overviewInsights(o))}${card("当前配置", empty("尚无正式周报存档：首份周报（周六自动运行）生成后显示当前配置、调仓与穿透暴露。"))}
       ${card("过去 26 周的配置变化（回测模拟）", o.allocation_history ? chartDiv("c-ahist") : empty("暂无"))}
       ${card("Regime 历史（总分与状态）", o.regimes ? chartDiv("c-regime", "short") : empty("暂无"))}
       ${card("策略净值（回测；对数坐标）", o.nav ? chartDiv("c-nav") : empty("暂无"))}`;
@@ -209,7 +230,7 @@ PAGES.overview = async () => {
   const ltWho = mineLt ? "你的实际持仓" : "系统建议配置";
   const warnings = (o.lookthrough?.warnings || []).map((w) => `<div class="warn">⚠ ${esc(ltWho)}：${esc(w)}</div>`).join("");
   app().innerHTML = `
-    <h2>总览 <span class="muted">信号日 ${esc(o.signal_date)} · 建议 ${esc(o.exec_date)} 开盘执行</span></h2>
+    <h2>配置建议（系统模型） <span class="muted">信号日 ${esc(o.signal_date)} · 建议 ${esc(o.exec_date)} 开盘执行</span></h2>
     ${howto(OVERVIEW_HOWTO)}${insightBox(overviewInsights(o))}
     ${personalOverview(o)}
     <section class="card"><h3>市场状态与三项依据 ${badge("model")}${badge("fact")}</h3><div class="kpis">
@@ -730,7 +751,9 @@ const STOCK_HOWTO = [
   "📍 标记是 AI 分析过的新闻事件；◆ ▲ ○ 是系统识别的[[turning_point|转折点]]：◆ 公司自身事件驱动（附 AI 归因，属推断），▲ 主要由大盘或板块带动（按 [[beta|β]] 计算），○ 证据不足、不做解释。点击任一标记查看详情。",
   "“业务关联”以本公司各业务为中心，画出直接相关的上游供应商、下游客户、竞争对手（细化到对方的具体业务），用来判断一条新闻会通过哪块业务影响这家公司。",
   "“收入结构”来自公司财报：[[segment_revenue|分业务收入]]看公司靠什么赚钱，[[geo_revenue|分地区收入]]看钱从哪里来；可切换“占比 / 金额”，下表给出最新一期的[[yoy|同比]]和[[share_change|占比变化]]。",
-  "下方小图分别是每日新闻[[sentiment|情绪]]（AI 打分）、[[composite|综合信号]]分位历史（模型）、各模型对当前分数的贡献。",
+  "“关键指标”把估值、增长、盈利能力、财务健康、价格位置与市场预期放在一张表里，并和同主题、选股池的中位数比较；点击指标名可看定义、如何理解与如何使用。",
+  "“内部人交易”是高管与董事向 SEC 申报的买卖（[[fact|事实]]）；公开市场买入比卖出更有信息量。",
+  "页面最下方是新闻[[sentiment|情绪]]与系统模型的打分（[[composite|综合信号]]），属于模型判断，仅供参考。",
 ];
 function stockInsights(s, t) {
   const out = [];
@@ -1063,22 +1086,23 @@ PAGES.stock = async (r) => {
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
     ${myPositionLine(t, s)}
-    ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><div>${dimChips}</div><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
-    ${earningsCard(s)}${revisionsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${valuationCard(s)}
+    ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
+    ${metricsCard(s)}${earningsCard(s)}${revisionsCard(s)}${valuationCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
+    ${insiderCard(s, t)}${segSection(sc, t, "geography")}
     <h3 class="section-title">事件与转折点</h3>
     <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid">
       ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span></li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
       ${card("每日新闻情绪（相对平常水平，−1 ~ 1）", Object.keys(s.sentiment).length ? `${chartDiv("c-sent", "short")}<p class="muted">${rich("0 = 该打分来源的平常水平（已扣除财经新闻整体偏乐观的倾向）；浅色柱 = 当天少于 3 篇，仅供参考。情绪描述的是正在发生什么，实测对下一周涨跌没有预测力（见[[sentiment|新闻情绪]]）。")}</p>` : empty("近期无相关新闻"))}
     </div>
-    <h3 class="section-title">系统模型与产业链</h3>
+    ${segGraphCard(t, graphData)}
+    <h3 class="section-title">系统模型（参考） ${badge("model")}</h3>
+    <p class="muted">${rich("以下是系统模型的打分，不是事实；模型选股在样本外几乎没有预测力（见[[model|系统模型说明]]），仅供了解模型如何看这只股票。")}</p><div>${dimChips}</div>
     <div class="grid">
       ${card("综合信号分位历史（周）", s.score_history.values?.length ? chartDiv("c-hist", "short") : empty("暂无"))}
       ${card("最新一期各模型贡献（截面排名 × 权重）", s.contributions ? chartDiv("c-contrib", "short") : empty("暂无"))}
     </div>
-    ${segGraphCard(t, graphData)}
-    ${segSection(sc, t, "geography")}
     </div></div>`;
   document.querySelector(".stock-side a.on")?.scrollIntoView({ block: "nearest", inline: "center" });
   if (byId("c-sg")) drawSegGraph(byId("c-sg"), t, graphData, sc);

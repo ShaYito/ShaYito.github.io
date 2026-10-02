@@ -41,6 +41,13 @@ button.ghost, .seg button { background: transparent; border: 1px solid var(--bor
 .seg { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .seg button.on { background: var(--chip); color: var(--ink); font-weight: 600; }
 main { max-width: 1240px; margin: 0 auto; padding: 16px; }
+.subnav { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.subnav[hidden] { display: none; }
+.subnav a { padding: 3px 10px; border-radius: 8px; color: var(--ink-2); white-space: nowrap; font-size: 13px; }
+.subnav a.on { background: var(--chip); color: var(--ink); font-weight: 600; text-decoration: none; }
+.ghost-link { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 1px solid var(--border);
+  border-radius: 50%; color: var(--ink-2); font-weight: 600; text-decoration: none; }
+.ghost-link.active, .ghost-link:hover { background: var(--chip); color: var(--ink); text-decoration: none; }
 .foot { max-width: 1240px; margin: 0 auto; padding: 8px 16px 32px; }
 h2 { font-size: 18px; margin: 4px 0 12px; }
 h3 { font-size: 14px; margin: 0 0 8px; color: var(--ink-2); }
@@ -59,6 +66,26 @@ tr.hl td, th.hl { background: color-mix(in srgb, var(--accent, #2a78d6) 8%, tran
 .chart.short { height: 220px; }
 .section-title { margin: 22px 2px 8px; font-size: 14px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
 .chart.mini { height: 80px; }
+.chart.spark { height: 64px; }
+.chart.spark-inline { height: 28px; width: 110px; }
+.spark-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.spark-cell { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.spark-head { font-size: 13px; }
+.chip.on { background: var(--accent); color: #fff; }
+.sched { display: inline-block; min-width: 36px; text-align: center; font-size: 11px; border-radius: 4px; padding: 0 4px; margin-right: 4px;
+  background: var(--chip); color: var(--ink-2); }
+.sched.earnings { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+.sched.fomc, .sched.cpi, .sched.nfp { background: var(--mid); color: var(--ink); }
+.sched-table td { vertical-align: top; padding: 4px 8px; }
+.nowrap { white-space: nowrap; }
+ul.headlines { padding-left: 0; list-style: none; margin: 0; }
+ul.headlines li { padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.muted-card { opacity: .92; }
+.metric-group h4 { margin: 10px 0 4px; }
+table.metrics { table-layout: fixed; width: 100%; }
+table.metrics td { vertical-align: top; }
+table.metrics td.def { font-size: 12px; color: var(--ink-2); max-width: 520px; }
+.metric-bar { display: inline-block; height: 6px; border-radius: 3px; background: var(--accent); vertical-align: middle; }
 .chip.warnchip { background: var(--warn-bg); color: var(--warn); }
 .chip.hlchip { background: var(--accent); color: #fff; }
 .row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 10px; }

@@ -327,3 +327,149 @@ function tradeTooltip(p) {
   const rows = p.data.trades.map((x) => `${x.side === "buy" ? "买入" : "卖出"} ${+x.shares.toFixed(4)} 股 @ ${x.price > 0 ? num(x.price, 2) : "开盘价"}${x.fee ? `（费用 ${num(x.fee, 2)}）` : ""}`);
   return `<b>你的交易</b> ${esc(p.data.trades[0].date)}<br>${rows.map(esc).join("<br>")}`;
 }
+
+// ---------------- 关键指标（估值 / 增长 / 盈利能力 / 财务健康 / 价格位置与风险 / 市场预期）----------------
+// fmt：x = 倍数，pct = 百分比，pp = 百分比（带正负号），num = 数值；better：low / high / null（无好坏方向）
+const METRIC_DEFS = {
+  pe_ttm: { name: "市盈率（TTM）", fmt: "x", better: "low", def: "股价 ÷ 过去 12 个月每股收益（EPS）。买入 1 元的年利润要付多少元。",
+    read: "越高说明市场对未来增长预期越高（或利润暂时偏低）；和同行、和自己历史比才有意义，单看绝对值意义不大。",
+    use: "与“预期市盈率”一起看：预期市盈率明显低于 TTM，说明分析师预计利润会大幅增长。高市盈率股票对“不及预期”更敏感，财报前后波动更大。",
+    caveat: "一次性收益 / 亏损会扭曲 TTM 利润；亏损公司不显示。" },
+  pe_fwd: { name: "预期市盈率", fmt: "x", better: "low", def: "股价 ÷ 分析师预期的未来 12 个月 EPS。",
+    read: "反映市场按“明年的利润”给出的价格；比 TTM 市盈率更适合比较高增长公司。",
+    use: "预期市盈率低于同行、而增长不比同行差，可能被低估；但预期本身可能过于乐观，结合“分析师预期修正”方向看。" },
+  peg: { name: "PEG", fmt: "num2", better: "low", def: "市盈率 ÷ 预期盈利增速（%）。把估值和增长放在一起看。",
+    read: "约 1 被视为估值与增长匹配；明显低于 1 = 相对增长便宜，明显高于 2 = 增长已被充分定价。",
+    use: "只适合盈利稳定增长的公司；周期股、利润刚转正的公司 PEG 会失真。",
+    caveat: "增速取自分析师预期（yfinance），口径与周期因数据源而异。" },
+  ps: { name: "市销率（TTM）", fmt: "x", better: "low", def: "总市值 ÷ 过去 12 个月收入。",
+    read: "利润为负或波动很大的公司，用收入估值更稳定；高利润率公司天然市销率更高。",
+    use: "与“毛利率”“营业利润率”一起看：同样的市销率，利润率高的公司更便宜。" },
+  ev_ebitda: { name: "EV / EBITDA", fmt: "x", better: "low", def: "企业价值（市值 + 负债 − 现金）÷ 息税折旧摊销前利润。",
+    read: "把负债也算进价格，比市盈率更适合比较负债结构不同的公司。",
+    use: "常用于同行横向比较；银行、保险不适用（显示“–”）。" },
+  pb: { name: "市净率", fmt: "x", better: "low", def: "股价 ÷ 每股净资产（账面价值）。",
+    read: "对银行、保险等资产型公司最有意义（JPM、BRK-B）；科技公司的价值主要不在账面资产，市净率普遍很高。",
+    use: "银行股市净率显著低于同行且 ROE 不差，常被视为便宜；同时看资产质量。" },
+  fcf_yield: { name: "自由现金流收益率", fmt: "pct", better: "high", def: "过去 12 个月自由现金流 ÷ 总市值（市盈率倒过来、但用现金而非会计利润）。",
+    read: "高于国债利率较多，说明以现金回报衡量估值不贵；为负说明公司还在“烧钱”。",
+    use: "与市盈率交叉验证：利润高但自由现金流很低，要留意应收账款、存货或资本开支是否大增。" },
+  revenue_growth: { name: "收入增速（同比）", fmt: "pp", better: "high", def: "最近一个季度收入相对去年同季的增长。",
+    read: "成长股估值的主要支撑；增速放缓往往先于股价重新定价。", use: "看趋势比看单季更重要：连续加速还是减速？详见下方“业务利润与增长”。" },
+  earnings_growth: { name: "盈利增速（同比）", fmt: "pp", better: "high", def: "最近一个季度每股收益相对去年同季的增长。",
+    read: "盈利增速高于收入增速 = 利润率在扩张（经营杠杆）。", use: "基数很低时（去年接近亏损）增速会非常夸张，结合绝对利润看。" },
+  eps_fwd_growth: { name: "预期 EPS 增长", fmt: "pp", better: "high", def: "未来 12 个月预期 EPS ÷ 过去 12 个月 EPS − 1。",
+    read: "市场已经“相信”的增长；股价是否上涨取决于实际结果能否超过它。", use: "预期增长很高的股票，财报只要略低于预期就可能大跌。" },
+  gross_margin: { name: "毛利率", fmt: "pct", better: "high", def: "（收入 − 直接成本）÷ 收入。",
+    read: "反映定价权与产品竞争力；软件、芯片设计公司高，零售、制造低。", use: "毛利率持续上升通常意味着竞争地位增强；银行不适用。" },
+  op_margin: { name: "营业利润率", fmt: "pct", better: "high", def: "营业利润 ÷ 收入（扣除研发、销售、管理费用后）。",
+    read: "比毛利率更完整地反映经营效率。", use: "与过去比：利润率扩张是盈利超预期的常见来源，见下方利润率趋势图。" },
+  net_margin: { name: "净利率", fmt: "pct", better: "high", def: "净利润 ÷ 收入。", read: "最终留给股东的部分；受税率、利息、一次性项目影响。", use: "与营业利润率差距很大时，查看是否有一次性收益或亏损。" },
+  roe: { name: "ROE（净资产收益率）", fmt: "pct", better: "high", def: "净利润 ÷ 股东权益。",
+    read: "每 1 元股东资本一年赚多少；长期 15% 以上通常是好生意。", use: "高负债也能抬高 ROE，需结合负债权益比看；回购多的公司权益很小，ROE 会异常高。" },
+  roa: { name: "ROA（总资产收益率）", fmt: "pct", better: "high", def: "净利润 ÷ 总资产。", read: "不受负债结构影响的盈利效率；银行 ROA 1% 左右已属正常。", use: "与同行比较；跨行业比较意义不大。" },
+  net_cash_pct: { name: "净现金 / 市值", fmt: "pp", better: "high", def: "（现金 − 总负债）÷ 总市值；负数 = 净负债。",
+    read: "正值越大，资产负债表越有缓冲，股价下跌时有回购 / 并购的余地。", use: "利率上升期，净负债高的公司利息负担加重；银行的“现金”含义不同，参考价值有限。" },
+  debt_to_equity: { name: "负债权益比", fmt: "x", better: "low", def: "总负债 ÷ 股东权益。",
+    read: "1 倍以下一般较稳健；资本密集行业天然更高。", use: "结合利息覆盖与现金流判断偿债压力；银行不适用。" },
+  current_ratio: { name: "流动比率", fmt: "x", better: "high", def: "流动资产 ÷ 流动负债。", read: "大于 1 表示短期资产足以覆盖一年内到期的负债。", use: "明显低于 1 且现金流为负的公司要警惕短期资金压力。" },
+  ret_1m: { name: "近 1 个月涨跌", fmt: "pp", better: null, def: "含分红的价格变化。", read: "短期动量；单月涨跌包含大量噪音。", use: "与同行中位数比较，判断是公司自身原因还是整个板块在动。" },
+  ret_ytd: { name: "今年以来", fmt: "pp", better: null, def: "自上年最后一个交易日收盘起的涨跌（含分红）。", read: "今年的相对表现。", use: "大幅跑赢同行后，估值往往也已抬高，结合估值指标看。" },
+  ret_1y: { name: "近 1 年", fmt: "pp", better: null, def: "过去 12 个月的涨跌（含分红）。", read: "中期动量；学术研究中“过去 12 个月涨得多的股票”短期内略倾向继续跑赢，但效果不稳定。", use: "不宜单独作为买卖依据。" },
+  pos_52w: { name: "52 周区间位置", fmt: "pct0", better: null, def: "（现价 − 52 周最低）÷（52 周最高 − 52 周最低）。0% = 年内最低，100% = 年内最高。",
+    read: "反映价格在一年波动范围中的位置。", use: "接近 100%：趋势强但追高风险大；接近 0%：可能便宜，也可能基本面在恶化，要找原因。" },
+  from_high: { name: "距 52 周高点", fmt: "pp", better: null, def: "现价相对过去一年最高收盘价的回撤。",
+    read: "−20% 以上通常被称为“熊市”区域。", use: "持仓回撤较深时，回到“为什么买它”的理由是否仍成立，而不只看价格。" },
+  vs_ma200: { name: "距 200 日均线", fmt: "pp", better: null, def: "现价 ÷ 过去 200 个交易日平均价 − 1。",
+    read: "正值 = 长期趋势向上；偏离过大（如 +30%）说明短期涨得过快。", use: "很多机构用 200 日均线做趋势过滤；跌破常引发技术性卖盘。" },
+  vol_1y: { name: "年化波动率", fmt: "pct", better: "low", def: "过去一年日收益率的标准差 × √252。",
+    read: "衡量价格摆动幅度：40% 的股票一年内正负 40% 的波动都算“正常”。", use: "决定仓位大小：波动率高的股票同样的仓位风险更大，可以相应减少仓位。" },
+  max_dd_1y: { name: "近 1 年最大回撤", fmt: "pp", better: "high", def: "过去一年从任意高点到之后最低点的最大跌幅。",
+    read: "持有这只股票一年中最难受的时候亏了多少。", use: "问自己能否承受同样幅度的下跌而不恐慌卖出。" },
+  beta: { name: "Beta（β）", fmt: "num2", better: null, def: "股价对大盘涨跌的敏感度（yfinance 按 5 年月度数据计算）。",
+    read: "1.5 = 大盘涨跌 1% 时它平均涨跌 1.5%；小于 1 更防御。", use: "组合整体 β 高意味着大盘下跌时损失更大；用来理解“我的组合有多跟着大盘走”。" },
+  target_upside: { name: "目标价空间", fmt: "pp", better: null, def: "分析师平均目标价 ÷ 现价 − 1。",
+    read: "分析师普遍偏乐观，目标价空间平均就是正的；绝对值意义有限。", use: "更有信息量的是变化方向：目标价被持续上调或下调。见“分析师预期修正”。" },
+  rec_mean: { name: "分析师评级均值", fmt: "num2", better: "low", def: "1 = 强烈买入，3 = 持有，5 = 卖出 的平均值。",
+    read: "卖出评级极少，2 左右已经很常见。", use: "参考价值有限；评级的突然下调比水平本身更值得注意。" },
+  short_pct_float: { name: "空头比例", fmt: "pct", better: "low", def: "被卖空的股数 ÷ 流通股（交易所每半月公布，存在滞后）。",
+    read: "大盘股通常 1–3%；超过 10% 说明有相当多的投资者押注下跌。", use: "空头比例高 + 利好消息，可能引发轧空式上涨；也提示存在被广泛关注的负面观点。" },
+  short_change: { name: "空头变化（较上月）", fmt: "pp", better: "low", def: "最新空头股数相对上一期的变化。", read: "空头快速增加说明看空的人在增多。", use: "与股价走势一起看：价格上涨但空头增加，分歧在加大。" },
+  days_to_cover: { name: "空头回补天数", fmt: "num1", better: "low", def: "空头股数 ÷ 日均成交量：空头全部买回需要几天。", read: "越大，空头集中回补时价格冲击越大。", use: "超过 5 天且出现利好时，要考虑轧空带来的剧烈波动。" },
+  insiders_pct: { name: "内部人持股", fmt: "pct", better: null, def: "公司高管与董事持有的股份比例。", read: "创始人主导的公司比例较高；利益与股东更一致。", use: "看变化比看水平更有用：见下方“内部人交易”。" },
+  institutions_pct: { name: "机构持股", fmt: "pct", better: null, def: "基金、养老金等机构持有的比例。", read: "大盘股通常 60–80%。", use: "比例很高时，机构集中调仓会放大股价波动。" },
+  dividend_yield: { name: "股息率（近 12 个月）", fmt: "pct", better: null, def: "过去 12 个月每股分红 ÷ 现价。", read: "成长股通常很低或为 0；银行、零售较高。", use: "与 10 年国债利率比较，判断这只股票的现金回报吸引力。" },
+  payout: { name: "分红比例", fmt: "pct", better: null, def: "分红 ÷ 净利润。", read: "超过 80% 意味着分红增长空间有限，利润下滑时可能被迫减少分红。", use: "收息投资者关注它的可持续性。" },
+};
+function fmtMetric(v, f) {
+  if (!isNum(v)) return "–";
+  if (f === "x") return `${v.toFixed(v >= 100 ? 0 : 1)}×`;
+  if (f === "pct") return pct(v, 1);
+  if (f === "pct0") return pct(v, 0);
+  if (f === "pp") return pct(v, 1, true);
+  if (f === "num1") return num(v, 1);
+  return num(v, 2);
+}
+// 相对同行中位数的一句话（只描述事实：高于 / 低于多少）
+function metricCompare(it, d) {
+  const ref = isNum(it.theme_median) ? it.theme_median : it.universe_median;
+  if (!isNum(it.value) || !isNum(ref)) return "";
+  const who = isNum(it.theme_median) ? "同行" : "选股池";
+  const pctOrX = d.fmt === "x" || d.fmt === "num2" || d.fmt === "num1";
+  const diff = pctOrX ? (ref !== 0 ? it.value / ref - 1 : NaN) : it.value - ref;
+  if (!isNum(diff) || Math.abs(diff) < (pctOrX ? 0.1 : 0.02)) return `<span class="muted">与${who}接近</span>`;
+  const higher = diff > 0;
+  const good = d.better ? (d.better === "high") === higher : null;
+  const text = pctOrX ? `${higher ? "高于" : "低于"}${who} ${pct(Math.abs(diff), 0)}` : `${higher ? "高于" : "低于"}${who} ${(Math.abs(diff) * 100).toFixed(1)} 个百分点`;
+  return `<span class="${good === null ? "muted" : good ? "pos" : "neg"}">${text}</span>`;
+}
+function metricsCard(s) {
+  const m = s.metrics;
+  if (!m) return "";
+  const groups = m.groups.map((g) => `<div class="metric-group"><h4>${esc(g.name)}</h4><div class="table-wrap"><table class="metrics"><colgroup><col style="width:34%"><col style="width:13%"><col style="width:14%"><col style="width:14%"><col></colgroup><thead><tr><th>指标（点击看说明）</th><th class="num">本股</th>
+      <th class="num">同行中位数</th><th class="num">选股池中位数</th><th>比较</th></tr></thead><tbody>${g.items.map((it) => {
+      const d = METRIC_DEFS[it.key] || { name: it.key, fmt: "num2" };
+      return `<tr><td class="def"><details><summary><b>${esc(d.name)}</b></summary><p>${esc(d.def || "")}</p><p><b>如何理解：</b>${esc(d.read || "")}</p><p><b>如何使用：</b>${esc(d.use || "")}</p>${d.caveat ? `<p class="muted">注意：${esc(d.caveat)}</p>` : ""}</details></td>
+        <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${fmtMetric(it.theme_median, d.fmt)}</td><td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
+    }).join("")}</tbody></table></div></div>`).join("");
+  return `<section class="card" id="metrics-card"><h3>关键指标 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 公司数据 ${esc(m.fetched || "")}（yfinance）· 价格类按最新收盘计算</span></h3>
+    <p class="muted">同行 = 同主题且同行业${m.sector ? `（${esc(m.sector)}）` : ""}：${m.peers.length >= 3 ? m.peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、") : "不足 3 只，只与选股池比较"}。</p>
+    <p class="muted">${rich("先看估值和增长是否匹配，再看盈利能力和财务健康是否支撑，最后看价格位置与市场预期。绿色 / 红色只表示相对同行“通常被认为更好 / 更差”的方向，不代表买卖建议；“–”表示该行业不适用或暂无数据。")}</p>
+    ${groups}</section>`;
+}
+function metricInsights(s) {
+  const m = s.metrics;
+  if (!m) return [];
+  const get = (k) => m.groups.flatMap((g) => g.items).find((i) => i.key === k) || {};
+  const out = [];
+  const pe = get("pe_fwd"), gr = get("eps_fwd_growth");
+  if (isNum(pe.value) && isNum(pe.theme_median) && pe.value > pe.theme_median * 1.3)
+    out.push({ level: "medium", kind: "derived", target: "metrics-card", text: `预期市盈率 ${fmtMetric(pe.value, "x")}，高于同行中位数 ${fmtMetric(pe.theme_median, "x")}${isNum(gr.value) ? `（预期 EPS 增长 ${pct(gr.value, 0, true)}）` : ""}：估值已包含较高的增长预期。` });
+  const fh = get("from_high");
+  if (isNum(fh.value) && fh.value <= -0.2) out.push({ level: "high", kind: "fact", target: "metrics-card", text: `距 52 周高点 ${pct(fh.value, 1)}，处于较深的回撤中。` });
+  const sc = get("short_change"), sp = get("short_pct_float");
+  if (isNum(sc.value) && sc.value >= 0.2 && isNum(sp.value) && sp.value >= 0.02) out.push({ level: "medium", kind: "fact", target: "metrics-card", text: `空头股数较上期增加 ${pct(sc.value, 0)}，空头比例 ${pct(sp.value, 1)}。` });
+  return out;
+}
+
+// ---------------- 内部人交易（SEC Form 4，经 yfinance 整理）----------------
+const INSIDER_ZH = { purchase: "公开市场买入", sale: "卖出", award: "股票授予", gift: "赠与", exercise: "行权", other: "其他" };
+function insiderCard(s, t) {
+  const list = s.insider || [];
+  const since = (days) => { const d = new Date(); d.setDate(d.getDate() - days); return d.toISOString().slice(0, 10); };
+  const s6 = since(182);
+  const recent = list.filter((x) => x.date >= s6);
+  const agg = (k) => recent.filter((x) => x.kind === k).reduce((a, x) => ({ n: a.n + 1, v: a.v + (x.value || 0), sh: a.sh + (x.shares || 0) }), { n: 0, v: 0, sh: 0 });
+  const buy = agg("purchase"), sell = agg("sale");
+  const money$ = (v) => (v >= 1e8 ? `${(v / 1e8).toFixed(1)} 亿美元` : v >= 1e4 ? `${(v / 1e4).toFixed(0)} 万美元` : v > 0 ? `${Math.round(v)} 美元` : "–");
+  const rows = list.slice(0, 15).map((x) => `<tr><td class="nowrap">${esc(x.date)}</td><td>${esc(x.insider)}<br><span class="muted">${esc(x.position)}</span></td>
+    <td><span class="${x.kind === "purchase" ? "pos" : x.kind === "sale" ? "neg" : "muted"}">${esc(INSIDER_ZH[x.kind] || x.kind)}</span>${x.direct ? "" : ' <span class="muted" title="通过信托、家族实体等间接持有">（间接）</span>'}</td>
+    <td class="num">${isNum(x.shares) ? Math.round(x.shares).toLocaleString() : "–"}</td><td class="num">${money$(x.value)}</td></tr>`).join("");
+  return `<section class="card" id="insider-card"><h3>内部人交易（近 1 年）${badge("fact")}</h3>
+    ${list.length ? `<div class="kpis">
+      <div class="kpi"><span class="muted">近 6 个月公开市场买入</span><b class="${buy.n ? "pos" : ""}">${buy.n} 笔</b><span class="muted">${money$(buy.v)}</span></div>
+      <div class="kpi"><span class="muted">近 6 个月卖出</span><b>${sell.n} 笔</b><span class="muted">${money$(sell.v)}</span></div></div>
+      <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>日期</th><th>人员 / 职务</th><th>类型</th><th class="num">股数</th><th class="num">金额</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty("近 1 年没有记录（或数据源暂无）")}
+    <p class="muted">${rich("数据来自高管与董事向 SEC 提交的 Form 4（经 Yahoo 整理，申报通常在交易后 2 个工作日内）。如何理解：高管卖出很常见（分散资产、缴税、事先约定的 10b5-1 计划），单独看信息量很小；用自己的钱在公开市场买入则少见得多，多名内部人在同一时期集中买入，历史上是相对有信息量的信号。“股票授予 / 行权”是薪酬的一部分，不代表看法。")}
+    ${t ? ` <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;CIK=${esc(t)}&amp;type=4" target="_blank" rel="noopener">SEC 原始申报 →</a>` : ""}</p></section>`;
+}

@@ -448,7 +448,111 @@
     return { rows, closed, account, curve, snapshot, warnings };
   }
 
-  const api = { reconcile, evaluateDecisions, compareFollow, parseTrades, applyTrades, reverseTrades, rawPrice, splitNormalize, ledgerBook };
+  /* 分批持仓（FIFO，先买先卖）：持有期与税务参考用。
+     - 起始持仓的实际买入日未知，按起始日计（from_start 标注）；成本：填写了成本价就用，否则按起始日收盘价
+     - 买入批次成本含费用；卖出按 FIFO 消耗批次，已实现盈亏 = 卖出净价 × 股数 − 批次成本
+     返回 {lots: [{ticker, date, shares, cost, from_start}], realized: [{ticker, buy_date, sell_date, shares, gain, from_start}]} */
+  function fifoLots(P, raw, start0, trades0) {
+    const { start, trades } = splitNormalize(P, raw, start0, trades0);
+    const s0 = sessionOnOrBefore(P, start.date);
+    const q = {};
+    const realized = [];
+    for (const [t, n] of Object.entries(start.positions)) {
+      if (!(n > 0)) continue;
+      const c = start.cost?.[t] > 0 ? start.cost[t] : P.C[t] && s0 >= 0 ? rawPrice(P, raw, t).close(s0) : NaN;
+      (q[t] ||= []).push({ ticker: t, date: start.date, shares: n, cost: c, from_start: true });
+    }
+    const used = trades.filter((x) => !isFlow(x) && x.date > start.date).sort((a, b) => a.date.localeCompare(b.date));
+    for (const x of used) {
+      let p = x.price > 0 ? x.price : NaN;
+      if (!Number.isFinite(p) && P.C[x.ticker]) { const i = sessionOnOrAfter(P, x.date); if (i >= 0) p = rawPrice(P, raw, x.ticker).open(i); }
+      const fee = x.fee > 0 ? x.fee : 0;
+      if (x.side === "sell") {
+        let left = x.shares;
+        const net = Number.isFinite(p) ? (x.shares * p - fee) / x.shares : NaN;
+        const lots = q[x.ticker] || [];
+        while (left > 1e-9 && lots.length) {
+          const lot = lots[0], take = Math.min(left, lot.shares);
+          realized.push({ ticker: x.ticker, buy_date: lot.date, sell_date: x.date, shares: take, gain: take * (net - lot.cost), from_start: lot.from_start });
+          lot.shares -= take; left -= take;
+          if (lot.shares < 1e-9) lots.shift();
+        }
+      } else {
+        (q[x.ticker] ||= []).push({ ticker: x.ticker, date: x.date, shares: x.shares, cost: Number.isFinite(p) ? (x.shares * p + fee) / x.shares : NaN, from_start: false });
+      }
+    }
+    return { lots: Object.values(q).flat().filter((l) => l.shares > 1e-9), realized };
+  }
+
+  /* 收益归因：区间（from 之后的第一个交易日起，到最新）内各持仓的盈亏与相对 SPY 的超额。
+     - 盈亏（含分红、费用）：当日收盘市值 − 前一日收盘市值 − 买入花费 + 卖出所得 + 分红
+     - 相对 SPY：每天把前一日收盘市值按 SPY 当日涨跌（含分红）计机会成本，超额 = 盈亏 − 机会成本
+       （当天买入的部分从买入价起算，近似忽略当天的机会成本）
+     - 现金：利息 − 前一日现金 × SPY 涨跌
+     各项超额相加 ≈ 账户盈亏 − 把同样的资金（同一天存取）一直放在 SPY 的盈亏 */
+  function attribution(P, raw, start0, trades0, from, opts = {}) {
+    const cashInterest = opts.cashInterest !== false;
+    const { start, trades } = splitNormalize(P, raw, start0, trades0);
+    const s0 = sessionOnOrBefore(P, start.date);
+    if (s0 < 0) throw new Error("起始日期早于价格数据范围");
+    const end = P.n - 1;
+    const k0 = Math.max(s0, sessionOnOrBefore(P, from)); // 区间基点（这天收盘后开始计）
+    const used = trades.filter((x) => x.date > start.date);
+    const tickers = [...new Set([...Object.keys(start.positions), ...used.filter((x) => !isFlow(x)).map((x) => x.ticker)])];
+    const px = Object.fromEntries(tickers.filter((t) => P.C[t]).map((t) => [t, rawPrice(P, raw, t)]));
+    const divAt = Object.fromEntries(tickers.map((t) => [t, Object.fromEntries((raw.corp?.[t]?.div || []).map(([k, d]) => [k, d]))]));
+    const lastPx = {};
+    const closeAt = (t, i) => { if (px[t]) { const c = px[t].close(i); if (Number.isFinite(c)) lastPx[t] = c; } return lastPx[t]; };
+    const sh = Object.fromEntries(tickers.map((t) => [t, start.positions[t] > 0 ? start.positions[t] : 0]));
+    for (const t of tickers) closeAt(t, s0);
+    const byDay = {};
+    for (const x of used) { const i = sessionOnOrAfter(P, x.date); if (i >= 0) (byDay[i] ||= []).push(x); }
+    const spy = P.C.SPY;
+    const out = Object.fromEntries(tickers.map((t) => [t, { ticker: t, pnl: 0, bench: 0, value_days: 0, has_data: !!px[t] }]));
+    let cash = start.cash || 0, interestP = 0, cashBench = 0, flowsP = 0, days = 0;
+    const startValue = { v: NaN };
+    for (let i = s0 + 1; i <= end; i++) {
+      const inP = i > k0;
+      const rs = spy && Number.isFinite(spy[i]) && Number.isFinite(spy[i - 1]) ? spy[i] / spy[i - 1] - 1 : 0;
+      if (i === k0 + 1) startValue.v = cash + tickers.reduce((a, t) => a + sh[t] * (lastPx[t] ?? 0), 0);
+      const prev = Object.fromEntries(tickers.map((t) => [t, sh[t] * (lastPx[t] ?? 0)]));
+      const cashPrev = cash;
+      let interest = 0;
+      if (cashInterest) { interest = cash * (P.rate[i - 1] || 0) * P.gap[i] / 360; cash += interest; }
+      const flowT = Object.fromEntries(tickers.map((t) => [t, 0]));
+      for (const t of tickers) { const d = divAt[t][i]; if (d && sh[t] > 0) { cash += sh[t] * d; flowT[t] += sh[t] * d; } }
+      for (const x of byDay[i] || []) {
+        if (isFlow(x)) { cash += flowAmount(x); if (inP) flowsP += flowAmount(x); continue; }
+        let p = x.price > 0 ? x.price : px[x.ticker] ? px[x.ticker].open(i) : NaN;
+        if (!Number.isFinite(p)) p = lastPx[x.ticker] ?? 0;
+        if (!px[x.ticker]) lastPx[x.ticker] = p;
+        const fee = x.fee > 0 ? x.fee : 0;
+        if (x.side === "sell") { const n = Math.min(x.shares, sh[x.ticker]); sh[x.ticker] -= n; cash += x.shares * p - fee; flowT[x.ticker] += x.shares * p - fee; }
+        else { sh[x.ticker] += x.shares; cash -= x.shares * p + fee; flowT[x.ticker] -= x.shares * p + fee; }
+        if (Math.abs(sh[x.ticker]) < 1e-9) sh[x.ticker] = 0;
+      }
+      for (const t of tickers) closeAt(t, i);
+      if (!inP) continue;
+      days++;
+      for (const t of tickers) {
+        const o = out[t];
+        o.pnl += sh[t] * (lastPx[t] ?? 0) - prev[t] + flowT[t];
+        o.bench += prev[t] * rs;
+        o.value_days += prev[t];
+      }
+      interestP += interest;
+      cashBench += cashPrev * rs;
+    }
+    const rows = Object.values(out).filter((o) => Math.abs(o.pnl) > 1e-9 || o.value_days > 0)
+      .map((o) => ({ ticker: o.ticker, pnl: o.pnl, excess: o.pnl - o.bench, avg_value: days ? o.value_days / days : 0, has_data: o.has_data }))
+      .sort((a, b) => b.pnl - a.pnl);
+    const total = rows.reduce((a, r) => a + r.pnl, 0) + interestP;
+    const bench = rows.reduce((a, r) => a + (r.pnl - r.excess), 0) + cashBench;
+    return { from: P.dates[k0], to: P.dates[end], days, start_value: startValue.v, net_flows: flowsP, rows,
+      cash: { interest: interestP, excess: interestP - cashBench }, total_pnl: total, spy_pnl: bench, excess: total - bench };
+  }
+
+  const api = { reconcile, evaluateDecisions, compareFollow, parseTrades, applyTrades, reverseTrades, rawPrice, splitNormalize, ledgerBook, fifoLots, attribution };
   root.Recon = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
