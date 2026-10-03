@@ -201,26 +201,29 @@ function relationsCard(R) {
     <details><summary>证据（${r.evidence.length}）与记录</summary><ul>${r.evidence.map(ev).join("")}</ul><p class="muted">${(r.history || []).map(esc).join(" · ")}</p></details></div>`;
   const active = list.filter((r) => r.status !== "rejected"), rejected = list.filter((r) => r.status === "rejected");
   return `<section class="card" id="rel-card"><h3>新增与待审核关系 ${badge("fact")}${badge("model")}<span class="muted" style="font-weight:400"> 待审核 ${list.filter((r) => r.status === "candidate").length} 条</span></h3>
-    <p class="muted">${rich("每天从新闻中自动发现图谱里还没有的供货 / 合作关系（AI 只能引用新闻原文），再到 SEC 申报中核实：公司申报文件点名对方且确认方向的（A 级）自动加入，其余等你审核。“可能影响股价”依据：合同金额 ≥ 供货方年收入 5%、首次报道后股价相对 SPY 的波动超过正常的 2 倍、或公司按重大协议（8-K 事项 1.01）披露。按钮使用“我的持仓 → 同步设置”里的 GitHub token，提交后约 2 分钟网页更新。")}</p>
-    <p id="rel-msg" class="muted"></p>
+    <p class="muted">${rich("每天从新闻中自动发现图谱里还没有的供货 / 合作关系（AI 只能引用新闻原文），再到 SEC 申报中核实：公司申报文件点名对方且确认方向的（A 级）自动加入，其余等你审核。“可能影响股价”依据：合同金额 ≥ 供货方年收入 5%、首次报道后股价相对 SPY 的波动超过正常的 2 倍、或公司按重大协议（8-K 事项 1.01）披露。按钮使用“我的持仓 → 同步设置”里的 GitHub token，提交后约 2–3 分钟网页更新。")}</p>
     ${active.length ? active.map(item).join("") : empty("目前没有新增或待审核的关系")}
     ${rejected.length ? `<details class="howto"><summary>已拒绝（${rejected.length}）</summary>${rejected.map(item).join("")}</details>` : ""}</section>`;
 }
 function bindRelations() {
   document.querySelectorAll("[data-rel]").forEach((b) => (b.onclick = async () => {
-    const msg = (t) => { const el = byId("rel-msg"); if (el) el.textContent = t; };
+    const box = b.parentElement; // 这一条关系的按钮区：结果就地显示，避免看不到反馈而重复点击
+    const say = (t, cls = "muted") => { box.innerHTML = `<span class="${cls}">${esc(t)}</span>`; };
     let token = ""; try { token = localStorage.getItem(TOKEN_KEY) || ""; } catch { /* 忽略 */ }
-    if (!token) { msg("请先在“我的持仓 → 持仓 → 同步设置”中保存 GitHub token（只需 Actions 写权限）"); return; }
+    if (!token) { alert("请先在“我的持仓 → 持仓 → 同步设置”中保存 GitHub token（只需 Actions 写权限）"); return; }
     const act = { approve: "通过", reject: "拒绝", revoke: "撤销" }[b.dataset.act];
     if (!confirm(`确认${act}：${b.dataset.rel}？`)) return;
-    msg("提交中…");
+    box.querySelectorAll("button").forEach((x) => { x.disabled = true; });
     try {
       const resp = await fetch(`https://api.github.com/repos/${META.github_repo}/actions/workflows/review-relation.yml/dispatches`, {
         method: "POST",
         headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
         body: JSON.stringify({ ref: "main", inputs: { id: b.dataset.rel, action: b.dataset.act } }),
       });
-      msg(resp.status === 204 ? `已提交（${act} ${b.dataset.rel}）；约 2 分钟后网页更新` : `提交失败：HTTP ${resp.status}${resp.status === 401 || resp.status === 403 ? "（token 无效或缺少 Actions 写权限）" : resp.status === 404 ? "（token 没有该仓库权限，或 workflow 尚未推送）" : ""}`);
-    } catch (e) { msg(`提交失败：${e.message}`); }
+      if (resp.status === 204) say(`✓ 已提交${act}；约 2–3 分钟后网页更新（刷新页面查看）`, "pos");
+      else {
+        say(`提交失败：HTTP ${resp.status}${resp.status === 401 || resp.status === 403 ? "（token 无效或缺少 Actions 写权限）" : resp.status === 404 ? "（token 没有该仓库权限）" : ""}`, "neg");
+      }
+    } catch (e) { say(`提交失败：${e.message}`, "neg"); }
   }));
 }
