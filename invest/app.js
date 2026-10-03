@@ -180,7 +180,8 @@ const NAV_GROUPS = {
   holdings: [],
   stock: [],
   market: [["performance", "相对表现"], ["risk", "风险与集中度"]],
-  news: [["news", "新闻"], ["chain", "AI 产业链"]],
+  news: [],
+  chain: [],
   lab: [["advice", "配置建议"], ["matrix", "评分矩阵"], ["signal-news", "信号 × 新闻"], ["backtest", "回测与实盘"], ["model", "系统模型说明"], ["sim", "模拟经营"]],
 };
 const PAGE_GROUP = { compare: "stock", glossary: "glossary" };

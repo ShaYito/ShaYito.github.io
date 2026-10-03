@@ -50,7 +50,7 @@ function chainInsights(c) {
 }
 
 PAGES.chain = async (r) => {
-  const c = await load("chain.json");
+  const [c, flow] = await Promise.all([load("chain.json"), load("chain_flow.json").catch(() => null)]);
   const mode = ["theme", "ret", "sent"].includes(r.query.color) ? r.query.color : "ret";
   const hl = r.query.t || "";
   const feedsOf = (key) => c.inputs.filter((i) => i.feeds.includes(key)).map((i) => i.name);
@@ -74,9 +74,87 @@ PAGES.chain = async (r) => {
         <p class="muted chain-desc">${esc(s.desc)}</p>
         ${isNum(s.avg_ret_1m) ? `<p class="chain-avg">近 1 月平均 <span class="${cls(s.avg_ret_1m)}">${pct(s.avg_ret_1m, 1, true)}</span></p>` : ""}
         <div class="chain-chips">${s.members.map((m) => chainChip(m, c, mode, hl)).join("")}</div></div>`).join("")}</div>
+    </section>
+    <section class="card" id="flow-card"><h3>业务关系图：上下游供应关系（业务线）${badge("fact")}${badge("model")}</h3>
+      <div class="row"><span class="muted">着色</span><div class="seg" id="fl-color">${[["growth", "收入增速"], ["theme", "主题"]].map(([k, n], i) => `<button type="button" data-c="${k}" class="${i ? "" : "on"}">${n}</button>`).join("")}</div>
+        <label class="muted"><input type="checkbox" id="fl-partner"> 显示合作关系</label></div>
+      <div id="c-flow" class="chart" style="height:${flowHeight(flow)}px"></div>
+      <p class="muted">${rich("从左到右 = 从上游到下游：每个圆点是一家公司的一块业务（SEC 财报的分业务口径），连线表示“左边向右边供货 / 提供服务”。圆点大小 = 该业务近 4 季收入（没有分业务数据的公司用公司总收入，灰色 = 未上市或非美股、没有数据）；颜色 = 收入同比增速（蓝 = 增长、红 = 下降，颜色越深幅度越大，±50% 封顶）。")}</p>
+      <p class="muted">${rich("连线只表示存在供应关系（经你审核的产业链关系，属[[model|人工判断]]），粗细不代表交易额：公开数据里没有公司之间的交易金额（财报只披露“大客户占收入 x%”且多不具名）。虚线 = 该关系只确认到公司层面、还没细化到具体业务（挂在该公司收入最大的业务上）。悬停圆点可只看它的上下游。")}</p>
     </section>`;
+  drawFlow(flow, "growth", false);
+  document.querySelectorAll("#fl-color button").forEach((b) => (b.onclick = () => {
+    b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    drawFlow(flow, b.dataset.c, byId("fl-partner").checked);
+  }));
+  byId("fl-partner").onchange = (e) => drawFlow(flow, document.querySelector("#fl-color .on").dataset.c, e.target.checked);
   document.querySelectorAll("#ch-mode button").forEach((b) => (b.onclick = () => {
     location.hash = `#/chain?color=${b.dataset.m}${hl ? `&t=${hl}` : ""}`;
   }));
   if (hl) setTimeout(() => document.querySelector(".chain-chip.hl")?.scrollIntoView({ block: "center", inline: "center" }), 50);
 };
+
+// ---------------- 业务关系图（上下游，业务线层面）----------------
+// a 与 b 两个 #rrggbb 颜色按比例 w（a 的占比）混合（ECharts 在 canvas 上不认 CSS color-mix）
+function mixHex(a, b, w) {
+  const p = (h) => { const x = h.replace("#", "").trim(); const f = x.length === 3 ? x.split("").map((c) => c + c).join("") : x; return [0, 2, 4].map((i) => parseInt(f.slice(i, i + 2), 16)); };
+  const [ca, cb] = [p(a), p(b)];
+  if (ca.some(isNaN) || cb.some(isNaN)) return a;
+  return `rgb(${ca.map((v, i) => Math.round(v * w + cb[i] * (1 - w))).join(",")})`;
+}
+function flowRows(flow) {
+  const cnt = {};
+  for (const n of flow?.nodes || []) cnt[n.layer] = (cnt[n.layer] || 0) + 1;
+  return Math.max(1, ...Object.values(cnt));
+}
+function flowHeight(flow) { return flow ? Math.max(420, flowRows(flow) * 46 + 60) : 120; }
+function drawFlow(flow, colorBy, showPartner) {
+  const el = byId("c-flow");
+  if (!el) return;
+  if (!flow?.nodes?.length) { el.innerHTML = empty("暂无业务关系数据"); return; }
+  const rows = flowRows(flow);
+  const byLayer = {};
+  for (const n of flow.nodes) (byLayer[n.layer] ||= []).push(n);
+  const cols = flow.columns.map((c) => c.name || `第 ${c.layer + 1} 层`);
+  const revs = flow.nodes.map((n) => n.revenue).filter(isNum);
+  const maxRev = Math.max(...revs, 1);
+  const size = (n) => (isNum(n.revenue) ? 10 + 34 * Math.sqrt(n.revenue / maxRev) : 9);
+  const growthColor = (g) => {
+    if (!isNum(g)) return BENCH_GRAY();
+    const a = Math.min(1, Math.abs(g) / 0.5);
+    return mixHex(g >= 0 ? css("--pos") : css("--neg"), css("--surface"), 0.35 + a * 0.65);
+  };
+  const color = (n) => (!n.listed ? OTHER_GRAY() : colorBy === "theme" ? themeColor(themeOf(n.ticker)) : growthColor(n.growth));
+  const money$ = (v) => (isNum(v) ? (v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : `${(v / 1e6).toFixed(0)}M`) : "–");
+  const label = (n) => `${n.ticker}${n.business ? ` ${n.business}` : ""}`;
+  const data = flow.nodes.map((n) => {
+    const col = byLayer[n.layer];
+    const y = n.order + (rows - col.length) / 2;
+    return { name: n.id, value: [n.layer, y], raw: n, symbolSize: size(n),
+      itemStyle: { color: color(n), borderColor: css("--surface"), borderWidth: 1 },
+      label: { show: true, position: "right", formatter: label(n).length > 16 ? `${label(n).slice(0, 15)}…` : label(n), fontSize: 10, color: css("--ink-2") } };
+  });
+  const links = [
+    ...flow.edges.map((e) => ({ source: e.source, target: e.target, raw: e,
+      lineStyle: { color: css("--axis"), width: 1, opacity: 0.55, curveness: 0.12, type: e.coarse ? "dashed" : "solid" } })),
+    ...(showPartner ? flow.partners.map((e) => ({ source: e.source, target: e.target, raw: { ...e, partner: true }, symbol: ["none", "none"],
+      lineStyle: { color: palette()[6], width: 1, opacity: 0.6, curveness: 0.3, type: "dotted" } })) : []),
+  ];
+  const nodeTip = (n) => `<b>${esc(n.ticker)}</b> ${esc(n.company)}${n.business ? `<br>业务：${esc(n.business)}` : ""}
+    ${isNum(n.revenue) ? `<br>${esc(n.basis)}：${money$(n.revenue)} 美元` : n.listed ? "<br>暂无收入数据" : "<br>未上市 / 非美股：无数据"}
+    ${isNum(n.growth) ? `<br>收入同比：${pct(n.growth, 1, true)}` : ""}${isNum(n.op_margin) ? `<br>公司营业利润率：${pct(n.op_margin, 1)}` : ""}`;
+  const name = Object.fromEntries(flow.nodes.map((n) => [n.id, label(n)]));
+  const chart = mkChart(el, {
+    tooltip: { formatter: (p) => (p.dataType === "edge"
+      ? `${esc(name[p.data.source])} ${p.data.raw.partner ? "↔" : "→"} ${esc(name[p.data.target])}<br>${esc(p.data.raw.note || "")}${p.data.raw.coarse ? "<br><span style='opacity:.7'>只确认到公司层面</span>" : ""}`
+      : nodeTip(p.data.raw)) },
+    legend: { show: false },
+    grid: { left: 10, right: 150, top: 40, bottom: 10 },
+    xAxis: { type: "category", data: cols, position: "top", boundaryGap: false, axisLine: { show: false }, axisTick: { show: false },
+      axisLabel: { interval: 0, fontWeight: 600, color: css("--ink"), fontSize: 11 }, splitLine: { show: true, lineStyle: { color: css("--grid"), type: "dashed" } } },
+    yAxis: { type: "value", show: false, inverse: true, min: -0.7, max: rows - 0.3 },
+    series: [{ type: "graph", coordinateSystem: "cartesian2d", layout: "none", data, links, edgeSymbol: ["none", "arrow"], edgeSymbolSize: 6,
+      emphasis: { focus: "adjacency", lineStyle: { width: 2, opacity: 1 } }, blur: { itemStyle: { opacity: 0.15 }, lineStyle: { opacity: 0.05 } } }],
+  });
+  chart?.on("click", (p) => { if (p.dataType === "node" && p.data.raw.listed) location.hash = `#/stock/${p.data.raw.ticker}`; });
+}
