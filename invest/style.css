@@ -231,3 +231,7 @@ a.chain-chip:hover { border-color: var(--ink-2); }
 sup a.cite { text-decoration: none; font-size: 11px; }
 .flow-info { min-height: 44px; margin-top: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; line-height: 1.6;
   position: sticky; bottom: 8px; z-index: 2; background: var(--surface); box-shadow: 0 2px 10px rgba(0,0,0,.08); } /* 图很高时信息栏贴在屏幕底部 */
+.rel-item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.rel-item.rejected { opacity: .65; }
+.rel-item p { margin: 4px 0; }
+.rel-head { line-height: 1.9; }

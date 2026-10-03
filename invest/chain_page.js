@@ -50,7 +50,7 @@ function chainInsights(c) {
 }
 
 PAGES.chain = async (r) => {
-  const [c, flow] = await Promise.all([load("chain.json"), load("chain_flow.json").catch(() => null)]);
+  const [c, flow, rels] = await Promise.all([load("chain.json"), load("chain_flow.json").catch(() => null), load("relations.json").catch(() => null)]);
   const mode = ["theme", "ret", "sent"].includes(r.query.color) ? r.query.color : "ret";
   const hl = r.query.t || "";
   const feedsOf = (key) => c.inputs.filter((i) => i.feeds.includes(key)).map((i) => i.name);
@@ -75,6 +75,7 @@ PAGES.chain = async (r) => {
         ${isNum(s.avg_ret_1m) ? `<p class="chain-avg">近 1 月平均 <span class="${cls(s.avg_ret_1m)}">${pct(s.avg_ret_1m, 1, true)}</span></p>` : ""}
         <div class="chain-chips">${s.members.map((m) => chainChip(m, c, mode, hl)).join("")}</div></div>`).join("")}</div>
     </section>
+    ${relationsCard(rels)}
     <section class="card" id="flow-card"><h3>业务关系图：上下游供应关系（业务线）${badge("fact")}${badge("model")}</h3>
       <div class="row"><span class="muted">着色</span><div class="seg" id="fl-color">${[["growth", "收入增速"], ["theme", "主题"]].map(([k, n], i) => `<button type="button" data-c="${k}" class="${i ? "" : "on"}">${n}</button>`).join("")}</div>
         <label class="muted"><input type="checkbox" id="fl-partner"> 显示合作关系</label></div>
@@ -83,6 +84,7 @@ PAGES.chain = async (r) => {
       <p class="muted">${rich("从左到右 = 从上游到下游：每个圆点是一家公司的一块业务（SEC 财报的分业务口径），连线表示“左边向右边供货 / 提供服务”。圆点大小 = 该业务近 4 季收入（没有分业务数据的公司用公司总收入，灰色 = 未上市或非美股、没有数据）；颜色 = 收入同比增速（蓝 = 增长、红 = 下降，颜色越深幅度越大，±50% 封顶）。")}</p>
       <p class="muted">${rich("连线只表示存在供应关系（经你审核的产业链关系，属[[model|人工判断]]），粗细不代表交易额：公开数据里没有公司之间的交易金额（财报只披露“大客户占收入 x%”且多不具名）。虚线 = 该关系只确认到公司层面、还没细化到具体业务（挂在该公司收入最大的业务上）。悬停圆点可只看它的上下游。")}</p>
     </section>`;
+  bindRelations();
   drawFlow(flow, "growth", false);
   document.querySelectorAll("#fl-color button").forEach((b) => (b.onclick = () => {
     b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
@@ -137,7 +139,8 @@ function drawFlow(flow, colorBy, showPartner) {
   });
   const links = [
     ...flow.edges.map((e) => ({ source: e.source, target: e.target, raw: e,
-      lineStyle: { color: css("--axis"), width: 1, opacity: 0.55, curveness: 0.12, type: e.coarse ? "dashed" : "solid" } })),
+      lineStyle: e.added ? { color: palette()[1], width: 2, opacity: 0.9, curveness: 0.12, type: e.coarse ? "dashed" : "solid" }
+        : { color: css("--axis"), width: 1, opacity: 0.55, curveness: 0.12, type: e.coarse ? "dashed" : "solid" } })),
     ...(showPartner ? flow.partners.map((e) => ({ source: e.source, target: e.target, raw: { ...e, partner: true }, symbol: ["none", "none"],
       lineStyle: { color: palette()[6], width: 1, opacity: 0.6, curveness: 0.3, type: "dotted" } })) : []),
   ];
@@ -156,7 +159,8 @@ function drawFlow(flow, colorBy, showPartner) {
       emphasis: { focus: "adjacency", lineStyle: { width: 2, opacity: 1 } }, blur: { itemStyle: { opacity: 0.15 }, lineStyle: { opacity: 0.05 } } }],
   });
   const info = byId("flow-info");
-  const edgeTip = (d) => `${esc(name[d.source])} ${d.raw.partner ? "↔" : "→"} ${esc(name[d.target])}：${esc(d.raw.note || "")}${d.raw.coarse ? "（只确认到公司层面）" : ""}`;
+  const edgeTip = (d) => `${esc(name[d.source])} ${d.raw.partner ? "↔" : "→"} ${esc(name[d.target])}：${esc(d.raw.note || "")}${d.raw.coarse ? "（只确认到公司层面）" : ""}${
+    d.raw.added ? `<br><span style="color:${palette()[1]}">新增关系（${d.raw.added.approved_by === "auto" ? "SEC 申报点名，自动加入" : "你审核通过"}）</span>，详情见上方“新增与待审核关系”` : ""}`;
   const ups = (id) => flow.edges.filter((e) => e.target === id).map((e) => name[e.source]);
   const downs = (id) => flow.edges.filter((e) => e.source === id).map((e) => name[e.target]);
   chart?.on("mouseover", (p) => {
@@ -170,4 +174,53 @@ function drawFlow(flow, colorBy, showPartner) {
       ${d.length ? `<br><span class="muted">下游（${d.length}）：</span>${esc(d.join("、"))}` : ""}`;
   });
   chart?.on("click", (p) => { if (p.dataType === "node" && p.data.raw.listed) location.hash = `#/stock/${p.data.raw.ticker}`; });
+}
+
+// ---------------- 新增与待审核关系（web_data/relations.json）----------------
+const REL_STATUS = { candidate: "待审核", approved: "已加入", rejected: "已拒绝" };
+const TIER_TIP = { A: "A 级：公司向 SEC 提交的申报文件点名对方（并经确认方向）", B: "B 级：至少 2 家不同媒体报道", C: "C 级：单一来源" };
+function relationsCard(R) {
+  if (!R) return "";
+  const list = R.relations || [];
+  const nm = (k) => { const n = R.names?.[k]; return n && n.toLowerCase() !== k.toLowerCase() ? `${k} ${n}` : n || k; };
+  const ev = (e) => `<li><span class="chip">${e.kind === "sec" ? `SEC ${esc(e.form)}${e.items ? ` 事项 ${esc(e.items)}` : ""}` : esc(e.publisher || "新闻")}</span>${esc(e.date || "")}
+    <a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title || "原文")}</a>${e.quote ? `<br><span class="muted">“${esc(e.quote)}”</span>` : ""}</li>`;
+  const react = (r) => Object.entries(r.impact?.reactions || {}).map(([t, x]) => `${esc(t)} ${x.start} 起 ${x.days} 日相对 SPY <span class="${cls(x.car)}">${pct(x.car, 1, true)}</span>${isNum(x.z) ? `（${num(x.z, 1, true)} 倍正常波动）` : ""}${x.vol_ratio ? `，成交量 ${num(x.vol_ratio, 1)} 倍` : ""}`).join("；");
+  const btns = (r) => r.status === "candidate"
+    ? `<button type="button" class="primary" data-rel="${esc(r.id)}" data-act="approve">通过</button> <button type="button" class="ghost" data-rel="${esc(r.id)}" data-act="reject">拒绝</button>`
+    : r.status === "approved" ? `<button type="button" class="ghost" data-rel="${esc(r.id)}" data-act="revoke">撤销</button>` : `<button type="button" class="ghost" data-rel="${esc(r.id)}" data-act="revoke">恢复为待审核</button>`;
+  const item = (r) => `<div class="rel-item ${r.status}"><div class="rel-head"><b>${esc(nm(r.source))} ${r.type === "supplier" ? "→" : "↔"} ${esc(nm(r.target))}</b>
+      <span class="chip">${r.type === "supplier" ? "供货" : "合作"}</span><span class="chip" title="${esc(TIER_TIP[r.tier])}">${r.tier} 级</span>
+      <span class="chip ${r.status === "approved" ? "on" : ""}">${REL_STATUS[r.status]}${r.approved_by === "auto" ? "（自动）" : r.approved_by === "user" ? "（你审核）" : ""}</span>
+      ${r.impact?.likely ? '<span class="chip warnchip">可能影响股价</span>' : ""}<span class="muted"> 首次报道 ${esc(r.first_seen || "–")}</span>
+      <span style="float:right">${btns(r)}</span></div>
+    <p>${esc(r.note || "")}</p>
+    ${r.impact?.reasons?.length ? `<p><b>依据：</b>${r.impact.reasons.map(esc).join("；")}${r.impact.reactions ? "。已经大幅波动的消息，后续影响可能已部分反映在价格中。" : ""}</p>` : ""}
+    ${!r.impact?.likely && react(r) ? `<p class="muted">股价反应：${react(r)}（未达到 2 倍正常波动）</p>` : ""}
+    ${r.impact?.amount ? `<p class="muted">合同金额：${esc(r.impact.amount.text)}${isNum(r.impact.materiality) ? `，年化约占供货方收入 ${pct(r.impact.materiality, 1)}` : ""}</p>` : ""}
+    <details><summary>证据（${r.evidence.length}）与记录</summary><ul>${r.evidence.map(ev).join("")}</ul><p class="muted">${(r.history || []).map(esc).join(" · ")}</p></details></div>`;
+  const active = list.filter((r) => r.status !== "rejected"), rejected = list.filter((r) => r.status === "rejected");
+  return `<section class="card" id="rel-card"><h3>新增与待审核关系 ${badge("fact")}${badge("model")}<span class="muted" style="font-weight:400"> 待审核 ${list.filter((r) => r.status === "candidate").length} 条</span></h3>
+    <p class="muted">${rich("每天从新闻中自动发现图谱里还没有的供货 / 合作关系（AI 只能引用新闻原文），再到 SEC 申报中核实：公司申报文件点名对方且确认方向的（A 级）自动加入，其余等你审核。“可能影响股价”依据：合同金额 ≥ 供货方年收入 5%、首次报道后股价相对 SPY 的波动超过正常的 2 倍、或公司按重大协议（8-K 事项 1.01）披露。按钮使用“我的持仓 → 同步设置”里的 GitHub token，提交后约 2 分钟网页更新。")}</p>
+    <p id="rel-msg" class="muted"></p>
+    ${active.length ? active.map(item).join("") : empty("目前没有新增或待审核的关系")}
+    ${rejected.length ? `<details class="howto"><summary>已拒绝（${rejected.length}）</summary>${rejected.map(item).join("")}</details>` : ""}</section>`;
+}
+function bindRelations() {
+  document.querySelectorAll("[data-rel]").forEach((b) => (b.onclick = async () => {
+    const msg = (t) => { const el = byId("rel-msg"); if (el) el.textContent = t; };
+    let token = ""; try { token = localStorage.getItem(TOKEN_KEY) || ""; } catch { /* 忽略 */ }
+    if (!token) { msg("请先在“我的持仓 → 持仓 → 同步设置”中保存 GitHub token（只需 Actions 写权限）"); return; }
+    const act = { approve: "通过", reject: "拒绝", revoke: "撤销" }[b.dataset.act];
+    if (!confirm(`确认${act}：${b.dataset.rel}？`)) return;
+    msg("提交中…");
+    try {
+      const resp = await fetch(`https://api.github.com/repos/${META.github_repo}/actions/workflows/review-relation.yml/dispatches`, {
+        method: "POST",
+        headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
+        body: JSON.stringify({ ref: "main", inputs: { id: b.dataset.rel, action: b.dataset.act } }),
+      });
+      msg(resp.status === 204 ? `已提交（${act} ${b.dataset.rel}）；约 2 分钟后网页更新` : `提交失败：HTTP ${resp.status}${resp.status === 401 || resp.status === 403 ? "（token 无效或缺少 Actions 写权限）" : resp.status === 404 ? "（token 没有该仓库权限，或 workflow 尚未推送）" : ""}`);
+    } catch (e) { msg(`提交失败：${e.message}`); }
+  }));
 }
