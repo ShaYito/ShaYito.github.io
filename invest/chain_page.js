@@ -1,5 +1,5 @@
 "use strict";
-/* AI 算力产业链全景：主链环节（上游 → 下游）+ 供给环节；公司卡片按主题 / 近 1 月涨跌 / 近 7 日新闻情绪着色。 */
+/* 产业链页：AI 算力主链环节全景（上游 → 下游）+ 供给环节；新增与待审核关系；全部供货 / 合作关系的业务关系图。 */
 
 const CHAIN_HOWTO = [
   "从左到右是 AI 算力从“设计”到“被使用”的过程：芯片设计 → 定制芯片设计服务 → 晶圆制造与封装 → 服务器组装 → 云与 AI 算力 → AI 模型与应用。下方是为这些环节提供设备、存储、网络、电力的“供给”环节。",
@@ -62,7 +62,7 @@ PAGES.chain = async (r) => {
       ${feedsOf(s.key).length ? `<p class="chain-feed">↑ 供给：${esc(feedsOf(s.key).join("、"))}</p>` : ""}
       <div class="chain-chips">${s.members.map((m) => chainChip(m, c, mode, hl)).join("")}</div></div>`;
   app().innerHTML = `
-    <h2>AI 算力产业链 <span class="muted">价格截至 ${esc(c.asof_price)} · 环节划分 ${esc(c.as_of)}${c.status === "draft" ? "（草稿）" : ""}</span></h2>
+    <h2>产业链 <span class="muted">价格截至 ${esc(c.asof_price)} · 环节划分 ${esc(c.as_of)}${c.status === "draft" ? "（草稿）" : ""}</span></h2>
     ${howto(CHAIN_HOWTO)}${insightBox(chainInsights(c))}
     <section class="card"><div class="row"><span class="muted">着色</span><div class="seg" id="ch-mode">${[["theme", "主题"], ["ret", "近 1 月涨跌"], ["sent", "近 7 日新闻情绪"]].map(([k, n]) => `<button type="button" data-m="${k}" class="${k === mode ? "on" : ""}">${n}</button>`).join("")}</div>
       <span class="muted">${mode === "ret" ? "绿 = 上涨，红 = 下跌，颜色越深幅度越大（±20% 封顶）" : mode === "sent" ? "绿 = 偏正面，红 = 偏负面；无底色 = 近 7 日无新闻" : "颜色 = 看板主题"}；● = ${holdingsMode() === "mine" ? "你的持仓" : "当前建议持仓"}；灰色 = 未纳入看板</span></div>
@@ -81,6 +81,7 @@ PAGES.chain = async (r) => {
         <label class="muted"><input type="checkbox" id="fl-partner"> 显示合作关系</label></div>
       <div id="c-flow" class="chart" style="height:${flowHeight(flow)}px"></div>
       <div id="flow-info" class="flow-info muted">把鼠标移到圆点或连线上，这里显示详情（收入、增速、供应关系说明）；点击圆点进入个股页。</div>
+      ${flow?.missing?.length ? `<p class="muted">未出现在图中的选股池股票：${flow.missing.map((m) => `<a href="#/stock/${esc(m.ticker)}">${esc(m.ticker)}</a>（${esc(m.reason)}）`).join("；")}。</p>` : ""}
       <p class="muted">${rich("从左到右 = 从上游到下游：每个圆点是一家公司的一块业务（SEC 财报的分业务口径），连线表示“左边向右边供货 / 提供服务”。圆点大小 = 该业务近 4 季收入（没有分业务数据的公司用公司总收入，灰色 = 未上市或非美股、没有数据）；颜色 = 收入同比增速（蓝 = 增长、红 = 下降，颜色越深幅度越大，±50% 封顶）。")}</p>
       <p class="muted">${rich("连线只表示存在供应关系（经你审核的产业链关系，属[[model|人工判断]]），粗细不代表交易额：公开数据里没有公司之间的交易金额（财报只披露“大客户占收入 x%”且多不具名）。虚线 = 该关系只确认到公司层面、还没细化到具体业务（挂在该公司收入最大的业务上）。悬停圆点可只看它的上下游。")}</p>
     </section>`;
@@ -185,7 +186,7 @@ function relationsCard(R) {
   const nm = (k) => { const n = R.names?.[k]; return n && n.toLowerCase() !== k.toLowerCase() ? `${k} ${n}` : n || k; };
   const ev = (e) => `<li><span class="chip">${e.kind === "sec" ? `SEC ${esc(e.form)}${e.items ? ` 事项 ${esc(e.items)}` : ""}` : esc(e.publisher || "新闻")}</span>${esc(e.date || "")}
     <a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title || "原文")}</a>${e.quote ? `<br><span class="muted">“${esc(e.quote)}”</span>` : ""}</li>`;
-  const react = (r) => Object.entries(r.impact?.reactions || {}).map(([t, x]) => `${esc(t)} ${x.start} 起 ${x.days} 日相对 SPY <span class="${cls(x.car)}">${pct(x.car, 1, true)}</span>${isNum(x.z) ? `（${num(x.z, 1, true)} 倍正常波动）` : ""}${x.vol_ratio ? `，成交量 ${num(x.vol_ratio, 1)} 倍` : ""}`).join("；");
+  const react = (r) => Object.entries(r.impact?.reactions || {}).map(([t, x]) => `${esc(t)} ${x.start} 当天相对 SPY <span class="${cls(x.d0)}">${pct(x.d0, 1, true)}</span>${isNum(x.z0) ? `（${num(x.z0, 1, true)} 倍）` : ""}，${x.days} 日累计 <span class="${cls(x.car)}">${pct(x.car, 1, true)}</span>${isNum(x.z) ? `（${num(x.z, 1, true)} 倍）` : ""}${x.vol_ratio ? `，成交量 ${num(x.vol_ratio, 1)} 倍` : ""}`).join("；");
   const btns = (r) => r.status === "candidate"
     ? `<button type="button" class="primary" data-rel="${esc(r.id)}" data-act="approve">通过</button> <button type="button" class="ghost" data-rel="${esc(r.id)}" data-act="reject">拒绝</button>`
     : r.status === "approved" ? `<button type="button" class="ghost" data-rel="${esc(r.id)}" data-act="revoke">撤销</button>` : `<button type="button" class="ghost" data-rel="${esc(r.id)}" data-act="revoke">恢复为待审核</button>`;
@@ -196,7 +197,7 @@ function relationsCard(R) {
       <span style="float:right">${btns(r)}</span></div>
     <p>${esc(r.note || "")}</p>
     ${r.impact?.reasons?.length ? `<p><b>依据：</b>${r.impact.reasons.map(esc).join("；")}${r.impact.reactions ? "。已经大幅波动的消息，后续影响可能已部分反映在价格中。" : ""}</p>` : ""}
-    ${!r.impact?.likely && react(r) ? `<p class="muted">股价反应：${react(r)}（未达到 2 倍正常波动）</p>` : ""}
+    ${!r.impact?.likely && react(r) ? `<p class="muted">股价反应：${react(r)}（均未达到 2 倍正常波动）</p>` : ""}
     ${r.impact?.amount ? `<p class="muted">合同金额：${esc(r.impact.amount.text)}${isNum(r.impact.materiality) ? `，年化约占供货方收入 ${pct(r.impact.materiality, 1)}` : ""}</p>` : ""}
     <details><summary>证据（${r.evidence.length}）与记录</summary><ul>${r.evidence.map(ev).join("")}</ul><p class="muted">${(r.history || []).map(esc).join(" · ")}</p></details></div>`;
   const active = list.filter((r) => r.status !== "rejected"), rejected = list.filter((r) => r.status === "rejected");
