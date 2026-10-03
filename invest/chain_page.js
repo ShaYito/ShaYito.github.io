@@ -79,6 +79,7 @@ PAGES.chain = async (r) => {
       <div class="row"><span class="muted">着色</span><div class="seg" id="fl-color">${[["growth", "收入增速"], ["theme", "主题"]].map(([k, n], i) => `<button type="button" data-c="${k}" class="${i ? "" : "on"}">${n}</button>`).join("")}</div>
         <label class="muted"><input type="checkbox" id="fl-partner"> 显示合作关系</label></div>
       <div id="c-flow" class="chart" style="height:${flowHeight(flow)}px"></div>
+      <div id="flow-info" class="flow-info muted">把鼠标移到圆点或连线上，这里显示详情（收入、增速、供应关系说明）；点击圆点进入个股页。</div>
       <p class="muted">${rich("从左到右 = 从上游到下游：每个圆点是一家公司的一块业务（SEC 财报的分业务口径），连线表示“左边向右边供货 / 提供服务”。圆点大小 = 该业务近 4 季收入（没有分业务数据的公司用公司总收入，灰色 = 未上市或非美股、没有数据）；颜色 = 收入同比增速（蓝 = 增长、红 = 下降，颜色越深幅度越大，±50% 封顶）。")}</p>
       <p class="muted">${rich("连线只表示存在供应关系（经你审核的产业链关系，属[[model|人工判断]]），粗细不代表交易额：公开数据里没有公司之间的交易金额（财报只披露“大客户占收入 x%”且多不具名）。虚线 = 该关系只确认到公司层面、还没细化到具体业务（挂在该公司收入最大的业务上）。悬停圆点可只看它的上下游。")}</p>
     </section>`;
@@ -145,9 +146,7 @@ function drawFlow(flow, colorBy, showPartner) {
     ${isNum(n.growth) ? `<br>收入同比：${pct(n.growth, 1, true)}` : ""}${isNum(n.op_margin) ? `<br>公司营业利润率：${pct(n.op_margin, 1)}` : ""}`;
   const name = Object.fromEntries(flow.nodes.map((n) => [n.id, label(n)]));
   const chart = mkChart(el, {
-    tooltip: { formatter: (p) => (p.dataType === "edge"
-      ? `${esc(name[p.data.source])} ${p.data.raw.partner ? "↔" : "→"} ${esc(name[p.data.target])}<br>${esc(p.data.raw.note || "")}${p.data.raw.coarse ? "<br><span style='opacity:.7'>只确认到公司层面</span>" : ""}`
-      : nodeTip(p.data.raw)) },
+    tooltip: { show: false }, // 详情显示在图下方的信息栏，避免浮动框遮挡节点
     legend: { show: false },
     grid: { left: 10, right: 150, top: 40, bottom: 10 },
     xAxis: { type: "category", data: cols, position: "top", boundaryGap: false, axisLine: { show: false }, axisTick: { show: false },
@@ -155,6 +154,20 @@ function drawFlow(flow, colorBy, showPartner) {
     yAxis: { type: "value", show: false, inverse: true, min: -0.7, max: rows - 0.3 },
     series: [{ type: "graph", coordinateSystem: "cartesian2d", layout: "none", data, links, edgeSymbol: ["none", "arrow"], edgeSymbolSize: 6,
       emphasis: { focus: "adjacency", lineStyle: { width: 2, opacity: 1 } }, blur: { itemStyle: { opacity: 0.15 }, lineStyle: { opacity: 0.05 } } }],
+  });
+  const info = byId("flow-info");
+  const edgeTip = (d) => `${esc(name[d.source])} ${d.raw.partner ? "↔" : "→"} ${esc(name[d.target])}：${esc(d.raw.note || "")}${d.raw.coarse ? "（只确认到公司层面）" : ""}`;
+  const ups = (id) => flow.edges.filter((e) => e.target === id).map((e) => name[e.source]);
+  const downs = (id) => flow.edges.filter((e) => e.source === id).map((e) => name[e.target]);
+  chart?.on("mouseover", (p) => {
+    if (!info) return;
+    info.classList.remove("muted");
+    if (p.dataType === "edge") { info.innerHTML = edgeTip(p.data); return; }
+    if (p.dataType !== "node") return;
+    const id = p.data.name, u = ups(id), d = downs(id);
+    info.innerHTML = `${nodeTip(p.data.raw).replace(/<br>/g, " · ")}
+      ${u.length ? `<br><span class="muted">上游（${u.length}）：</span>${esc(u.join("、"))}` : ""}
+      ${d.length ? `<br><span class="muted">下游（${d.length}）：</span>${esc(d.join("、"))}` : ""}`;
   });
   chart?.on("click", (p) => { if (p.dataType === "node" && p.data.raw.listed) location.hash = `#/stock/${p.data.raw.ticker}`; });
 }
