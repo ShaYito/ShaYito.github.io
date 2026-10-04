@@ -417,11 +417,16 @@ function metricCompare(it, d) {
   const who = isNum(it.theme_median) ? "同行" : "选股池";
   const pctOrX = d.fmt === "x" || d.fmt === "num2" || d.fmt === "num1";
   const diff = pctOrX ? (ref !== 0 ? it.value / ref - 1 : NaN) : it.value - ref;
-  if (!isNum(diff) || Math.abs(diff) < (pctOrX ? 0.1 : 0.02)) return `<span class="muted">与${who}接近</span>`;
+  // 接近：倍数类相差 < 10%；百分比类绝对差 < 2 个百分点且相对差 < 25%（避免 1.8% vs 0.2% 这种相差数倍的被算作接近）
+  const rel = ref !== 0 ? Math.abs(it.value / ref - 1) : Infinity;
+  const close = pctOrX ? Math.abs(diff) < 0.1 : Math.abs(diff) < 0.02 && rel < 0.25;
+  if (!isNum(diff) || close) return `<span class="muted">与${who}接近</span>`;
   const higher = diff > 0;
   const good = d.better ? (d.better === "high") === higher : null;
   const text = pctOrX ? `${higher ? "高于" : "低于"}${who} ${pct(Math.abs(diff), 0)}` : `${higher ? "高于" : "低于"}${who} ${(Math.abs(diff) * 100).toFixed(1)} 个百分点`;
-  return `<span class="${good === null ? "muted" : good ? "pos" : "neg"}">${text}</span>`;
+  return good === null
+    ? `<span class="dir-neutral" title="该指标没有通用的好坏方向（如涨跌、Beta、持股结构），只列出与同行的差距">${text}</span>`
+    : `<span class="${good ? "pos" : "neg"}">${text}</span>`;
 }
 function metricsCard(s) {
   const m = s.metrics;
@@ -435,9 +440,10 @@ function metricsCard(s) {
   return `<section class="card" id="metrics-card"><h3>关键指标 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 公司数据 ${esc(m.fetched || "")}（yfinance）· 价格类按最新收盘计算</span></h3>
     ${m.fin_currency && m.fin_currency !== "USD" ? `<p class="warn">该公司财报以 ${esc(m.fin_currency)} 计、股价以美元计：P/S、自由现金流收益率、净现金占比已按最新汇率换算；P/B 与 EV/EBITDA 涉及 ADR 换股比例，无法可靠换算，不显示；P/E 沿用 yfinance 数值，每股收益口径（外币或美元）因公司而异，可能有约一成的汇率偏差。</p>` : ""}
     <p class="muted">同行 = 同主题且同行业${m.sector ? `（${esc(m.sector)}）` : ""}：${m.peers.length >= 3 ? m.peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、") : "不足 3 只，只与选股池比较"}。</p>
-    <p class="muted">${rich("先看估值和增长是否匹配，再看盈利能力和财务健康是否支撑，最后看价格位置与市场预期。绿色 / 红色只表示相对同行“通常被认为更好 / 更差”的方向，不代表买卖建议；“–”表示该行业不适用或暂无数据。")}
+    <p class="muted">${rich("先看估值和增长是否匹配，再看盈利能力和财务健康是否支撑，最后看价格位置与市场预期。“比较”一栏的颜色含义见表格下方；“–”表示该行业不适用或暂无数据。")}
       点击指标名可看含义、用法与参考价值；全部指标的对照表见 <a href="#/glossary?t=metric-dict">术语与说明 → 指标词典</a>。</p>
-    ${groups}</section>`;
+    ${groups}
+    <p class="muted">“比较”一栏的颜色：<span class="pos">绿</span> = 与同行相比通常被认为更好；<span class="neg">红</span> = 通常被认为更差；<span class="dir-neutral">蓝</span> = 该指标没有通用的好坏方向（如涨跌、Beta、持股结构、股息率），只列出差距；<span class="muted">灰</span> = 与同行接近（倍数类相差 &lt; 10%；百分比类相差 &lt; 2 个百分点且相对差 &lt; 25%）。颜色只表示方向，不代表买卖建议。</p></section>`;
 }
 function metricInsights(s) {
   const m = s.metrics;
@@ -547,9 +553,11 @@ function drawTargets(s) {
 // ---------------- 指标说明表（对比页与术语页共用）----------------
 const METRIC_VALUE_NOTE = "参考价值指这个指标对判断股价有多大帮助：“高 / 中 / 低”参考公开研究的大致结论与本系统回测（单个指标对未来一周涨跌几乎没有预测力），标“风险”的主要用于控制仓位与识别风险，而不是预测涨跌。";
 function metricDocTable(keys, defOf = (k) => METRIC_DEFS[k]) {
-  const lvCls = (lv) => (lv.startsWith("高") ? "pos" : lv.startsWith("低") && !lv.includes("中") ? "muted" : "");
+  const dirCls = (d) => (d.better === "high" ? "pos" : d.better === "low" ? "neg" : "dir-neutral");
+  const dirTip = (d) => (d.better === "high" ? "通常越高越好" : d.better === "low" ? "通常越低越好" : "没有通用的好坏方向");
   return `<div class="table-wrap"><table class="metric-doc"><thead><tr><th>指标</th><th>含义</th><th>怎么看</th><th>怎么用</th><th>参考价值</th></tr></thead><tbody>
-    ${keys.map((k) => { const d = defOf(k); if (!d) return ""; return `<tr><td><b>${esc(d.name)}</b></td><td>${esc(d.def || "")}</td><td>${esc(d.read || "")}</td>
+    ${keys.map((k) => { const d = defOf(k); if (!d) return ""; return `<tr><td><b class="${dirCls(d)}" title="${dirTip(d)}">${esc(d.name)}</b></td><td>${esc(d.def || "")}</td><td>${esc(d.read || "")}</td>
       <td>${esc(d.use || "")}${d.caveat ? `<br><span class="muted">注意：${esc(d.caveat)}</span>` : ""}</td>
-      <td>${d.value ? `<b class="${lvCls(d.value[0])}">${esc(d.value[0])}</b><br><span class="muted">${esc(d.value[1])}</span>` : "–"}</td></tr>`; }).join("")}</tbody></table></div>`;
+      <td>${d.value ? `<b>${esc(d.value[0])}</b><br><span class="muted">${esc(d.value[1])}</span>` : "–"}</td></tr>`; }).join("")}</tbody></table></div>
+    <p class="muted">指标名颜色：<b class="pos">绿</b> = 通常越高越好；<b class="neg">红</b> = 通常越低越好；<b class="dir-neutral">蓝</b> = 没有通用的好坏方向（要结合情况判断）。这里的“好坏”只是一般规律，不同行业与情形下可能相反，也不代表买卖建议。</p>`;
 }

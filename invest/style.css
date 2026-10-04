@@ -97,7 +97,7 @@ th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid
 th { color: var(--ink-2); font-weight: 600; font-size: 12px; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.wrap { white-space: normal; }
-.pos { color: var(--good); } .neg { color: var(--bad); }
+.pos { color: var(--good); } .neg { color: var(--bad); } .dir-neutral { color: var(--accent); }
 .chip { display: inline-block; padding: 0 8px; border-radius: 999px; background: var(--chip); color: var(--ink-2);
   font-size: 12px; margin: 0 4px 2px 0; }
 .chip.holding { background: var(--accent); color: #fff; }
