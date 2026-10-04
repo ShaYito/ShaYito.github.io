@@ -204,10 +204,10 @@ function restoreSidebarScroll() {
   else el.querySelector("a.on")?.scrollIntoView({ block: "nearest", inline: "center" }); // 首次进入：滚到当前股票
 }
 // 右侧栏目导航：扫描 .stock-main 中的卡片标题，生成可点击跳转、随滚动高亮的目录（个股 / ETF / 多股对比）
-let SEC_OBSERVER = null;
+let SEC_SCROLL = null;
 function buildSectionNav() {
-  SEC_OBSERVER?.disconnect();
-  SEC_OBSERVER = null;
+  if (SEC_SCROLL) window.removeEventListener("scroll", SEC_SCROLL);
+  SEC_SCROLL = null;
   const layout = document.querySelector(".stock-layout");
   const main = layout?.querySelector(".stock-main");
   if (!main) return;
@@ -217,13 +217,15 @@ function buildSectionNav() {
     return c.textContent.replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g, " ").trim().slice(0, 14);
   };
   const items = [];
+  // data-nav="名称"：导航中显示的名称（分组标题带此属性时作为普通栏目）；data-nav-skip：该元素（或其中的卡片）不出现在导航中
   main.querySelectorAll(":scope > h3.section-title, :scope > section.card, :scope > .grid > section.card").forEach((el, i) => {
+    if (el.closest("[data-nav-skip]")) return;
     const h = el.matches("h3") ? el : el.querySelector(":scope > h3");
     if (!h) return;
-    const text = label(h);
+    const text = el.dataset.nav || label(h);
     if (!text) return;
     if (!el.id) el.id = `sec-${i}`;
-    items.push({ id: el.id, text, group: el.matches("h3.section-title") });
+    items.push({ id: el.id, text, group: el.matches("h3.section-title") && !el.dataset.nav });
   });
   if (items.filter((x) => !x.group).length < 4) { layout.classList.remove("with-nav"); return; }
   layout.classList.add("with-nav");
@@ -236,17 +238,21 @@ function buildSectionNav() {
   layout.appendChild(nav);
   nav.querySelectorAll("a").forEach((a) => (a.onclick = (e) => {
     e.preventDefault();
-    if (a.dataset.sec === "top") window.scrollTo({ top: 0, behavior: "smooth" });
-    else byId(a.dataset.sec)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (a.dataset.sec === "top") window.scrollTo(0, 0);
+    else byId(a.dataset.sec)?.scrollIntoView({ block: "start" }); // 直接跳转（不做平滑滚动）
   }));
   const links = Object.fromEntries([...nav.querySelectorAll("a[data-sec]")].map((a) => [a.dataset.sec, a]));
-  const visible = new Set();
-  SEC_OBSERVER = new IntersectionObserver((entries) => {
-    entries.forEach((en) => (en.isIntersecting ? visible.add(en.target.id) : visible.delete(en.target.id)));
-    const cur = items.find((x) => visible.has(x.id)); // 视口中最靠上的栏目
-    Object.values(links).forEach((a) => a.classList.toggle("on", !!cur && a.dataset.sec === cur.id));
-  }, { rootMargin: "-80px 0px -55% 0px" });
-  items.forEach((x) => { const el = byId(x.id); if (el) SEC_OBSERVER.observe(el); });
+  // 当前栏目 = 标题已滚过顶栏下沿的最后一个栏目（不在导航中的卡片算作它上方栏目的一部分）
+  let ticking = false;
+  const update = () => {
+    ticking = false;
+    let cur = null;
+    for (const x of items) { const el = byId(x.id); if (el && el.getBoundingClientRect().top <= 100) cur = x.id; }
+    Object.values(links).forEach((a) => a.classList.toggle("on", a.dataset.sec === cur));
+  };
+  SEC_SCROLL = () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } };
+  window.addEventListener("scroll", SEC_SCROLL, { passive: true });
+  update();
 }
 let ROUTE_SEQ = 0, ROUTE_DONE = 0; // 最近一次发起 / 完成的跳转序号
 async function route() {
@@ -1165,17 +1171,17 @@ PAGES.stock = async (r) => {
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
     ${metricsCard(s)}${earningsCard(s)}${revisionsCard(s)}${targetsCard(s)}${valuationCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
-    ${insiderCard(s, t)}${segSection(sc, t, "geography")}
-    <h3 class="section-title">事件与转折点</h3>
-    <section class="card" id="tp-card"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
-    <div class="grid">
+    ${insiderCard(s, t)}
+    <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
+    <div class="grid" data-nav-skip>
       ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span></li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
       ${card("每日新闻情绪（相对平常水平，−1 ~ 1）", Object.keys(s.sentiment).length ? `${chartDiv("c-sent", "short")}<p class="muted">${rich("0 = 该打分来源的平常水平（已扣除财经新闻整体偏乐观的倾向）；浅色柱 = 当天少于 3 篇，仅供参考。情绪描述的是正在发生什么，实测对下一周涨跌没有预测力（见[[sentiment|新闻情绪]]）。")}</p>` : empty("近期无相关新闻"))}
     </div>
     ${segGraphCard(t, graphData)}
-    <h3 class="section-title">系统模型（参考） ${badge("model")}</h3>
+    ${segSection(sc, t, "geography")}
+    <h3 class="section-title" id="model-sec" data-nav="系统模型">系统模型（参考） ${badge("model")}</h3>
     <p class="muted">${rich("以下是系统模型的打分，不是事实；模型选股在样本外几乎没有预测力（见[[model|系统模型说明]]），仅供了解模型如何看这只股票。")}</p><div>${dimChips}</div>
-    <div class="grid">
+    <div class="grid" data-nav-skip>
       ${card("综合信号分位历史（周）", s.score_history.values?.length ? chartDiv("c-hist", "short") : empty("暂无"))}
       ${card("最新一期各模型贡献（截面排名 × 权重）", s.contributions ? chartDiv("c-contrib", "short") : empty("暂无"))}
     </div>
