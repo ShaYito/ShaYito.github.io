@@ -203,6 +203,51 @@ function restoreSidebarScroll() {
   if (SIDE_SCROLL) { el.scrollTop = SIDE_SCROLL.top; el.scrollLeft = SIDE_SCROLL.left; }
   else el.querySelector("a.on")?.scrollIntoView({ block: "nearest", inline: "center" }); // 首次进入：滚到当前股票
 }
+// 右侧栏目导航：扫描 .stock-main 中的卡片标题，生成可点击跳转、随滚动高亮的目录（个股 / ETF / 多股对比）
+let SEC_OBSERVER = null;
+function buildSectionNav() {
+  SEC_OBSERVER?.disconnect();
+  SEC_OBSERVER = null;
+  const layout = document.querySelector(".stock-layout");
+  const main = layout?.querySelector(".stock-main");
+  if (!main) return;
+  const label = (h) => {
+    const c = h.cloneNode(true);
+    c.querySelectorAll(".badge, .muted, span").forEach((x) => x.remove());
+    return c.textContent.replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g, " ").trim().slice(0, 14);
+  };
+  const items = [];
+  main.querySelectorAll(":scope > h3.section-title, :scope > section.card, :scope > .grid > section.card").forEach((el, i) => {
+    const h = el.matches("h3") ? el : el.querySelector(":scope > h3");
+    if (!h) return;
+    const text = label(h);
+    if (!text) return;
+    if (!el.id) el.id = `sec-${i}`;
+    items.push({ id: el.id, text, group: el.matches("h3.section-title") });
+  });
+  if (items.filter((x) => !x.group).length < 4) { layout.classList.remove("with-nav"); return; }
+  layout.classList.add("with-nav");
+  layout.querySelector(".sec-nav")?.remove();
+  const nav = document.createElement("nav");
+  nav.className = "sec-nav";
+  nav.setAttribute("aria-label", "本页栏目");
+  nav.innerHTML = `<div class="muted">本页栏目</div>${items.map((x) => `<a href="#" data-sec="${x.id}" class="${x.group ? "grp" : ""}">${esc(x.text)}</a>`).join("")}
+    <a href="#" data-sec="top" class="grp">↑ 回到顶部</a>`;
+  layout.appendChild(nav);
+  nav.querySelectorAll("a").forEach((a) => (a.onclick = (e) => {
+    e.preventDefault();
+    if (a.dataset.sec === "top") window.scrollTo({ top: 0, behavior: "smooth" });
+    else byId(a.dataset.sec)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+  const links = Object.fromEntries([...nav.querySelectorAll("a[data-sec]")].map((a) => [a.dataset.sec, a]));
+  const visible = new Set();
+  SEC_OBSERVER = new IntersectionObserver((entries) => {
+    entries.forEach((en) => (en.isIntersecting ? visible.add(en.target.id) : visible.delete(en.target.id)));
+    const cur = items.find((x) => visible.has(x.id)); // 视口中最靠上的栏目
+    Object.values(links).forEach((a) => a.classList.toggle("on", !!cur && a.dataset.sec === cur.id));
+  }, { rootMargin: "-80px 0px -55% 0px" });
+  items.forEach((x) => { const el = byId(x.id); if (el) SEC_OBSERVER.observe(el); });
+}
 let ROUTE_SEQ = 0, ROUTE_DONE = 0; // 最近一次发起 / 完成的跳转序号
 async function route() {
   const seq = ++ROUTE_SEQ;
@@ -228,6 +273,7 @@ async function route() {
     }
     ROUTE_DONE = seq;
     restoreSidebarScroll();
+    buildSectionNav();
     bindGoto();
   } catch (e) {
     console.error(e);
