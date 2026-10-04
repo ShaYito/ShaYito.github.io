@@ -235,3 +235,6 @@ sup a.cite { text-decoration: none; font-size: 11px; }
 .rel-item.rejected { opacity: .65; }
 .rel-item p { margin: 4px 0; }
 .rel-head { line-height: 1.9; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable.on { color: var(--accent); }
+table.cmp-all tr.sel td { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }

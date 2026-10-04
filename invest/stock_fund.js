@@ -433,6 +433,7 @@ function metricsCard(s) {
         <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${fmtMetric(it.theme_median, d.fmt)}</td><td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
     }).join("")}</tbody></table></div></div>`).join("");
   return `<section class="card" id="metrics-card"><h3>关键指标 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 公司数据 ${esc(m.fetched || "")}（yfinance）· 价格类按最新收盘计算</span></h3>
+    ${m.fin_currency && m.fin_currency !== "USD" ? `<p class="warn">该公司财报以 ${esc(m.fin_currency)} 计、股价以美元计：市销率、自由现金流收益率、净现金占比已按最新汇率换算；市净率与 EV/EBITDA 涉及 ADR 换股比例，无法可靠换算，不显示；市盈率沿用 yfinance 数值，每股收益口径（外币或美元）因公司而异，可能有约一成的汇率偏差。</p>` : ""}
     <p class="muted">同行 = 同主题且同行业${m.sector ? `（${esc(m.sector)}）` : ""}：${m.peers.length >= 3 ? m.peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、") : "不足 3 只，只与选股池比较"}。</p>
     <p class="muted">${rich("先看估值和增长是否匹配，再看盈利能力和财务健康是否支撑，最后看价格位置与市场预期。绿色 / 红色只表示相对同行“通常被认为更好 / 更差”的方向，不代表买卖建议；“–”表示该行业不适用或暂无数据。")}</p>
     ${groups}</section>`;
@@ -472,4 +473,47 @@ function insiderCard(s, t) {
       <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>日期</th><th>人员 / 职务</th><th>类型</th><th class="num">股数</th><th class="num">金额</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty("近 1 年没有记录（或数据源暂无）")}
     <p class="muted">${rich("数据来自高管与董事向 SEC 提交的 Form 4（经 Yahoo 整理，申报通常在交易后 2 个工作日内）。如何理解：高管卖出很常见（分散资产、缴税、事先约定的 10b5-1 计划），单独看信息量很小；用自己的钱在公开市场买入则少见得多，多名内部人在同一时期集中买入，历史上是相对有信息量的信号。“股票授予 / 行权”是薪酬的一部分，不代表看法。")}
     ${t ? ` <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;CIK=${esc(t)}&amp;type=4" target="_blank" rel="noopener">SEC 原始申报 →</a>` : ""}</p></section>`;
+}
+
+// ---------------- 分析师（机构）目标价：按近半年成功率排序与加权 ----------------
+const PT_ZH = { Raises: "上调", Lowers: "下调", Maintains: "维持", Announces: "首次给出", Reiterates: "重申" };
+function targetsCard(s) {
+  const a = s.analyst_targets;
+  if (!a) return "";
+  const kpi = (label, v, sub = "", c = "") => `<div class="kpi"><span class="muted">${label}</span><b class="${c}">${v}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
+  const rows = a.firms.map((f) => `<tr class="${f.outlier ? "muted" : ""}"><td><b>${esc(f.firm)}</b>${f.outlier ? ' <span class="chip warnchip" title="偏离全部目标价中位数超过 50%，不计入加权（可能是数据错误或极端观点）">偏离过大</span>' : ""}</td>
+    <td>${esc(f.grade || "–")}</td><td class="num"><b>${num(f.target, 2)}</b></td><td class="num ${cls(f.upside)}">${pct(f.upside, 1, true)}</td>
+    <td>${esc(PT_ZH[f.pt_action] || f.pt_action || "")}${f.prior && f.prior !== f.target ? `（原 ${num(f.prior, 0)}）` : ""}</td><td class="nowrap">${esc(f.date)}</td>
+    <td class="num">${f.n ? `${pct(f.rate, 0)} <span class="muted">(${Math.round(f.rate * f.n)}/${f.n})</span>` : '<span class="muted">无可评估记录</span>'}</td>
+    <td class="num">${num(f.weight, 2)}</td></tr>`).join("");
+  return `<section class="card" id="targets-card"><h3>分析师目标价（按近半年成功率排序）${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> ${a.count} 家机构 · 现价 ${num(a.price, 2)}</span></h3>
+    <div class="kpis">
+      ${kpi("加权目标价", num(a.weighted_target, 2), `较现价 ${pct(a.weighted_upside, 1, true)}`, cls(a.weighted_upside))}
+      ${kpi("平均 / 中位数", `${num(a.mean_target, 0)} / ${num(a.median_target, 0)}`, `较现价 ${pct(a.mean_target / a.price - 1, 1, true)} / ${pct(a.median_target / a.price - 1, 1, true)}`)}
+      ${kpi("最高 / 最低", `${num(a.high, 0)} / ${num(a.low, 0)}`, `较现价 ${pct(a.high / a.price - 1, 0, true)} / ${pct(a.low / a.price - 1, 0, true)}`)}
+      ${kpi("全体机构平均成功率", pct(a.prior_rate, 0), "选股池内全部可评估预测")}</div>
+    ${chartDiv("c-targets", "short")}
+    <div class="table-wrap"><table><thead><tr><th>机构</th><th>评级</th><th class="num">目标价</th><th class="num">较现价</th><th>最近调整</th><th>日期</th>
+      <th class="num" title="最近半年内发布、距今至少 20 个交易日的目标价：发布日至今股价方向与目标价方向一致的比例（该机构在选股池内全部股票合并计算）">近半年成功率</th><th class="num" title="修正后成功率（样本少时向全体平均收缩），用作加权">权重</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <details class="howto"><summary>口径与局限</summary>
+      <p>${rich(`“分析师”实际是券商 / 研究机构（免费数据只到机构，没有分析师个人）。成功率：取最近 ${Math.round(a.window_days / 30)} 个月内发布、且距今至少 ${a.min_age} 个交易日的每一次目标价（包括维持原目标价的重申），看从发布当天收盘到现在，股价的涨跌方向与目标价隐含的方向（高于 / 低于当时股价）是否一致；同一机构在选股池内所有股票上的记录合并计算。`)}</p>
+      <p>${rich(`样本少的机构容易偶然全对，因此用修正后成功率加权：（命中次数 + ${a.k} × 全体平均）÷（样本数 + ${a.k}）。加权目标价只用每家机构近 12 个月的最新目标价${a.excluded ? `；有 ${a.excluded} 家偏离全部目标价中位数超过 ${pct(a.outlier_pct, 0)}，不计入加权（表中标“偏离过大”）` : ""}。`)}</p>
+      <p>${rich("局限：目标价通常针对 12 个月，半年内只能部分检验；单边上涨的市场里看涨的预测更容易“命中”，成功率高不代表判断能力强。各机构修正后成功率差距不大时，加权目标价与简单平均接近——它更适合用来识别“过去半年方向判断较准的机构现在怎么看”，而不是作为精确的价格预测。")}</p></details></section>`;
+}
+function drawTargets(s) {
+  const a = s.analyst_targets;
+  const el = byId("c-targets");
+  if (!a || !el) return;
+  const firms = [...a.firms].reverse();
+  mkChart(el, { tooltip: { trigger: "item", formatter: (p) => { const f = p.data.raw; return `${esc(f.firm)}：${num(f.target, 2)}（${pct(f.upside, 1, true)}）<br>近半年成功率 ${f.n ? `${pct(f.rate, 0)}（${f.n} 次）` : "无记录"} · 权重 ${num(f.weight, 2)}`; } },
+    legend: { show: false }, grid: { left: 130, right: 30, top: 28, bottom: 30 },
+    xAxis: { type: "value", scale: true, axisLabel: { formatter: (v) => num(v, 0) } },
+    yAxis: { type: "category", data: firms.map((f) => f.firm), axisLabel: { fontSize: 10 } },
+    series: [{ type: "scatter", symbolSize: 9, data: firms.map((f) => ({ value: [f.target, f.firm], raw: f,
+        itemStyle: { color: f.outlier ? OTHER_GRAY() : palette()[0], opacity: 0.35 + 0.65 * Math.max(0, Math.min(1, (f.weight - 0.3) / 0.5)) } })),
+      markLine: { symbol: "none", silent: true, label: { fontSize: 10, color: css("--ink-2") }, data: [
+        { xAxis: a.price, lineStyle: { color: css("--ink-2"), type: "solid" }, label: { formatter: `现价 ${num(a.price, 0)}` } },
+        { xAxis: a.weighted_target, lineStyle: { color: palette()[1], type: "dashed" }, label: { formatter: `加权 ${num(a.weighted_target, 0)}` } }] } }] });
+  el.style.height = `${Math.max(220, firms.length * 16 + 50)}px`;
+  echarts.getInstanceByDom(el)?.resize();
 }

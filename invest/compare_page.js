@@ -127,6 +127,7 @@ PAGES.compare = async (r) => {
     ${sel.length >= 2 ? `<section class="card"><div class="row"><span class="muted">区间</span>${seg("cmp-p", CMP_PERIODS.map(([k, , n]) => [k, n]), st.p)}
       <label><input type="checkbox" id="cmp-rel" ${st.rel ? "checked" : ""}> 相对 SPY</label><label><input type="checkbox" id="cmp-log" ${st.log ? "checked" : ""}> 对数坐标</label></div></section>` : ""}
     ${body}
+    <section class="card" id="cmp-all"><h3>全部股票指标对比 ${badge("fact")}${badge("derived")}</h3><div id="cmp-all-body">${empty("加载中…")}</div></section>
     </div></div>`;
   // 交互
   const apply = (patch) => cmpGo({ ...st, t: sel, ...patch });
@@ -142,7 +143,68 @@ PAGES.compare = async (r) => {
   byId("cmp-rel")?.addEventListener("change", (e) => apply({ rel: e.target.checked }));
   byId("cmp-log")?.addEventListener("change", (e) => apply({ log: e.target.checked }));
   if (sel.length >= 2) cmpDraw(st, raw, sel, i0, end, color, apply);
+  cmpAllTable(sel);
 };
+
+// ---------------- 全部股票指标对比（compare_metrics.json；ETF / 黄金等不适用的不列）----------------
+const CMP_EXTRA_DEFS = {
+  market_cap: { name: "市值", fmt: "cap", def: "总市值（美元）。" },
+  price: { name: "现价", fmt: "num2", def: "最新收盘价（拆股调整）。" },
+  weighted_target: { name: "加权目标价", fmt: "num2", def: "各机构近 12 个月最新目标价，按近半年方向判断成功率加权（偏离中位数超过 50% 的不计入）。详见个股页“分析师目标价”。" },
+  weighted_upside: { name: "加权目标空间", fmt: "pp", better: null, def: "加权目标价 ÷ 现价 − 1。" },
+  analysts: { name: "机构数", fmt: "int", def: "近 12 个月给出目标价的机构数。" },
+  next_earnings: { name: "下次财报", fmt: "date", def: "yfinance 财报日期（未正式公布前可能是预估）。" },
+};
+const CMP_GROUPS = [
+  ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
+  ["growth", "增长与盈利", ["revenue_growth", "earnings_growth", "eps_fwd_growth", "gross_margin", "op_margin", "net_margin", "roe", "roa"]],
+  ["health", "财务健康", ["net_cash_pct", "debt_to_equity", "current_ratio", "payout"]],
+  ["price", "价格与风险", ["price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
+  ["expect", "市场预期", ["weighted_target", "weighted_upside", "target_upside", "analysts", "rec_mean", "short_pct_float", "short_change", "days_to_cover", "insiders_pct", "institutions_pct", "next_earnings"]],
+];
+const CMP_ALL = { group: "valuation", sort: "pe_fwd", dir: 1, theme: "" };
+function cmpDef(k) { return CMP_EXTRA_DEFS[k] || METRIC_DEFS[k] || { name: k, fmt: "num2" }; }
+function cmpFmt(v, f) {
+  if (f === "cap") return isNum(v) ? (v >= 1e12 ? `${(v / 1e12).toFixed(2)}T` : `${(v / 1e9).toFixed(0)}B`) : "–";
+  if (f === "int") return isNum(v) ? String(v) : "–";
+  if (f === "date") return v ? esc(v.slice(5)) : "–";
+  return fmtMetric(v, f);
+}
+async function cmpAllTable(sel) {
+  const host = byId("cmp-all-body");
+  if (!host) return;
+  const data = await load("compare_metrics.json").catch(() => null);
+  if (!data) { host.innerHTML = empty("暂无数据"); return; }
+  const draw = () => {
+    const keys = CMP_GROUPS.find(([g]) => g === CMP_ALL.group)[2];
+    const rows = data.rows.filter((r) => !CMP_ALL.theme || r.theme === CMP_ALL.theme);
+    const k = CMP_ALL.sort;
+    const val = (r) => (k === "next_earnings" ? (r[k] ? Date.parse(r[k]) : null) : r[k]);
+    rows.sort((a, b) => {
+      const sa = sel.includes(a.ticker), sb = sel.includes(b.ticker);
+      if (sa !== sb) return sa ? -1 : 1; // 已选的排在最前
+      const x = val(a), y = val(b);
+      if (!isNum(x) && !isNum(y)) return 0;
+      if (!isNum(x)) return 1;
+      if (!isNum(y)) return -1;
+      return (x - y) * CMP_ALL.dir;
+    });
+    const med = (key) => { const xs = rows.map((r) => r[key]).filter(isNum).sort((a, b) => a - b); return xs.length ? xs[Math.floor((xs.length - 1) / 2)] : null; };
+    const th = (key) => { const d = cmpDef(key); return `<th class="num sortable ${key === k ? "on" : ""}" data-k="${key}" title="${esc(`${d.name}：${d.def || ""}${d.read ? ` 如何理解：${d.read}` : ""}`)}">${esc(d.name)}${key === k ? (CMP_ALL.dir > 0 ? " ▲" : " ▼") : ""}</th>`; };
+    host.innerHTML = `<div class="row"><div class="seg" id="ca-g">${CMP_GROUPS.map(([g, n]) => `<button type="button" data-g="${g}" class="${g === CMP_ALL.group ? "on" : ""}">${n}</button>`).join("")}</div>
+      <select id="ca-theme"><option value="">全部主题</option>${META.themes.map((t) => `<option value="${t.key}" ${t.key === CMP_ALL.theme ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>
+      <span class="muted">点表头排序；悬停表头看指标说明；已选股票（${sel.length}）高亮并排在最前</span></div>
+      <div class="table-wrap"><table class="cmp-all"><thead><tr><th>股票</th>${keys.map(th).join("")}</tr></thead><tbody>
+      ${rows.map((r) => `<tr class="${sel.includes(r.ticker) ? "sel" : ""}"><td class="nowrap"><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a>${r.fin_currency && r.fin_currency !== "USD" ? `<sup title="财报以 ${esc(r.fin_currency)} 计">†</sup>` : ""} <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span></td>
+        ${keys.map((key) => { const d = cmpDef(key); return `<td class="num ${d.fmt === "pp" ? cls(r[key]) : ""}">${cmpFmt(r[key], d.fmt)}</td>`; }).join("")}</tr>`).join("")}
+      <tr class="total"><td><b>中位数</b></td>${keys.map((key) => `<td class="num">${key === "next_earnings" ? "" : cmpFmt(med(key), cmpDef(key).fmt)}</td>`).join("")}</tr></tbody></table></div>
+      <p class="muted">公司数据来自 yfinance（${esc(data.asof)}），价格类按最新收盘计算；“–”表示该公司不适用或暂无数据（如银行没有毛利率、EV/EBITDA）。ETF 与黄金没有这些公司指标，不列入。† = 财报以外币计（如台积电 TWD、ASML EUR）：总额类比率已按汇率换算，市净率与 EV/EBITDA 不显示，市盈率可能有约一成的汇率口径偏差。每个指标的含义与用法见个股页“关键指标”。</p>`;
+    host.querySelectorAll("#ca-g button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = CMP_GROUPS.find(([g]) => g === CMP_ALL.group)[2]; if (!ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
+    byId("ca-theme").onchange = (e) => { CMP_ALL.theme = e.target.value; draw(); };
+    host.querySelectorAll("th.sortable").forEach((h) => (h.onclick = () => { if (CMP_ALL.sort === h.dataset.k) CMP_ALL.dir *= -1; else { CMP_ALL.sort = h.dataset.k; CMP_ALL.dir = cmpDef(h.dataset.k).better === "high" ? -1 : 1; } draw(); }));
+  };
+  draw();
+}
 
 function cmpBody(st, raw, sel, i0, end, color, myW) {
   const spyR = cmpReturns(raw.close.SPY, i0, end);
