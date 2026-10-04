@@ -158,7 +158,7 @@ function insightBox(list, max = 5) {
 function bindGoto() {
   document.querySelectorAll("a.goto").forEach((a) => a.addEventListener("click", (e) => {
     e.preventDefault();
-    byId(a.dataset.goto)?.closest(".card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    byId(a.dataset.goto)?.closest(".card")?.scrollIntoView({ block: "start" });
   }));
 }
 // ● 持仓：本机填写了“我的持仓”时按实际持仓，否则按系统最新建议配置（isHeld 定义于 holdings_page.js）
@@ -1227,7 +1227,7 @@ PAGES.stock = async (r) => {
   });
   k?.on("click", (p) => {
     if (p.componentType !== "markPoint") return;
-    if (p.data.kind === "turning") { byId("tp-detail").innerHTML = turningDetail(s.turning[p.data.idx], s.benchmark); byId("tp-card").scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
+    if (p.data.kind === "turning") { byId("tp-detail").innerHTML = turningDetail(s.turning[p.data.idx], s.benchmark); byId("tp-card").scrollIntoView({ block: "nearest" }); return; }
     location.hash = p.data.week ? `#/news?week=${p.data.week}&event=${p.data.id}` : `#/news?date=${p.data.date}&event=${p.data.id}`;
   });
   if (Object.keys(s.sentiment).length) {
