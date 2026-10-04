@@ -1422,6 +1422,15 @@ PAGES.backtest = async () => {
 
 
 // ---------------- 术语与说明 ----------------
+// 指标词典：个股页“关键指标”与多股对比表中的全部指标（定义见 stock_fund.js / compare_page.js）
+function metricDict(q) {
+  const def = (k) => cmpDef(k);
+  const match = (k) => { const d = def(k); return !q || `${d.name}${d.def || ""}${d.read || ""}${d.use || ""}`.toLowerCase().includes(q.toLowerCase()); };
+  const groups = CMP_GROUPS.map(([g, n, keys]) => [g, n, keys.filter(match)]).filter(([, , ks]) => ks.length);
+  if (!groups.length) return "";
+  return `<section class="card" id="g-metric-dict"><h3>指标词典（个股页“关键指标”与多股对比）</h3><p class="muted">${esc(METRIC_VALUE_NOTE)}</p>
+    ${groups.map(([, n, ks]) => `<h4>${esc(n)}</h4>${metricDocTable(ks, def)}`).join("")}</section>`;
+}
 PAGES.glossary = async (r) => {
   const q = (r.query.q || "").trim();
   const target = r.query.t || "";
@@ -1439,8 +1448,9 @@ PAGES.glossary = async (r) => {
       <p>${badge("fact")} <b>事实</b>：真实发生的数据或新闻原文。 ${badge("derived")} <b>计算</b>：由事实按固定公式算出。
          ${badge("model")} <b>模型 / AI</b>：模型或 AI 的判断，可能出错。 ${badge("simulated")} <b>模拟</b>：假设过去按模型操作的结果，不是真实收益。</p>
       <p class="muted">阅读顺序建议：先看“事实”和“计算”了解发生了什么，再把“模型 / AI”当作参考意见，“模拟”只用来判断方法是否大致可靠。所有内容仅为量化研究信号，不构成投资建议。</p>
-      <div class="row"><input id="g-q" type="search" placeholder="搜索术语，如 夏普 / 回撤 / 分位" value="${esc(q)}" style="min-width:260px"></div></section>
-    ${sections || card("没有匹配的术语", empty("换个关键词试试"), "", [])}`;
+      <div class="row"><input id="g-q" type="search" placeholder="搜索术语或指标，如 夏普 / 市盈率 / 空头" value="${esc(q)}" style="min-width:260px"></div></section>
+    ${sections}${metricDict(q)}
+    ${!sections && !metricDict(q) ? card("没有匹配的术语", empty("换个关键词试试"), "", []) : ""}`;
   const input = byId("g-q");
   input.addEventListener("change", () => { location.hash = `#/glossary${input.value ? `?q=${encodeURIComponent(input.value)}` : ""}`; });
   if (target) setTimeout(() => byId(`g-${target}`)?.scrollIntoView({ block: "center" }), 50);

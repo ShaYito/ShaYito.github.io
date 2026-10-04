@@ -148,12 +148,18 @@ PAGES.compare = async (r) => {
 
 // ---------------- 全部股票指标对比（compare_metrics.json；ETF / 黄金等不适用的不列）----------------
 const CMP_EXTRA_DEFS = {
-  market_cap: { name: "市值", fmt: "cap", def: "总市值（美元）。" },
-  price: { name: "现价", fmt: "num2", def: "最新收盘价（拆股调整）。" },
-  weighted_target: { name: "加权目标价", fmt: "num2", def: "各机构近 12 个月最新目标价，按近半年方向判断成功率加权（偏离中位数超过 50% 的不计入）。详见个股页“分析师目标价”。" },
-  weighted_upside: { name: "加权目标空间", fmt: "pp", better: null, def: "加权目标价 ÷ 现价 − 1。" },
-  analysts: { name: "机构数", fmt: "int", def: "近 12 个月给出目标价的机构数。" },
-  next_earnings: { name: "下次财报", fmt: "date", def: "yfinance 财报日期（未正式公布前可能是预估）。" },
+  market_cap: { name: "市值", fmt: "cap", def: "总市值（美元）= 股价 × 总股数。", read: "衡量公司规模；超大市值公司流动性好、波动通常较小。",
+    use: "同样的新闻，对小公司的股价影响往往更大；比较估值时注意规模差异。", value: ["低", "规模本身对收益的预测力在大盘股中很弱，主要用于理解波动与流动性。"] },
+  price: { name: "现价", fmt: "num2", def: "最新收盘价（拆股调整）。", read: "单独看没有意义，需与目标价、成本价、历史区间比较。", use: "与加权目标价、你的平均成本对照。", value: ["—", "描述性数据。"] },
+  weighted_target: { name: "加权目标价", fmt: "num2", def: "各机构近 12 个月最新目标价，按近半年方向判断成功率加权（偏离中位数超过 50% 的不计入）。",
+    read: "代表“近期判断较准的机构”整体怎么看；机构间成功率差距不大时与简单平均接近。", use: "与现价比较得到目标空间；更有用的是它随时间的变化方向。",
+    caveat: "成功率只看方向、且在半年内只能部分检验 12 个月目标价；牛市里看涨更容易“命中”。", value: ["低", "分析师目标价整体偏乐观、对实际涨跌的预测力有限；加权只能部分修正。"] },
+  weighted_upside: { name: "加权目标空间", fmt: "pp", better: null, def: "加权目标价 ÷ 现价 − 1。", read: "正值越大，机构越看好；但所有股票的平均空间常年为正。",
+    use: "与同行比较相对高低，而不是看绝对值。", value: ["低", "同“加权目标价”。"] },
+  analysts: { name: "机构数", fmt: "int", def: "近 12 个月给出目标价的机构数。", read: "覆盖越多，市场关注度越高、信息越充分。",
+    use: "覆盖很少的公司，目标价与预期的代表性较弱。", value: ["低", "描述关注度，本身不预测涨跌。"] },
+  next_earnings: { name: "下次财报", fmt: "date", def: "yfinance 的下次财报日期（公司正式公布前可能是预估）。", read: "财报前后是个股波动最大的时候。",
+    use: "持仓临近财报时评估仓位，避免意外的大幅波动超出承受能力。", value: ["高（风险）", "财报日是确定的事件风险，对安排仓位和交易时点很有用。"] },
 };
 const CMP_GROUPS = [
   ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
@@ -198,6 +204,7 @@ async function cmpAllTable(sel) {
       ${rows.map((r) => `<tr class="${sel.includes(r.ticker) ? "sel" : ""}"><td class="nowrap"><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a>${r.fin_currency && r.fin_currency !== "USD" ? `<sup title="财报以 ${esc(r.fin_currency)} 计">†</sup>` : ""} <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span></td>
         ${keys.map((key) => { const d = cmpDef(key); return `<td class="num ${d.fmt === "pp" ? cls(r[key]) : ""}">${cmpFmt(r[key], d.fmt)}</td>`; }).join("")}</tr>`).join("")}
       <tr class="total"><td><b>中位数</b></td>${keys.map((key) => `<td class="num">${key === "next_earnings" ? "" : cmpFmt(med(key), cmpDef(key).fmt)}</td>`).join("")}</tr></tbody></table></div>
+      <details class="howto" open><summary>本组指标的含义、用法与参考价值</summary>${metricDocTable(keys, cmpDef)}<p class="muted">${esc(METRIC_VALUE_NOTE)}</p></details>
       <p class="muted">公司数据来自 yfinance（${esc(data.asof)}），价格类按最新收盘计算；“–”表示该公司不适用或暂无数据（如银行没有毛利率、EV/EBITDA）。ETF 与黄金没有这些公司指标，不列入。† = 财报以外币计（如台积电 TWD、ASML EUR）：总额类比率已按汇率换算，市净率与 EV/EBITDA 不显示，市盈率可能有约一成的汇率口径偏差。每个指标的含义与用法见个股页“关键指标”。</p>`;
     host.querySelectorAll("#ca-g button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = CMP_GROUPS.find(([g]) => g === CMP_ALL.group)[2]; if (!ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
     byId("ca-theme").onchange = (e) => { CMP_ALL.theme = e.target.value; draw(); };

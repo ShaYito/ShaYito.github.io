@@ -238,3 +238,7 @@ sup a.cite { text-decoration: none; font-size: 11px; }
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable.on { color: var(--accent); }
 table.cmp-all tr.sel td { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+table.metric-doc td { white-space: normal; vertical-align: top; font-size: 12.5px; line-height: 1.55; }
+table.metric-doc td:first-child { white-space: nowrap; }
+table.metric-doc th:nth-child(2), table.metric-doc th:nth-child(3), table.metric-doc th:nth-child(4) { min-width: 180px; }
+table.metric-doc th:nth-child(5) { min-width: 220px; }
