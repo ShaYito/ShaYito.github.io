@@ -238,9 +238,9 @@ function valuationInsights(s) {
   if (v.pe) {
     const p = v.pe.pct;
     if (v.pe.oneoff) out.push({ level: "medium", kind: "derived", target: "val-card",
-      text: `预期市盈率（${num(v.forward_pe, 1)}）明显高于 TTM 市盈率（${num(v.pe.now, 1)}）：近 4 季 EPS 可能含一次性收益，TTM 市盈率与历史百分位会偏低，以预期市盈率为准。` });
+      text: `预期 P/E（${num(v.forward_pe, 1)}）明显高于 P/E（${num(v.pe.now, 1)}）：近 4 季 EPS 可能含一次性收益，P/E 与历史百分位会偏低，以预期 P/E 为准。` });
     else out.push({ level: p >= 0.85 ? "medium" : p <= 0.15 ? "good" : "info", kind: "derived", target: "val-card",
-      text: `市盈率（TTM）${num(v.pe.now, 1)}，处于自身近 ${v.pe.years} 年的第 ${Math.round(p * 100)} 百分位（中位数 ${num(v.pe.median, 0)}）${p >= 0.85 ? "：偏贵，对业绩失望更敏感" : p <= 0.15 ? "：处于历史低位" : ""}。` });
+      text: `市盈率 P/E ${num(v.pe.now, 1)}，处于自身近 ${v.pe.years} 年的第 ${Math.round(p * 100)} 百分位（中位数 ${num(v.pe.median, 0)}）${p >= 0.85 ? "：偏贵，对业绩失望更敏感" : p <= 0.15 ? "：处于历史低位" : ""}。` });
   }
   const m = v.margins;
   if (m?.op_margin?.length >= 5) {
@@ -258,9 +258,9 @@ function valuationCard(s) {
   return `<section class="card" id="val-card"><h3>估值与利润率 ${badge("fact")}${badge("derived")}</h3>
     <p class="muted">${rich("估值决定“同样的好消息还能涨多少”：市盈率处于自身历史高位时，市场已经预期了很多，稍有失望就容易大跌；处于低位时相反。利润率扩张意味着每一美元收入赚得更多，常常是盈利超预期的来源。")}</p>
     <div class="kpis">
-      ${kpi("市盈率（TTM）", num(v.pe?.now ?? v.trailing_pe, 1), v.pe ? (v.pe.oneoff ? "⚠ 可能受一次性收益影响" : `近 ${v.pe.years} 年第 ${Math.round(v.pe.pct * 100)} 百分位`) : "")}
-      ${kpi("预期市盈率", num(v.forward_pe, 1), "按未来 12 个月 EPS 预期")}
-      ${kpi("市销率（TTM）", num(v.ps, 1))}
+      ${kpi("市盈率 P/E", num(v.pe?.now ?? v.trailing_pe, 1), v.pe ? (v.pe.oneoff ? "⚠ 可能受一次性收益影响" : `近 ${v.pe.years} 年第 ${Math.round(v.pe.pct * 100)} 百分位`) : "")}
+      ${kpi("预期市盈率 Forward P/E", num(v.forward_pe, 1), "按未来 12 个月 EPS 预期")}
+      ${kpi("市销率 P/S", num(v.ps, 1), "按过去 12 个月收入")}
       ${kpi("PEG", num(v.peg, 2), "市盈率 ÷ 盈利增速；约 1 为合理")}
     </div>
     <div class="grid two">${v.pe ? chartDiv("c-val-pe", "short") : empty("暂无历史市盈率（亏损或数据不足）")}${v.margins?.periods?.length ? chartDiv("c-val-margin", "short") : empty("暂无利润率数据")}</div>
@@ -271,7 +271,7 @@ function drawValuation(s) {
   const v = s.valuation;
   if (!v) return;
   if (v.pe && byId("c-val-pe")) {
-    mkChart(byId("c-val-pe"), { title: { text: `市盈率（TTM）· 近 ${v.pe.years} 年`, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    mkChart(byId("c-val-pe"), { title: { text: `市盈率 P/E · 近 ${v.pe.years} 年`, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
       tooltip: { trigger: "axis", valueFormatter: (x) => num(x, 1) }, legend: { show: false }, grid: { left: 44, right: 60, top: 30, bottom: 24 },
       xAxis: { type: "category", data: v.pe.dates, boundaryGap: false },
       yAxis: { type: "value", scale: true, max: v.pe.max > v.pe.median * 3 ? Math.ceil(v.pe.median * 3) : null }, // 早期极端值（盈利很低时）截断，避免压扁近期走势
@@ -331,24 +331,24 @@ function tradeTooltip(p) {
 // ---------------- 关键指标（估值 / 增长 / 盈利能力 / 财务健康 / 价格位置与风险 / 市场预期）----------------
 // fmt：x = 倍数，pct = 百分比，pp = 百分比（带正负号），num = 数值；better：low / high / null（无好坏方向）
 const METRIC_DEFS = {
-  pe_ttm: { name: "市盈率（TTM）", value: ["中", "最常用的估值尺度。长期看，低估值股票整体略占优（价值效应），但对未来几个月涨跌几乎没有预测力；高成长公司长期“看起来贵”，单看会错过好公司。"], fmt: "x", better: "low", def: "股价 ÷ 过去 12 个月每股收益（EPS）。买入 1 元的年利润要付多少元。",
+  pe_ttm: { name: "市盈率 P/E", value: ["中", "最常用的估值尺度。长期看，低估值股票整体略占优（价值效应），但对未来几个月涨跌几乎没有预测力；高成长公司长期“看起来贵”，单看会错过好公司。"], fmt: "x", better: "low", def: "股价 ÷ 过去 12 个月（TTM）每股收益（EPS）。买入 1 元的年利润要付多少元。",
     read: "越高说明市场对未来增长预期越高（或利润暂时偏低）；和同行、和自己历史比才有意义，单看绝对值意义不大。",
-    use: "与“预期市盈率”一起看：预期市盈率明显低于 TTM，说明分析师预计利润会大幅增长。高市盈率股票对“不及预期”更敏感，财报前后波动更大。",
+    use: "与预期 P/E 一起看：预期 P/E 明显低于 P/E，说明分析师预计利润会大幅增长。高市盈率股票对“不及预期”更敏感，财报前后波动更大。",
     caveat: "一次性收益 / 亏损会扭曲 TTM 利润；亏损公司不显示。" },
-  pe_fwd: { name: "预期市盈率", value: ["中", "比 TTM 更贴近市场正在定价的利润，适合比较成长股；但依赖分析师预期，预期本身偏乐观且会被修正。"], fmt: "x", better: "low", def: "股价 ÷ 分析师预期的未来 12 个月 EPS。",
-    read: "反映市场按“明年的利润”给出的价格；比 TTM 市盈率更适合比较高增长公司。",
-    use: "预期市盈率低于同行、而增长不比同行差，可能被低估；但预期本身可能过于乐观，结合“分析师预期修正”方向看。" },
+  pe_fwd: { name: "预期市盈率 Forward P/E", value: ["中", "比 P/E 更贴近市场正在定价的利润，适合比较成长股；但依赖分析师预期，预期本身偏乐观且会被修正。"], fmt: "x", better: "low", def: "股价 ÷ 分析师预期的未来 12 个月 EPS。",
+    read: "反映市场按“明年的利润”给出的价格；比 P/E 更适合比较高增长公司。",
+    use: "预期 P/E 低于同行、而增长不比同行差，可能被低估；但预期本身可能过于乐观，结合“分析师预期修正”方向看。" },
   peg: { name: "PEG", value: ["低–中", "把估值和增长放在一起，概念直观；但增速取自预期且口径不一，周期股和利润刚转正的公司会失真，只适合作粗筛。"], fmt: "num2", better: "low", def: "市盈率 ÷ 预期盈利增速（%）。把估值和增长放在一起看。",
     read: "约 1 被视为估值与增长匹配；明显低于 1 = 相对增长便宜，明显高于 2 = 增长已被充分定价。",
     use: "只适合盈利稳定增长的公司；周期股、利润刚转正的公司 PEG 会失真。",
     caveat: "增速取自分析师预期（yfinance），口径与周期因数据源而异。" },
-  ps: { name: "市销率（TTM）", value: ["中", "利润为负或波动大的公司唯一可用的估值尺度；必须结合利润率看，否则会把低利润率公司误判为便宜。"], fmt: "x", better: "low", def: "总市值 ÷ 过去 12 个月收入。",
+  ps: { name: "市销率 P/S", value: ["中", "利润为负或波动大的公司唯一可用的估值尺度；必须结合利润率看，否则会把低利润率公司误判为便宜。"], fmt: "x", better: "low", def: "总市值 ÷ 过去 12 个月（TTM）收入。",
     read: "利润为负或波动很大的公司，用收入估值更稳定；高利润率公司天然市销率更高。",
     use: "与“毛利率”“营业利润率”一起看：同样的市销率，利润率高的公司更便宜。" },
   ev_ebitda: { name: "EV / EBITDA", value: ["中–高", "考虑了负债，跨资本结构比较更公平，学术研究中是表现较好的价值指标之一；不适用于银行保险，资本开支大的公司会被高估。"], fmt: "x", better: "low", def: "企业价值（市值 + 负债 − 现金）÷ 息税折旧摊销前利润。",
     read: "把负债也算进价格，比市盈率更适合比较负债结构不同的公司。",
     use: "常用于同行横向比较；银行、保险不适用（显示“–”）。" },
-  pb: { name: "市净率", value: ["低（科技）/ 中（银行）", "对银行、保险等资产型公司是核心估值指标；对科技公司意义很小（价值主要在无形资产）。"], fmt: "x", better: "low", def: "股价 ÷ 每股净资产（账面价值）。",
+  pb: { name: "市净率 P/B", value: ["低（科技）/ 中（银行）", "对银行、保险等资产型公司是核心估值指标；对科技公司意义很小（价值主要在无形资产）。"], fmt: "x", better: "low", def: "股价 ÷ 每股净资产（账面价值）。",
     read: "对银行、保险等资产型公司最有意义（JPM、BRK-B）；科技公司的价值主要不在账面资产，市净率普遍很高。",
     use: "银行股市净率显著低于同行且 ROE 不差，常被视为便宜；同时看资产质量。" },
   fcf_yield: { name: "自由现金流收益率", value: ["中–高", "用真金白银而非会计利润衡量估值，较难被粉饰；资本开支周期（如 AI 数据中心投入）会让它短期失真。"], fmt: "pct", better: "high", def: "过去 12 个月自由现金流 ÷ 总市值（市盈率倒过来、但用现金而非会计利润）。",
@@ -433,7 +433,7 @@ function metricsCard(s) {
         <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${fmtMetric(it.theme_median, d.fmt)}</td><td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
     }).join("")}</tbody></table></div></div>`).join("");
   return `<section class="card" id="metrics-card"><h3>关键指标 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 公司数据 ${esc(m.fetched || "")}（yfinance）· 价格类按最新收盘计算</span></h3>
-    ${m.fin_currency && m.fin_currency !== "USD" ? `<p class="warn">该公司财报以 ${esc(m.fin_currency)} 计、股价以美元计：市销率、自由现金流收益率、净现金占比已按最新汇率换算；市净率与 EV/EBITDA 涉及 ADR 换股比例，无法可靠换算，不显示；市盈率沿用 yfinance 数值，每股收益口径（外币或美元）因公司而异，可能有约一成的汇率偏差。</p>` : ""}
+    ${m.fin_currency && m.fin_currency !== "USD" ? `<p class="warn">该公司财报以 ${esc(m.fin_currency)} 计、股价以美元计：P/S、自由现金流收益率、净现金占比已按最新汇率换算；P/B 与 EV/EBITDA 涉及 ADR 换股比例，无法可靠换算，不显示；P/E 沿用 yfinance 数值，每股收益口径（外币或美元）因公司而异，可能有约一成的汇率偏差。</p>` : ""}
     <p class="muted">同行 = 同主题且同行业${m.sector ? `（${esc(m.sector)}）` : ""}：${m.peers.length >= 3 ? m.peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、") : "不足 3 只，只与选股池比较"}。</p>
     <p class="muted">${rich("先看估值和增长是否匹配，再看盈利能力和财务健康是否支撑，最后看价格位置与市场预期。绿色 / 红色只表示相对同行“通常被认为更好 / 更差”的方向，不代表买卖建议；“–”表示该行业不适用或暂无数据。")}
       点击指标名可看含义、用法与参考价值；全部指标的对照表见 <a href="#/glossary?t=metric-dict">术语与说明 → 指标词典</a>。</p>
@@ -446,7 +446,7 @@ function metricInsights(s) {
   const out = [];
   const pe = get("pe_fwd"), gr = get("eps_fwd_growth");
   if (isNum(pe.value) && isNum(pe.theme_median) && pe.value > pe.theme_median * 1.3)
-    out.push({ level: "medium", kind: "derived", target: "metrics-card", text: `预期市盈率 ${fmtMetric(pe.value, "x")}，高于同行中位数 ${fmtMetric(pe.theme_median, "x")}${isNum(gr.value) ? `（预期 EPS 增长 ${pct(gr.value, 0, true)}）` : ""}：估值已包含较高的增长预期。` });
+    out.push({ level: "medium", kind: "derived", target: "metrics-card", text: `预期 P/E ${fmtMetric(pe.value, "x")}，高于同行中位数 ${fmtMetric(pe.theme_median, "x")}${isNum(gr.value) ? `（预期 EPS 增长 ${pct(gr.value, 0, true)}）` : ""}：估值已包含较高的增长预期。` });
   const fh = get("from_high");
   if (isNum(fh.value) && fh.value <= -0.2) out.push({ level: "high", kind: "fact", target: "metrics-card", text: `距 52 周高点 ${pct(fh.value, 1)}，处于较深的回撤中。` });
   const sc = get("short_change"), sp = get("short_pct_float");

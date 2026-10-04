@@ -473,7 +473,7 @@ PAGES.matrix = async (r) => {
       const head = `<b>${esc(row.ticker)}</b>（${esc(themeName(row.theme))}）${row.weight ? ` · 权重 ${pct(row.weight, 1)}` : ""}<br>${esc(d.name)}：<b>${p.value[2]}</b>`;
       if (!raw) return head;
       return `${head}<br><span style="opacity:.75">信号分 ${num(raw.score, 3)} · 12-1 动量 ${pct(raw.mom_12_1, 1)} · 相对 MA200 ${pct(raw.px_ma200, 1, true)}<br>
-        12 周相对 SPY ${pct(raw.rs_spy_12w, 1, true)} · 60 日波动 ${pct(raw.vol_60d, 0)} · Forward PE ${num(raw.forward_pe, 1)}<br>
+        12 周相对 SPY ${pct(raw.rs_spy_12w, 1, true)} · 60 日波动 ${pct(raw.vol_60d, 0)} · Forward P/E ${num(raw.forward_pe, 1)}<br>
         7 日新闻情绪 ${raw.news_count && !isNum(raw.news_sentiment) ? "样本不足" : num(raw.news_sentiment, 2, true)}（${raw.news_count} 条${isNum(raw.news_llm_share) ? `，AI 打分 ${pct(raw.news_llm_share, 0)}` : ""}）· 距财报 ${raw.days_to_earnings ?? "–"} 个交易日</span>`;
     } },
     legend: { show: false }, grid: { left: 90, right: 20, top: 40, bottom: 60 },
