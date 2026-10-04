@@ -476,37 +476,49 @@ function insiderCard(s, t) {
     ${t ? ` <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;CIK=${esc(t)}&amp;type=4" target="_blank" rel="noopener">SEC 原始申报 →</a>` : ""}</p></section>`;
 }
 
-// ---------------- 分析师（机构）目标价：按近半年成功率排序与加权 ----------------
+// ---------------- 分析师（机构）目标价：连续准确度、中位数为主、本周变动 ----------------
 const PT_ZH = { Raises: "上调", Lowers: "下调", Maintains: "维持", Announces: "首次给出", Reiterates: "重申" };
+// 目标价修正回测摘要（backtest/target_revisions.py）→ 一句话
+function revisionTestText(r) {
+  if (!r || !r["1w"]) return "";
+  const h = (k, n) => { const x = r[k]; return x ? `${n}：截面 Rank IC ${num(x.ic, 3)}（t ${num(x.ic_t, 1)}），净上调比净下调的超额收益${isNum(x.diff) ? `${x.diff >= 0 ? "多" : "少"} ${num(Math.abs(x.diff) * 100, 2)} 个百分点（p = ${num(x.p, 2)}）` : "无足够样本"}` : ""; };
+  return `本系统回测（${r.period?.[0] || ""} ~ ${r.period?.[1] || ""}，${r.weeks} 周、${r.samples} 个“股票-周”）：用一周内目标价净上调家数预测之后的相对 SPY 超额收益——${h("1w", "下 1 周")}；${h("4w", "下 4 周")}。均不显著，即本周的目标价变动对之后涨跌没有可用的预测力，只作信息展示。`;
+}
 function targetsCard(s) {
   const a = s.analyst_targets;
   if (!a) return "";
   const kpi = (label, v, sub = "", c = "") => `<div class="kpi"><span class="muted">${label}</span><b class="${c}">${v}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
   const rows = a.firms.map((f) => `<tr class="${f.outlier ? "muted" : ""}"><td><b>${esc(f.firm)}</b>${f.outlier ? ' <span class="chip warnchip" title="偏离全部目标价中位数超过 50%，不计入加权（可能是数据错误或极端观点）">偏离过大</span>' : ""}</td>
     <td>${esc(f.grade || "–")}</td><td class="num"><b>${num(f.target, 2)}</b></td><td class="num ${cls(f.upside)}">${pct(f.upside, 1, true)}</td>
-    <td>${esc(PT_ZH[f.pt_action] || f.pt_action || "")}${f.prior && f.prior !== f.target ? `（原 ${num(f.prior, 0)}）` : ""}</td><td class="nowrap">${esc(f.date)}</td>
-    <td class="num">${f.n ? `${pct(f.rate, 0)} <span class="muted">(${Math.round(f.rate * f.n)}/${f.n})</span>` : '<span class="muted">无可评估记录</span>'}</td>
+    <td>${esc(PT_ZH[f.pt_action] || f.pt_action || "")}${f.prior && Math.abs(f.prior / f.target - 1) > 0.01 ? `（原 ${num(f.prior, 0)}）` : ""}</td>
+    <td class="nowrap">${esc(f.date)}${f.reiterations ? `<br><span class="muted">之后重申 ${f.reiterations} 次</span>` : ""}</td>
+    <td class="num">${f.n ? `${num(f.accuracy, 2)} <span class="muted">(${num(f.eff_n, 1)})</span>` : '<span class="muted">无可评估记录</span>'}</td>
+    <td class="num ${cls(f.vs_consensus)}">${isNum(f.vs_consensus) ? num(f.vs_consensus, 2, true) : "–"}</td>
     <td class="num">${num(f.weight, 2)}</td></tr>`).join("");
-  return `<section class="card" id="targets-card"><h3>分析师目标价（按近半年成功率排序）${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> ${a.count} 家机构 · 现价 ${num(a.price, 2)}</span></h3>
+  return `<section class="card" id="targets-card"><h3>分析师目标价（中长期参考）${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> ${a.count} 家机构 · 现价 ${num(a.price, 2)}</span></h3>
     <div class="kpis">
-      ${kpi("加权目标价", num(a.weighted_target, 2), `较现价 ${pct(a.weighted_upside, 1, true)}`, cls(a.weighted_upside))}
-      ${kpi("平均 / 中位数", `${num(a.mean_target, 0)} / ${num(a.median_target, 0)}`, `较现价 ${pct(a.mean_target / a.price - 1, 1, true)} / ${pct(a.median_target / a.price - 1, 1, true)}`)}
-      ${kpi("最高 / 最低", `${num(a.high, 0)} / ${num(a.low, 0)}`, `较现价 ${pct(a.high / a.price - 1, 0, true)} / ${pct(a.low / a.price - 1, 0, true)}`)}
-      ${kpi("全体机构平均成功率", pct(a.prior_rate, 0), "选股池内全部可评估预测")}</div>
+      ${kpi("目标价中位数", num(a.median_target, 2), `较现价 ${pct(a.median_target / a.price - 1, 1, true)}`, cls(a.median_target / a.price - 1))}
+      ${kpi("按准确度加权", num(a.weighted_target, 2), `较现价 ${pct(a.weighted_upside, 1, true)}`)}
+      ${kpi("平均", num(a.mean_target, 0), `较现价 ${pct(a.mean_target / a.price - 1, 1, true)}`)}
+      ${kpi("最高 / 最低", `${num(a.high, 0)} / ${num(a.low, 0)}`, `较现价 ${pct(a.high / a.price - 1, 0, true)} / ${pct(a.low / a.price - 1, 0, true)}`)}</div>
+    ${a.recent_moves ? `<p>本周（近 ${a.recent_moves.days} 天）：${[a.recent_moves.raises ? `<span class="pos">${a.recent_moves.raises} 家上调</span>` : "", a.recent_moves.lowers ? `<span class="neg">${a.recent_moves.lowers} 家下调</span>` : "", a.recent_moves.initiates ? `${a.recent_moves.initiates} 家首次给出` : ""].filter(Boolean).join("、")}${isNum(a.recent_moves.median_change) ? `，调整幅度中位数 ${pct(a.recent_moves.median_change, 1, true)}` : ""}（${a.recent_moves.items.slice(0, 4).map((i) => `${esc(i.firm)} ${i.prior ? `${num(i.prior, 0)}→` : ""}${num(i.target, 0)}`).join("；")}）</p>` : `<p class="muted">本周（近 7 天）没有机构调整目标价。</p>`}
     ${chartDiv("c-targets", "short")}
-    <div class="table-wrap"><table><thead><tr><th>机构</th><th>评级</th><th class="num">目标价</th><th class="num">较现价</th><th>最近调整</th><th>日期</th>
-      <th class="num" title="最近半年内发布、距今至少 20 个交易日的目标价：发布日至今股价方向与目标价方向一致的比例（该机构在选股池内全部股票合并计算）">近半年成功率</th><th class="num" title="修正后成功率（样本少时向全体平均收缩），用作加权">权重</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <details class="howto"><summary>口径与局限</summary>
-      <p>${rich(`“分析师”实际是券商 / 研究机构（免费数据只到机构，没有分析师个人）。成功率：取最近 ${Math.round(a.window_days / 30)} 个月内发布、且距今至少 ${a.min_age} 个交易日的每一次目标价（包括维持原目标价的重申），看从发布当天收盘到现在，股价的涨跌方向与目标价隐含的方向（高于 / 低于当时股价）是否一致；同一机构在选股池内所有股票上的记录合并计算。`)}</p>
-      <p>${rich(`样本少的机构容易偶然全对，因此用修正后成功率加权：（命中次数 + ${a.k} × 全体平均）÷（样本数 + ${a.k}）。加权目标价只用每家机构近 12 个月的最新目标价${a.excluded ? `；有 ${a.excluded} 家偏离全部目标价中位数超过 ${pct(a.outlier_pct, 0)}，不计入加权（表中标“偏离过大”）` : ""}。`)}</p>
-      <p>${rich("局限：目标价通常针对 12 个月，半年内只能部分检验；单边上涨的市场里看涨的预测更容易“命中”，成功率高不代表判断能力强。各机构修正后成功率差距不大时，加权目标价与简单平均接近——它更适合用来识别“过去半年方向判断较准的机构现在怎么看”，而不是作为精确的价格预测。")}</p></details></section>`;
+    <div class="table-wrap"><table><thead><tr><th>机构</th><th>评级</th><th class="num">目标价</th><th class="num">较现价</th><th>最近调整</th><th>给出日期</th>
+      <th class="num" title="历史目标价的连续准确度（0–1，括号内为有效样本数），按 12 个月期限、用波动率标准化">历史准确度</th>
+      <th class="num" title="该机构得分 − 同一时刻共识（其他机构目标价中位数）的得分；正 = 比共识准">相对共识</th>
+      <th class="num" title="向全体平均收缩后的准确度，用作加权">权重</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <details class="howto"><summary>准确度怎么算、参考价值如何</summary>
+      <p>${rich(`目标价按惯例视为 12 个月目标。机构每给出一个新目标价算一次预测（相差不超过 ${pct(a.same_tol, 0)} 的重申合并）；机构改动目标价时，旧预测在改动当天截止检验。检验时按“复利匀速推进”算出此时应到的价格，与实际价格比较：偏差除以这只股票在这段时间的正常波动（发布前 60 天波动率），完全命中得 1，偏离 1 / 2 / 3 个正常波动约得 0.61 / 0.14 / 0.01。满 12 个月的预测权重为 1，未满的按已过时间比例加权，不足 ${a.min_age} 个交易日的不评估；样本少的机构向全体平均（${num(a.prior_accuracy, 2)}）收缩。`)}</p>
+      <p>${rich("“相对共识”用同一时刻其他机构目标价的中位数按同样方法打分，用来去掉“整个板块都在涨”带来的偏差。")}</p>
+      <p><b>参考价值：低。</b>${rich("在本选股池近 2 年的数据里，按时间把预测分成前后两半检验：前半段准确的机构，后半段并不更准（排名相关系数约 0，统计上不显著），“相对共识”的得分也没有持续性。也就是说，机构之间准确度的差别主要是运气，按准确度加权并不比简单的中位数更可靠，因此这里以中位数为主、加权为辅。目标价是 12 个月判断，对一周涨跌几乎没有预测力；与每周操作更相关的是上方的“本周变动”。")}</p>
+      ${a.revision_test ? `<p><b>本周变动的参考价值：低。</b>${esc(revisionTestText(a.revision_test))}</p>` : ""}</details></section>`;
 }
 function drawTargets(s) {
   const a = s.analyst_targets;
   const el = byId("c-targets");
   if (!a || !el) return;
   const firms = [...a.firms].reverse();
-  mkChart(el, { tooltip: { trigger: "item", formatter: (p) => { const f = p.data.raw; return `${esc(f.firm)}：${num(f.target, 2)}（${pct(f.upside, 1, true)}）<br>近半年成功率 ${f.n ? `${pct(f.rate, 0)}（${f.n} 次）` : "无记录"} · 权重 ${num(f.weight, 2)}`; } },
+  mkChart(el, { tooltip: { trigger: "item", formatter: (p) => { const f = p.data.raw; return `${esc(f.firm)}：${num(f.target, 2)}（${pct(f.upside, 1, true)}）<br>历史准确度 ${f.n ? `${num(f.accuracy, 2)}（有效样本 ${num(f.eff_n, 1)}）` : "无记录"} · 权重 ${num(f.weight, 2)}`; } },
     legend: { show: false }, grid: { left: 130, right: 30, top: 28, bottom: 30 },
     xAxis: { type: "value", scale: true, axisLabel: { formatter: (v) => num(v, 0) } },
     yAxis: { type: "category", data: firms.map((f) => f.firm), axisLabel: { fontSize: 10 } },
@@ -514,7 +526,7 @@ function drawTargets(s) {
         itemStyle: { color: f.outlier ? OTHER_GRAY() : palette()[0], opacity: 0.35 + 0.65 * Math.max(0, Math.min(1, (f.weight - 0.3) / 0.5)) } })),
       markLine: { symbol: "none", silent: true, label: { fontSize: 10, color: css("--ink-2") }, data: [
         { xAxis: a.price, lineStyle: { color: css("--ink-2"), type: "solid" }, label: { formatter: `现价 ${num(a.price, 0)}` } },
-        { xAxis: a.weighted_target, lineStyle: { color: palette()[1], type: "dashed" }, label: { formatter: `加权 ${num(a.weighted_target, 0)}` } }] } }] });
+        { xAxis: a.median_target, lineStyle: { color: palette()[1], type: "dashed" }, label: { formatter: `中位数 ${num(a.median_target, 0)}` } }] } }] });
   el.style.height = `${Math.max(220, firms.length * 16 + 50)}px`;
   echarts.getInstanceByDom(el)?.resize();
 }

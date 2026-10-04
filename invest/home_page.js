@@ -34,6 +34,7 @@ PAGES.overview = async () => {
     ${howto(HOME_HOWTO)}${insightBox(homeInsights(h, mine, held), 6)}
     ${homeHoldings(mine)}
     ${homeSchedule(h, held, watch)}
+    ${homeTargetMoves(h, held, watch)}
     <section class="card"><h3>市场 ${badge("fact")}</h3>${homeMarket(h)}</section>
     <div class="grid two">
       ${card("选股池本周涨跌（近 5 个交易日）", homeMovers(h, held), "", ["fact"])}
@@ -198,3 +199,21 @@ function homeAdvice(o) {
     <a href="#/advice">配置详情与依据 →</a></p>
     <p class="muted">${rich("这是规则模型的建议，不是事实；回测显示模型选股在样本外几乎没有预测力（见[[model|系统模型说明]]），卫星层因此采用选股池等权。")}</p></section>`;
 }
+
+// ---------- 本周目标价变动（近 7 天；与每周操作节奏最相关的分析师信息）----------
+const MOVE_ZH = { raise: "上调", lower: "下调", initiate: "首次给出" };
+function homeTargetMoves(h, held, watch) {
+  const list = h.target_moves || [];
+  if (!list.length) return `<section class="card"><h3>本周目标价变动 ${badge("fact")}</h3>${empty("近 7 天没有机构上调或下调选股池股票的目标价")}</section>`;
+  const rank = (m) => (held.has(m.ticker) ? 0 : watch.has(m.ticker) ? 1 : 2);
+  const rows = [...list].sort((a, b) => rank(a) - rank(b) || (b.raises + b.lowers + b.initiates) - (a.raises + a.lowers + a.initiates));
+  const tag = (t) => (held.has(t) ? ' <span class="chip on">持有</span>' : watch.has(t) ? ' <span class="chip">★</span>' : "");
+  return `<section class="card"><h3>本周目标价变动（近 7 天）${badge("fact")}</h3>
+    <div class="table-wrap"><table><thead><tr><th>股票</th><th class="num">上调</th><th class="num">下调</th><th class="num">首次</th><th class="num">调整幅度中位数</th><th>明细</th></tr></thead><tbody>
+    ${rows.slice(0, 15).map((m) => `<tr><td class="nowrap"><a href="#/stock/${esc(m.ticker)}"><b>${esc(m.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[m.ticker] || "")}</span>${tag(m.ticker)}</td>
+      <td class="num ${m.raises ? "pos" : ""}">${m.raises || ""}</td><td class="num ${m.lowers ? "neg" : ""}">${m.lowers || ""}</td><td class="num">${m.initiates || ""}</td>
+      <td class="num ${cls(m.median_change)}">${pct(m.median_change, 1, true)}</td>
+      <td><details><summary class="muted">${m.items.length} 条</summary>${m.items.map((i) => `<div class="muted">${esc(i.date.slice(5))} ${esc(i.firm)}：${esc(MOVE_ZH[i.kind])} ${i.prior ? `${num(i.prior, 0)} → ` : ""}${num(i.target, 0)}${i.grade ? `（${esc(i.grade)}）` : ""}</div>`).join("")}</details></td></tr>`).join("")}</tbody></table></div>
+    <p class="muted">${rich("目标价的“变化”比“水平”更有信息量：多家机构在同一周集中上调或下调，通常跟着财报或重要新闻。维持原目标价的重申不计入。")}${h.revision_test ? ` ${esc(revisionTestText(h.revision_test))}` : ""}</p></section>`;
+}
+
