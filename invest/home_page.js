@@ -34,6 +34,7 @@ PAGES.overview = async () => {
     ${howto(HOME_HOWTO)}${insightBox(homeInsights(h, mine, held), 6)}
     ${homeHoldings(mine)}
     ${homeSchedule(h, held, watch)}
+    ${homeInsiderBuys(h, held, watch)}
     ${homeTargetMoves(h, held, watch)}
     <section class="card"><h3>市场 ${badge("fact")}</h3>${homeMarket(h)}</section>
     <div class="grid two">
@@ -59,6 +60,9 @@ function homeInsights(h, mine, held) {
   const spy = (h.market || []).find((m) => m.ticker === "SPY");
   if (spy && isNum(spy.vs_ma200)) out.push({ level: spy.vs_ma200 < 0 ? "high" : "info", kind: "fact", text: `SPY ${spy.vs_ma200 >= 0 ? "高于" : "低于"} [[ma|200 日均线]] ${pct(Math.abs(spy.vs_ma200), 1)}，距 52 周高点 ${pct(spy.from_high, 1)}。` });
   if (h.vix && isNum(h.vix.close)) out.push({ level: h.vix.close >= 25 ? "high" : h.vix.close >= 20 ? "medium" : "info", kind: "fact", text: `[[vix|VIX]] ${num(h.vix.close, 1)}（一周 ${pct(h.vix.w1, 0, true)}）：${h.vix.close >= 25 ? "市场明显恐慌" : h.vix.close >= 20 ? "波动偏高" : "波动处于平常水平"}。` });
+  const days = (d) => Math.round((new Date(`${h.asof}T12:00:00Z`) - new Date(`${d}T12:00:00Z`)) / 864e5);
+  const myBuys = (h.insider_buys || []).filter((x) => held.has(x.ticker) && days(x.date) <= 30);
+  if (myBuys.length) out.push({ level: "medium", kind: "fact", text: `你持有的 ${[...new Set(myBuys.map((x) => x.ticker))].join("、")} 近 30 天有内部人在公开市场买入（${myBuys.slice(0, 2).map((x) => `${x.insider}，${insiderMoney(x.value)}`).join("；")}）。` });
   const bigMove = (mine?.book?.rows || []).filter((r) => isNum(r.day_pct) && Math.abs(r.day_pct) >= 0.05);
   for (const r of bigMove.slice(0, 2)) out.push({ level: "medium", kind: "fact", text: `持仓 ${r.ticker} 当日 ${pct(r.day_pct, 1, true)}。` });
   return out;
@@ -215,5 +219,24 @@ function homeTargetMoves(h, held, watch) {
       <td class="num ${cls(m.median_change)}">${pct(m.median_change, 1, true)}</td>
       <td><details><summary class="muted">${m.items.length} 条</summary>${m.items.map((i) => `<div class="muted">${esc(i.date.slice(5))} ${esc(i.firm)}：${esc(MOVE_ZH[i.kind])} ${i.prior ? `${num(i.prior, 0)} → ` : ""}${num(i.target, 0)}${i.grade ? `（${esc(i.grade)}）` : ""}</div>`).join("")}</details></td></tr>`).join("")}</tbody></table></div>
     <p class="muted">${rich("目标价的“变化”比“水平”更有信息量：多家机构在同一周集中上调或下调，通常跟着财报或重要新闻。维持原目标价的重申不计入。")}${h.revision_test ? ` ${esc(revisionTestText(h.revision_test))}` : ""}</p></section>`;
+}
+
+// ---------- 内部人公开市场买入（SEC Form 4，经 yfinance）----------
+const insiderMoney = (v) => (!isNum(v) || v <= 0 ? "–" : v >= 1e6 ? `${(v / 1e6).toFixed(1)} 百万美元` : `${Math.round(v / 1e3)} 千美元`);
+function homeInsiderBuys(h, held, watch) {
+  const list = h.insider_buys || [];
+  const head = `<h3>内部人公开市场买入（近 ${h.insider_days || 90} 天）${badge("fact")}</h3>`;
+  if (!list.length) return `<section class="card">${head}${empty("选股池近期没有高管或董事在公开市场买入")}</section>`;
+  const exec = /chief|ceo|cfo|president|chairman/i;
+  const notable = (x) => (x.value || 0) >= 1e6 || exec.test(x.position || "");
+  const tag = (t) => (held.has(t) ? ' <span class="chip on">持有</span>' : watch.has(t) ? ' <span class="chip">★</span>' : "");
+  return `<section class="card">${head}
+    <div class="table-wrap"><table><thead><tr><th>日期</th><th>股票</th><th>人员 / 职务</th><th class="num">股数</th><th class="num">金额</th><th></th></tr></thead><tbody>
+    ${list.map((x) => `<tr class="${(x.value || 0) < 5e4 ? "muted" : ""}"><td class="nowrap">${esc(x.date)}</td>
+      <td class="nowrap"><a href="#/stock/${esc(x.ticker)}"><b>${esc(x.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[x.ticker] || "")}</span>${tag(x.ticker)}</td>
+      <td>${esc(x.insider)}<br><span class="muted">${esc(x.position || "")}${x.direct ? "" : "（间接持有）"}</span></td>
+      <td class="num">${isNum(x.shares) ? Math.round(x.shares).toLocaleString() : "–"}</td><td class="num">${insiderMoney(x.value)}</td>
+      <td>${notable(x) ? '<span class="chip warnchip" title="金额 ≥ 100 万美元，或由 CEO / CFO 等核心高管买入">值得注意</span>' : (x.value || 0) < 5e4 ? '<span class="muted" title="金额很小，常见于定期小额买入，信息量低">金额很小</span>' : ""}</td></tr>`).join("")}</tbody></table></div>
+    <p class="muted">${rich("高管与董事用自己的钱在公开市场买入自家股票，申报在交易后 2 个工作日内（SEC Form 4）。与卖出不同（卖出常因分散资产、缴税或事先约定的计划），买入通常意味着内部人认为股价被低估；研究中，金额较大、由核心高管买入、或多人在同一时期集中买入的情况更有信息量，但单笔买入的预测力有限，也不代表一定上涨。股票授予、行权不计入。详细记录见各股票页“内部人交易”。")}</p></section>`;
 }
 
