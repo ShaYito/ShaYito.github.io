@@ -1,6 +1,6 @@
 "use strict";
 /* 多股对比（#/compare?t=NVDA,AMD,SMH&p=1Y&w=252）：最多 8 只股票 / ETF。
-   走势对比（起点 = 100，可切换相对 SPY、对数坐标）、相关性矩阵、选中一对的滚动相关性、汇总表。
+   走势对比（起点 = 100 / 相对基准 / 剔除 β，可选 SPY 或主题基准、对数坐标）、相关性矩阵、选中一对的滚动相关性、汇总表。
    数据：sim/prices.json 的日频复权收盘价（2015 年起，覆盖选股池与 ETF）。 */
 
 const CMP_MAX = 8;
@@ -11,7 +11,8 @@ const CMP_HOWTO = [
   "在左侧勾选最多 8 只股票或 ETF（也可以用上方的快捷按钮一键选中一组），选择会记在网址里，可以收藏或分享。",
   "走势对比：每只从区间起点归一为 100（[[index100|指数化]]），直接比涨幅；打开“相对 SPY”后，线高于 100 表示区间内跑赢大盘；区间较长时可打开“对数坐标”：每往上一条横线代表翻一倍，相同斜率 = 相同的涨幅速度，不会被涨得最多的那只把其他线压扁。价格为复权价（含分红）。",
   "相关性矩阵：两两之间日收益率的[[correlation|相关系数]]（−1 ~ 1）。越接近 1 越同涨同跌，接近 0 表示关系不大，负值表示常常反向。几只持仓两两相关都很高，意味着它们其实押在同一件事上，分散效果有限。点矩阵中任意一格，下方显示这两只的滚动 60 天相关性变化。",
-  "汇总表：区间收益、年化[[volatility|波动]]、区间最大[[drawdown|回撤]]、相对 SPY 的 [[beta|Beta]]（大盘涨跌 1% 时它平均涨跌多少）和与 SPY 的相关系数，都按所选区间计算。",
+  "走势切换：“相对大盘”= 每天涨跌减去基准涨跌后累计（线在 0 以上 = 跑赢）；“剔除 β”= 减去 [[beta|β]] × 基准涨跌后累计，去掉大盘 / 板块带动的部分，只看公司自身因素（β 用此前一年日收益估计，不用未来数据）。基准可选 SPY 或各自的主题基准（行业 ETF）。",
+  "汇总表：区间收益、年化[[volatility|波动]]、区间最大[[drawdown|回撤]]、相对 SPY 的 [[beta|Beta]]（大盘涨跌 1% 时它平均涨跌多少）和与 SPY 的相关系数，都按所选区间计算；“相对基准”“剔除 β 后”按上方所选基准计算区间累计。",
 ];
 
 function cmpParse(r) {
@@ -21,7 +22,8 @@ function cmpParse(r) {
     t: [...new Set(t)].slice(0, CMP_MAX),
     p: CMP_PERIODS.some(([k]) => k === r.query.p) ? r.query.p : "1Y",
     w: CMP_WINDOWS.some(([k]) => String(k) === r.query.w) ? +r.query.w : 252,
-    rel: r.query.rel === "1", log: r.query.log === "1",
+    m: ["raw", "rel", "resid"].includes(r.query.m) ? r.query.m : r.query.rel === "1" ? "rel" : "raw", // 原始 / 相对基准 / 剔除 β
+    b: r.query.b === "theme" ? "theme" : "spy", log: r.query.log === "1",
     pair: (r.query.pair || "").split(",").filter(Boolean),
   };
 }
@@ -29,13 +31,21 @@ function cmpHash(s) {
   const q = new URLSearchParams();
   if (s.t.length) q.set("t", s.t.join(","));
   q.set("p", s.p); q.set("w", String(s.w));
-  if (s.rel) q.set("rel", "1");
+  if (s.m !== "raw") q.set("m", s.m);
+  if (s.b === "theme") q.set("b", "theme");
   if (s.log) q.set("log", "1");
   if (s.pair.length === 2) q.set("pair", s.pair.join(","));
   return `#/compare?${q.toString().replace(/%2C/g, ",")}`;
 }
 function cmpGo(s) { const y = window.scrollY; location.hash = cmpHash(s); setTimeout(() => window.scrollTo(0, y), 0); }
 
+// 相对走势的基准：SPY，或所属主题的行业 ETF（ETF / 无主题的用 SPY）
+function cmpBench(t, b, raw) {
+  if (b !== "theme") return "SPY";
+  const th = META.universe.find((u) => u.ticker === t)?.theme;
+  const bt = META.themes.find((x) => x.key === th)?.benchmark;
+  return bt && raw.close[bt] ? bt : "SPY";
+}
 // 日收益（两只都有数据的日子）→ 相关系数 / Beta
 function cmpReturns(c, i0, i1) {
   const out = [];
@@ -126,7 +136,8 @@ PAGES.compare = async (r) => {
       ${sel.length ? `<p>${sel.map((t) => `<span class="chip" style="border-color:${color[t]}"><span class="dot" style="background:${color[t]}"></span>${esc(t)} ${esc(META.names_zh?.[t] || "")} <a href="#" class="cmp-x" data-t="${t}" title="移除">×</a></span>`).join("")}</p>` : ""}</section>
     ${howto(CMP_HOWTO)}
     ${sel.length >= 2 ? `<section class="card"><div class="row"><span class="muted">区间</span>${seg("cmp-p", CMP_PERIODS.map(([k, , n]) => [k, n]), st.p)}
-      <label><input type="checkbox" id="cmp-rel" ${st.rel ? "checked" : ""}> 相对 SPY</label><label><input type="checkbox" id="cmp-log" ${st.log ? "checked" : ""}> 对数坐标</label></div></section>` : ""}
+      <span class="muted">走势</span>${seg("cmp-m", [["raw", "原始"], ["rel", "相对大盘"], ["resid", "剔除 β"]], st.m)}
+      ${st.m !== "raw" ? `<span class="muted">基准</span>${seg("cmp-b", [["spy", "SPY"], ["theme", "各自主题基准"]], st.b)}` : `<label><input type="checkbox" id="cmp-log" ${st.log ? "checked" : ""}> 对数坐标</label>`}</div></section>` : ""}
     ${body}
     <section class="card" id="cmp-all"><h3>全部股票指标对比 ${badge("fact")}${badge("derived")}</h3><div id="cmp-all-body">${empty("加载中…")}</div></section>
     </div></div>`;
@@ -141,7 +152,8 @@ PAGES.compare = async (r) => {
   byId("cmp-clear")?.addEventListener("click", () => apply({ t: [], pair: [] }));
   document.querySelectorAll("#cmp-p button").forEach((b) => (b.onclick = () => apply({ p: b.dataset.v })));
   document.querySelectorAll("#cmp-w button").forEach((b) => (b.onclick = () => apply({ w: +b.dataset.v })));
-  byId("cmp-rel")?.addEventListener("change", (e) => apply({ rel: e.target.checked }));
+  document.querySelectorAll("#cmp-m button").forEach((b) => (b.onclick = () => apply({ m: b.dataset.v })));
+  document.querySelectorAll("#cmp-b button").forEach((b) => (b.onclick = () => apply({ b: b.dataset.v })));
   byId("cmp-log")?.addEventListener("change", (e) => apply({ log: e.target.checked }));
   if (sel.length >= 2) cmpDraw(st, raw, sel, i0, end, color, apply);
   cmpAllTable(sel);
@@ -227,6 +239,12 @@ async function cmpAllTable(sel) {
 function cmpBody(st, raw, sel, i0, end, color, myW) {
   const spyR = cmpReturns(raw.close.SPY, i0, end);
   const stats = Object.fromEntries(sel.map((t) => [t, cmpStats(raw.close[t], i0, end, spyR)]));
+  // 区间相对基准 / 剔除 β 后（按所选基准；“原始”模式下用 SPY）
+  const relS = Object.fromEntries(sel.map((t) => {
+    const bt = cmpBench(t, st.b, raw), d = RelStr.daily(raw.close[t], raw.close[bt]);
+    const last = (a) => { const c = RelStr.cum(a, raw.close[t], i0, end); return c[c.length - 1]; };
+    return [t, { bench: bt, rel: last(d.rel), resid: last(d.resid), beta: d.beta[end] }];
+  }));
   const w0 = Math.max(1, end - st.w);
   const R = Object.fromEntries(sel.map((t) => [t, cmpReturns(raw.close[t], w0, end)]));
   const pairs = [];
@@ -246,10 +264,13 @@ function cmpBody(st, raw, sel, i0, end, color, myW) {
   const spyVol = stats.SPY?.vol ?? cmpStats(raw.close.SPY, i0, end, spyR)?.vol;
   const hv = ranked.filter((t) => t !== "SPY").sort((a, b) => stats[b].vol - stats[a].vol)[0];
   if (hv && spyVol) ins.push({ level: "info", kind: "derived", text: `波动最大：${hv}，年化 ${pct(stats[hv].vol, 0)}，约为 SPY 的 ${num(stats[hv].vol / spyVol, 1)} 倍。` });
+  const rr = sel.filter((t) => isNum(relS[t].resid) && relS[t].bench !== t).sort((a, b) => relS[b].resid - relS[a].resid);
+  if (rr.length >= 2) ins.push({ level: "info", kind: "derived", text: `剔除 β 后（公司自身因素）区间最强：${rr[0]}（${pct(relS[rr[0]].resid, 1, true)}）；最弱：${rr[rr.length - 1]}（${pct(relS[rr[rr.length - 1]].resid, 1, true)}）${st.b === "theme" ? "，相对各自主题基准" : "，相对 SPY"}。` });
   const late = sel.filter((t) => stats[t]?.late);
   const pair = st.pair.length === 2 && sel.includes(st.pair[0]) && sel.includes(st.pair[1]) ? st.pair : ok.length ? ok[0].slice(0, 2) : sel.slice(0, 2);
-  return `${insightBox(ins)}
-    <section class="card"><h3>走势对比（起点 = 100${st.rel ? "，相对 SPY" : ""}）${badge("fact")}${badge("derived")}</h3>${chartDiv("c-cmp", "tall")}
+  return `${insightBox(ins, 6)}
+    <section class="card"><h3>走势对比（${st.m === "raw" ? "起点 = 100" : `${st.m === "rel" ? "相对" : "剔除 β 后，相对"}${st.b === "theme" ? "各自主题基准" : " SPY"}，区间累计`}）${badge("fact")}${badge("derived")}</h3>${chartDiv("c-cmp", "tall")}
+      ${st.m !== "raw" ? `<p class="muted">${st.m === "rel" ? "每天的涨跌减去基准涨跌后从区间起点累计：线在 0 以上 = 区间内跑赢基准。" : "每天的涨跌减去 β × 基准涨跌（β 用此前一年日收益估计，不用未来数据）后累计，去掉大盘 / 板块带动的部分，剩下公司自身因素：高 β 股票在牛市里“相对大盘”会显得偏强，这里不会。"}${st.b === "theme" ? "主题基准：每只股票用所属主题的行业 ETF（ETF 用 SPY）。" : ""}读法与局限见个股页“相对大盘走势”。</p>` : ""}
       ${late.length ? `<p class="muted">${late.map((t) => `${t} 从 ${raw.dates[stats[t].late]} 才有数据，从该日起归一。`).join("")}</p>` : ""}</section>
     <div class="grid two"><section class="card"><h3>相关性矩阵 ${badge("derived")}</h3>
         <div class="row"><span class="muted">计算窗口</span><div class="seg" id="cmp-w">${CMP_WINDOWS.map(([k, n]) => `<button type="button" data-v="${k}" class="${st.w === k ? "on" : ""}">${n}</button>`).join("")}</div></div>
@@ -257,36 +278,43 @@ function cmpBody(st, raw, sel, i0, end, color, myW) {
       <section class="card"><h3>滚动 ${CMP_ROLL} 天相关性：${esc(pair[0])} × ${esc(pair[1])} ${badge("derived")}</h3>${chartDiv("c-cmp-roll")}
         <p class="muted">近 3 年，每周取一个点。线往上 = 两者走得越来越像；往下 = 开始分化。</p></section></div>
     <section class="card"><h3>汇总（${esc(CMP_PERIODS.find(([k]) => k === st.p)[2])}）${badge("derived")}</h3><div class="table-wrap"><table>
-      <thead><tr><th>标的</th><th class="num">区间收益</th><th class="num">年化波动</th><th class="num">最大回撤</th><th class="num">Beta（vs SPY）</th><th class="num">与 SPY 相关</th>${myW ? `<th class="num">占你账户</th>` : ""}</tr></thead>
+      <thead><tr><th>标的</th><th class="num">区间收益</th><th class="num">年化波动</th><th class="num">最大回撤</th><th class="num">Beta（vs SPY）</th><th class="num">与 SPY 相关</th><th class="num">相对基准</th><th class="num">剔除 β 后</th>${myW ? `<th class="num">占你账户</th>` : ""}</tr></thead>
       <tbody>${sel.map((t) => { const s = stats[t]; return `<tr><td><span class="dot" style="background:${color[t]}"></span><a href="#/stock/${t}"><b>${esc(t)}</b></a> <span class="muted">${esc(META.names_zh?.[t] || (META.etfs || []).find((e) => e.ticker === t)?.name_zh || "")}</span></td>
-        ${s ? `<td class="num ${cls(s.ret)}">${pct(s.ret, 1, true)}</td><td class="num">${pct(s.vol, 0)}</td><td class="num neg">${pct(s.mdd, 1)}</td><td class="num">${num(s.beta, 2)}</td><td class="num">${num(s.corr, 2)}</td>` : `<td colspan="5" class="muted">区间内无数据</td>`}
+        ${s ? `<td class="num ${cls(s.ret)}">${pct(s.ret, 1, true)}</td><td class="num">${pct(s.vol, 0)}</td><td class="num neg">${pct(s.mdd, 1)}</td><td class="num">${num(s.beta, 2)}</td><td class="num">${num(s.corr, 2)}</td>
+          <td class="num ${cls(relS[t].rel)}" title="相对 ${esc(relS[t].bench)}">${pct(relS[t].rel, 1, true)}${relS[t].bench !== "SPY" ? ` <span class="muted">vs ${esc(relS[t].bench)}</span>` : ""}</td><td class="num ${cls(relS[t].resid)}">${pct(relS[t].resid, 1, true)}</td>` : `<td colspan="7" class="muted">区间内无数据</td>`}
         ${myW ? `<td class="num">${myW[t] ? pct(myW[t], 1) : "–"}</td>` : ""}</tr>`; }).join("")}</tbody></table></div></section>`;
 }
 
 function cmpDraw(st, raw, sel, i0, end, color, apply) {
   const dates = raw.dates.slice(i0, end + 1);
-  const spy = raw.close.SPY;
+  const relMode = st.m !== "raw";
   const series = sel.map((t) => {
     const c = raw.close[t];
+    if (relMode) {
+      const bt = cmpBench(t, st.b, raw);
+      const d = RelStr.daily(c, raw.close[bt]);
+      const data = RelStr.cum(st.m === "rel" ? d.rel : d.resid, c, i0, end).map((v) => (v == null ? null : +(v * 100).toFixed(2)));
+      return { name: t, type: "line", showSymbol: false, color: color[t], lineStyle: { width: 2 }, data,
+        endLabel: { show: true, formatter: (p) => `${t} ${p.value > 0 ? "+" : ""}${num(p.value, 0)}%`, color: css("--ink-2"), fontSize: 11 }, labelLayout: { moveOverlap: "shiftY" } };
+    }
     let b = i0; while (b <= end && c[b] == null) b++;
-    const sb = spy[b];
     const data = dates.map((_, k) => {
       const i = i0 + k;
       if (i < b || c[i] == null) return null;
       const v = (c[i] / c[b]) * 100;
-      return +(st.rel && spy[i] != null ? (v / ((spy[i] / sb) * 100)) * 100 : v).toFixed(2);
+      return +v.toFixed(2);
     });
-    return { name: t, type: "line", showSymbol: false, color: color[t], lineStyle: { width: t === "SPY" && !st.rel ? 1.4 : 2, type: t === "SPY" ? "dashed" : "solid" },
+    return { name: t, type: "line", showSymbol: false, color: color[t], lineStyle: { width: t === "SPY" ? 1.4 : 2, type: t === "SPY" ? "dashed" : "solid" },
       data, endLabel: { show: true, formatter: (p) => `${t} ${num(p.value, 0)}`, color: css("--ink-2"), fontSize: 11 }, labelLayout: { moveOverlap: "shiftY" } };
   });
-  mkChart(byId("c-cmp"), { tooltip: { trigger: "axis", valueFormatter: (v) => (isNum(v) ? `${num(v, 1)}（${pct(v / 100 - 1, 1, true)}）` : "–") },
+  mkChart(byId("c-cmp"), { tooltip: { trigger: "axis", valueFormatter: (v) => (!isNum(v) ? "–" : relMode ? `${v > 0 ? "+" : ""}${num(v, 1)}%` : `${num(v, 1)}（${pct(v / 100 - 1, 1, true)}）`) },
     legend: { top: 0 }, grid: { left: 56, right: 90, top: 36, bottom: 30 },
     xAxis: { type: "category", data: dates, boundaryGap: false },
-    yAxis: st.log
+    yAxis: relMode ? { type: "value", scale: true, axisLabel: { formatter: (v) => `${v}%` } } : st.log
       ? { type: "log", logBase: 2, min: (v) => v.min * 0.95, max: (v) => v.max * 1.05, axisLabel: { formatter: (v) => num(v, 0), showMinLabel: false, showMaxLabel: false },
           minorTick: { show: true }, minorSplitLine: { show: true, lineStyle: { color: css("--grid"), opacity: 0.5 } } }
       : { type: "value", scale: true },
-    series: series.map((x, i) => (i ? x : { ...x, markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: 100 }] } })) });
+    series: series.map((x, i) => (i ? x : { ...x, markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: relMode ? 0 : 100 }] } })) });
   // 相关性矩阵
   const w0 = Math.max(1, end - st.w);
   const R = Object.fromEntries(sel.map((t) => [t, cmpReturns(raw.close[t], w0, end)]));
