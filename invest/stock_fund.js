@@ -478,6 +478,18 @@ function insiderCard(s, t) {
 
 // ---------------- 分析师（机构）目标价：连续准确度、中位数为主、本周变动 ----------------
 const PT_ZH = { Raises: "上调", Lowers: "下调", Maintains: "维持", Announces: "首次给出", Reiterates: "重申" };
+// 机构准确度的局限（数据每次建站时重算，见 web/analyst_targets.firm_stats / persistence）
+function targetsLimits(d, prior) {
+  if (!d) return "";
+  const pr = d.persistence || {};
+  const ps = (x) => (x ? `排名相关 ${num(x.rho, 2)}（p = ${num(x.p, 2)}，${x.firms} 家）` : "样本不足、无法检验");
+  return `<p><b>局限（用本选股池数据实测）：</b></p><ul>
+    <li><b>样本量差异大</b>：${rich(`有的机构只有 1–2 次可评估预测，有的上百次。样本少时准确度会非常极端（可能 0.0 或 1.0），主要是运气。因此每家机构的准确度都附上约 95% 误差范围；有效样本少于 ${d.min_eff_n} 次的标“样本不足”，不参与排序、权重取中性值。`)}</li>
+    <li><b>机构之间的差别大多是噪音</b>：${rich(`假设所有机构能力完全相同、只因样本量不同，就能解释观察到的机构间差异的约 ${pct(d.noise_share, 0)}（“相对共识”约 ${pct(d.noise_share_relative, 0)}）。为此收缩系数由数据估计：准确度 K = ${num(d.k_accuracy, 1)}、相对共识 K = ${num(d.k_relative, 1)}（K 越大，各机构越被拉向平均${isNum(prior) ? ` ${num(prior, 2)}` : ""}）。`)}</li>
+    <li><b>覆盖范围的运气</b>：${rich(`所有预测得分的差异中，约 ${pct(d.coverage_share, 0)} 由“预测的是哪只股票、在哪个季度”决定——同一股票同一时期，各机构的得分往往一起高或一起低。直接比较绝对准确度，比的主要是覆盖范围；“相对共识”可以扣掉这部分。`)}</li>
+    <li><b>没有持续性</b>：${rich(`按发布日期分为前后两段（${esc(pr.cut || "")} 为界），前段准确的机构在后段并不更准——绝对准确度 ${ps(pr.accuracy)}；相对共识 ${ps(pr.relative)}。`)}</li>
+    <li><b>结论</b>：${rich("机构准确度只能当作历史记录，不能据此挑选“更准”的机构；按准确度加权与简单中位数差别很小，页面以中位数为主。")}</li></ul>`;
+}
 // 目标价修正回测摘要（backtest/target_revisions.py）→ 一句话
 function revisionTestText(r) {
   if (!r || !r["1w"]) return "";
@@ -492,7 +504,7 @@ function targetsCard(s) {
     <td>${esc(f.grade || "–")}</td><td class="num"><b>${num(f.target, 2)}</b></td><td class="num ${cls(f.upside)}">${pct(f.upside, 1, true)}</td>
     <td>${esc(PT_ZH[f.pt_action] || f.pt_action || "")}${f.prior && Math.abs(f.prior / f.target - 1) > 0.01 ? `（原 ${num(f.prior, 0)}）` : ""}</td>
     <td class="nowrap">${esc(f.date)}${f.reiterations ? `<br><span class="muted">之后重申 ${f.reiterations} 次</span>` : ""}</td>
-    <td class="num">${f.n ? `${num(f.accuracy, 2)} <span class="muted">(${num(f.eff_n, 1)})</span>` : '<span class="muted">无可评估记录</span>'}</td>
+    <td class="num">${f.n ? `${num(f.accuracy, 2)}${isNum(f.acc_ci) ? `<span class="muted"> ± ${num(f.acc_ci, 2)}</span>` : ""} <span class="muted">(${num(f.eff_n, 1)})</span>${f.enough ? "" : '<br><span class="chip" title="有效样本少于 5 次，准确度主要是噪音：不参与排序，权重取中性值">样本不足</span>'}` : '<span class="muted">无可评估记录</span>'}</td>
     <td class="num ${cls(f.vs_consensus)}">${isNum(f.vs_consensus) ? num(f.vs_consensus, 2, true) : "–"}</td>
     <td class="num">${num(f.weight, 2)}</td></tr>`).join("");
   return `<section class="card" id="targets-card"><h3>分析师目标价（中长期参考）${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> ${a.count} 家机构 · 现价 ${num(a.price, 2)}</span></h3>
@@ -504,13 +516,14 @@ function targetsCard(s) {
     ${a.recent_moves ? `<p>本周（近 ${a.recent_moves.days} 天）：${[a.recent_moves.raises ? `<span class="pos">${a.recent_moves.raises} 家上调</span>` : "", a.recent_moves.lowers ? `<span class="neg">${a.recent_moves.lowers} 家下调</span>` : "", a.recent_moves.initiates ? `${a.recent_moves.initiates} 家首次给出` : ""].filter(Boolean).join("、")}${isNum(a.recent_moves.median_change) ? `，调整幅度中位数 ${pct(a.recent_moves.median_change, 1, true)}` : ""}（${a.recent_moves.items.slice(0, 4).map((i) => `${esc(i.firm)} ${i.prior ? `${num(i.prior, 0)}→` : ""}${num(i.target, 0)}`).join("；")}）</p>` : `<p class="muted">本周（近 7 天）没有机构调整目标价。</p>`}
     ${chartDiv("c-targets", "short")}
     <div class="table-wrap"><table><thead><tr><th>机构</th><th>评级</th><th class="num">目标价</th><th class="num">较现价</th><th>最近调整</th><th>给出日期</th>
-      <th class="num" title="历史目标价的连续准确度（0–1，括号内为有效样本数），按 12 个月期限、用波动率标准化">历史准确度</th>
+      <th class="num" title="历史目标价的连续准确度（0–1）± 约 95% 误差范围，括号内为有效样本数；按 12 个月期限、用波动率标准化">历史准确度</th>
       <th class="num" title="该机构得分 − 同一时刻共识（其他机构目标价中位数）的得分；正 = 比共识准">相对共识</th>
-      <th class="num" title="向全体平均收缩后的准确度，用作加权">权重</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <th class="num" title="全体平均准确度 + 收缩后的“相对共识”；样本不足的机构取中性值。排序也按此（样本不足的排在最后）">权重</th></tr></thead><tbody>${rows}</tbody></table></div>
     <details class="howto"><summary>准确度怎么算、参考价值如何</summary>
-      <p>${rich(`目标价按惯例视为 12 个月目标。机构每给出一个新目标价算一次预测（相差不超过 ${pct(a.same_tol, 0)} 的重申合并）；机构改动目标价时，旧预测在改动当天截止检验。检验时按“复利匀速推进”算出此时应到的价格，与实际价格比较：偏差除以这只股票在这段时间的正常波动（发布前 60 天波动率），完全命中得 1，偏离 1 / 2 / 3 个正常波动约得 0.61 / 0.14 / 0.01。满 12 个月的预测权重为 1，未满的按已过时间比例加权，不足 ${a.min_age} 个交易日的不评估；样本少的机构向全体平均（${num(a.prior_accuracy, 2)}）收缩。`)}</p>
-      <p>${rich("“相对共识”用同一时刻其他机构目标价的中位数按同样方法打分，用来去掉“整个板块都在涨”带来的偏差。")}</p>
-      <p><b>参考价值：低。</b>${rich("在本选股池近 2 年的数据里，按时间把预测分成前后两半检验：前半段准确的机构，后半段并不更准（排名相关系数约 0，统计上不显著），“相对共识”的得分也没有持续性。也就是说，机构之间准确度的差别主要是运气，按准确度加权并不比简单的中位数更可靠，因此这里以中位数为主、加权为辅。目标价是 12 个月判断，对一周涨跌几乎没有预测力；与每周操作更相关的是上方的“本周变动”。")}</p>
+      <p>${rich(`目标价按惯例视为 12 个月目标。机构每给出一个新目标价算一次预测（相差不超过 ${pct(a.same_tol, 0)} 的重申合并）；机构改动目标价时，旧预测在改动当天截止检验。检验时按“复利匀速推进”算出此时应到的价格，与实际价格比较：偏差除以这只股票在这段时间的正常波动（发布前 60 天波动率），完全命中得 1，偏离 1 / 2 / 3 个正常波动约得 0.61 / 0.14 / 0.01。满 12 个月的预测权重为 1，未满的按已过时间比例加权，不足 ${a.min_age} 个交易日的不评估。`)}</p>
+      <p>${rich("“相对共识”用同一时刻其他机构目标价的中位数按同样方法打分：机构得分 − 共识得分，比较的是同一只股票、同一时点的判断，能扣掉“覆盖了哪些股票、在什么时候”带来的运气。表格的排序与加权用它（经收缩），绝对准确度只作展示。")}</p>
+      ${targetsLimits(a.diagnostics, a.prior_accuracy)}
+      <p><b>参考价值：低。</b>${rich("目标价是 12 个月判断，对一周涨跌几乎没有预测力；与每周操作更相关的是上方的“本周变动”。")}</p>
       ${a.revision_test ? `<p><b>本周变动的参考价值：低。</b>${esc(revisionTestText(a.revision_test))}</p>` : ""}</details></section>`;
 }
 function drawTargets(s) {
