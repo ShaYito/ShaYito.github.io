@@ -192,7 +192,20 @@ function renderSubnav(page, group) {
   el.hidden = subs.length < 2;
   el.innerHTML = subs.map(([p, n]) => `<a href="#/${p}" class="${p === page ? "on" : ""}">${n}</a>`).join("");
 }
+// 个股 / ETF / 多股对比的左侧栏：切换股票时保留它的滚动位置（页面会整体重绘）
+let SIDE_SCROLL = null;
+function keepSidebarScroll() {
+  const el = document.querySelector(".stock-side");
+  SIDE_SCROLL = el ? { top: el.scrollTop, left: el.scrollLeft } : null;
+}
+function restoreSidebarScroll() {
+  const el = document.querySelector(".stock-side");
+  if (!el) return;
+  if (SIDE_SCROLL) { el.scrollTop = SIDE_SCROLL.top; el.scrollLeft = SIDE_SCROLL.left; }
+  else el.querySelector("a.on")?.scrollIntoView({ block: "nearest", inline: "center" }); // 首次进入：滚到当前股票
+}
 async function route() {
+  keepSidebarScroll();
   const r = parseHash();
   disposeCharts();
   if (NAV_GROUPS[r.page]?.length) r.page = NAV_GROUPS[r.page][0][0]; // #/market → 第一个子标签
@@ -204,6 +217,7 @@ async function route() {
   app().innerHTML = empty("加载中…");
   try {
     await fn(r);
+    restoreSidebarScroll();
     bindGoto();
   } catch (e) {
     console.error(e);
@@ -1105,7 +1119,6 @@ PAGES.stock = async (r) => {
       ${card("最新一期各模型贡献（截面排名 × 权重）", s.contributions ? chartDiv("c-contrib", "short") : empty("暂无"))}
     </div>
     </div></div>`;
-  document.querySelector(".stock-side a.on")?.scrollIntoView({ block: "nearest", inline: "center" });
   if (byId("c-sg")) drawSegGraph(byId("c-sg"), t, graphData, sc);
   if (sc) {
     drawSeg(sc, "share");

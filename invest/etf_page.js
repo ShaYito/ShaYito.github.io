@@ -71,7 +71,6 @@ async function renderEtfPage(t) {
     <section class="card"><h3>在系统里的仓位 ${badge("model")}</h3>${roleHtml}${role.layer && role.history.dates.length ? chartDiv("c-etf-role", "short") : ""}</section>
     ${info.kind === "broad" ? spyBlocks(e) : ""}${info.kind === "growth" || info.kind === "sector" ? sectorBlocks(e, t) : ""}${info.kind === "gold" ? goldBlocks(e) : ""}
     </div></div>`;
-  document.querySelector(".stock-side a.on")?.scrollIntoView({ block: "nearest", inline: "center" });
   bindPriceMode();
   drawEtfK(e, t);
   if (role.layer && role.history.dates.length) {
