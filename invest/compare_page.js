@@ -109,6 +109,7 @@ PAGES.compare = async (r) => {
   const held = [...new Set([...(META.etfs || []).map((e) => e.ticker), ...META.universe.map((u) => u.ticker)])].filter((t) => holdingsMode() === "mine" && isHeld(t));
   const presets = [
     ...(held.length ? [["你的持仓", held]] : []),
+    ...(plannedSet().size ? [["计划持仓", [...new Set([...held, ...plannedSet()])].filter((t) => raw.close[t])]] : []),
     ["系统建议持仓", alloc.map((a) => a.ticker).filter((t) => raw.close[t])],
     ["SPY / QQQ / GLD", ["SPY", "QQQ", "GLD"]],
     ...META.themes.map((th) => [th.name, META.universe.filter((u) => u.theme === th.key).map((u) => u.ticker)]),

@@ -36,12 +36,13 @@ const REL_ZH = { supplier: "上游供应商", customer: "下游客户", competit
   investor: "股东", holding: "持股对象", industry: "行业层面" };
 const EVENT_ZH = { earnings: "财报", guidance: "业绩指引", regulation_export: "监管/出口管制", m_and_a: "并购",
   product: "产品发布", legal: "诉讼/法律", analyst: "分析师评级", macro: "宏观", other: "其他" };
-const PRIORITY_ZH = { holding: "持仓", related: "持仓相关", watchlist: "关注列表", other: "其他" };
+const PRIORITY_ZH = { holding: "持仓", planned: "计划买入", related: "持仓相关", watchlist: "关注列表", other: "其他" };
 // 事件标签：本机有持仓或解锁个人版时按实际持仓重新判断（存档中的标签按系统建议配置）
 function eventPriority(e) {
   if (holdingsMode() !== "mine") return e.priority;
   const ts = e.tickers || [];
   if (ts.some((t) => isHeld(t))) return "holding";
+  if (ts.some((t) => isPlanned(t))) return "planned";
   if (ts.some((t) => isRelated(t))) return "related";
   return ts.some((t) => META.universe.find((u) => u.ticker === t)?.watchlist) ? "watchlist" : "other";
 }
@@ -57,7 +58,7 @@ function themeColor(key) {
 function themeName(key) { return META.themes.find((x) => x.key === key)?.name ?? key ?? ""; }
 function tickerLabel(t) {
   const u = META.universe.find((x) => x.ticker === t);
-  return `${isHeld(t) ? "● " : ""}${t}${u?.watchlist ? " ★" : ""}`;
+  return `${isHeld(t) ? "● " : isPlanned(t) ? "◇ " : ""}${t}${u?.watchlist ? " ★" : ""}`;
 }
 
 // ---------------- 图表工具 ----------------
@@ -694,7 +695,7 @@ function eventCard(e) {
   const direct = (e.direct_impacts || []).map((d) => `<li><b>${esc(d.node)}</b> <span class="${d.direction === "positive" ? "pos" : d.direction === "negative" ? "neg" : ""}">${DIR_ZH[d.direction]}</span> · 程度${LEVEL_ZH[d.magnitude]} · ${HORIZON_ZH[d.horizon]}：${esc(d.rationale)}</li>`).join("");
   const prop = (e.propagation || []).map((p) => `<li>${esc(REL_ZH[p.relation] || p.relation)} <b>${esc(p.node)}</b> <span class="${p.direction === "positive" ? "pos" : p.direction === "negative" ? "neg" : ""}">${DIR_ZH[p.direction]}</span>（置信度${LEVEL_ZH[p.confidence]}）：${esc(p.rationale)}</li>`).join("");
   return `<article class="event ${overallDirection(e)}" data-id="${esc(e.event_id)}">
-    <div><span class="chip">${esc(e.date)}</span><span class="chip ${eventPriority(e) === "holding" ? "holding" : ""}">${esc(PRIORITY_ZH[eventPriority(e)] || "")}</span>
+    <div><span class="chip">${esc(e.date)}</span><span class="chip ${{ holding: "holding", planned: "plan" }[eventPriority(e)] || ""}">${esc(PRIORITY_ZH[eventPriority(e)] || "")}</span>
       <span class="chip">${esc((e.tickers || []).join("/") || "行业")}</span><span class="chip">${esc(EVENT_ZH[e.event_type] || e.event_type)}</span>
       <span class="chip">${esc(TIER_ZH[e.tier] || e.tier)}</span></div>
     <h4>${esc(e.headline)}</h4><p>${esc(e.summary)}</p>
@@ -1079,7 +1080,7 @@ function drawSegGraph(el, t, g, sc) {
 function stockSidebar(cur) {
   const groups = META.themes.map((th) => {
     const items = META.universe.filter((u) => u.theme === th.key).map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}`)}">
-      <span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
+      <span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
     return `<h4>${esc(th.name)}</h4>${items}`;
   }).join("");
   // 按实际持仓时：顶部加“你的持仓”一组
@@ -1089,6 +1090,8 @@ function stockSidebar(cur) {
     const held = META.universe.filter((u) => isHeld(u.ticker));
     mine = held.length ? `<h4>你的持仓</h4>${held.map(link).join("")}` : "";
   }
+  const plannedU = META.universe.filter((u) => isPlanned(u.ticker) && !(holdingsMode() === "mine" && isHeld(u.ticker)));
+  if (plannedU.length) mine += `<h4>买入计划</h4>${plannedU.map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}"><span class="dot" style="background:${themeColor(u.theme)}"></span>◇ <b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}</a>`).join("")}`;
   const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
   const cmp = `<a href="#/compare${cur ? `?t=${cur}` : ""}" class="cmp-entry" title="勾选多只股票 / ETF，对比走势与相关性">📊 多股对比</a>`;
@@ -1139,7 +1142,10 @@ const yWithCost = (cost) => (cost
 const pxLabel = (d) => (d.div_factor && priceMode() === "raw" ? "实际价格，除权不除息" : "复权价格");
 // 个股页：你在这只股票上的持仓（本机账本或个人版），以及它与你持仓的产业链关系
 function myPositionLine(t, s) {
-  if (holdingsMode() !== "mine") return "";
+  const last0 = s.ohlc?.length ? s.ohlc[s.ohlc.length - 1][1] : null;
+  const plans = PlanCalc.status(loadPlans(), loadTrades(), isNum(last0) ? { [t]: last0 } : {}).filter((x) => x.plan.ticker === t && !x.done);
+  const planText = plans.map((x) => `买入计划：${x.plan.shares != null ? `${+x.remaining_shares.toFixed(4)} 股` : `${money(x.remaining_value)} 美元`}${x.plan.target_price ? `，目标买入价 ${num(x.plan.target_price, 2)}${x.to_target != null ? (x.to_target >= 0 ? "（已达到）" : `（还需 ${pct(x.to_target, 1)}）`) : ""}` : ""}${x.since != null ? `，自 ${esc(x.plan.created)} 计划以来 <span class="${cls(x.since)}">${pct(x.since, 1, true)}</span>` : ""}`);
+  if (holdingsMode() !== "mine") return planText.length ? `<p class="card" style="padding:8px 12px">📝 ${planText.join("；")}。<a href="#/holdings?tab=buyplan">买入计划 →</a></p>` : "";
   const h = loadHoldings();
   const sh = h?.positions?.[t] || 0;
   const last = s.ohlc?.length ? s.ohlc[s.ohlc.length - 1][1] : null;
@@ -1151,7 +1157,8 @@ function myPositionLine(t, s) {
   }
   const rel = personalRelated().get(t);
   if (rel && !(sh > 0)) parts.push(`与你的持仓相关：${rel.slice(0, 4).map((l) => `${esc(l.via)} 的${esc(l.relation)}${l.note ? `（${esc(l.note)}）` : ""}`).join("；")}`);
-  return parts.length ? `<p class="card" style="padding:8px 12px">💼 ${parts.join("。")}。<a href="#/holdings">我的持仓 →</a></p>` : "";
+  parts.push(...planText);
+  return parts.length ? `<p class="card" style="padding:8px 12px">💼 ${parts.join("。")}。<a href="#/holdings${planText.length ? "?tab=buyplan" : ""}">${planText.length ? "买入计划" : "我的持仓"} →</a></p>` : "";
 }
 PAGES.stock = async (r) => {
   const t = r.arg || META.universe.find((u) => isHeld(u.ticker))?.ticker || META.universe[0].ticker;
@@ -1166,7 +1173,7 @@ PAGES.stock = async (r) => {
   const dimChips = m ? Object.entries(m.scores).map(([k, v]) => `<span class="chip">${esc({ composite: "综合", momentum: "动量", trend: "趋势", relative: "相对强弱", low_vol: "低波动", valuation: "估值", sentiment: "情绪", event_risk: "事件风险低" }[k] || k)} ${num(v, 0)}</span>`).join("") : "";
   app().innerHTML = `
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
-    <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""}</span></h2>
+    <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""} · <a href="#/holdings?tab=buyplan&t=${t}">加入买入计划</a></span></h2>
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>

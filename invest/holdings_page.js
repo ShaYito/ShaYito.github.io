@@ -76,7 +76,7 @@ const shareFmt = (n) => (isNum(n) ? (Math.abs(n - Math.round(n)) < 1e-6 ? String
 const TICKER_RE = /^[A-Z0-9^][A-Z0-9\-=^]{0,11}$/;
 const normTicker = (s) => s.trim().toUpperCase().replace(/\./g, "-");
 
-const HOLD_TABS = [["positions", "持仓"], ["attrib", "收益归因"], ["lots", "持有期与税务"], ["ledger", "交易记录"], ["recon", "实盘对账"], ["plan", "调仓建议"]];
+const HOLD_TABS = [["positions", "持仓"], ["buyplan", "买入计划"], ["attrib", "收益归因"], ["lots", "持有期与税务"], ["ledger", "交易记录"], ["recon", "实盘对账"], ["plan", "调仓建议"]];
 const HOLD_HOWTO = {
   positions: [
     "本页由“交易记录”标签里的起始持仓与每一笔交易自动推算：当前股数、[[avg_cost|平均成本]]、现金（含分红与现金利息）、[[unrealized|浮动盈亏]]与[[realized|已实现盈亏]]。价格为最新收盘价（每天更新一次）。",
@@ -132,7 +132,7 @@ PAGES.holdings = async (r) => {
   app().innerHTML = `
     <h2>我的持仓 <span class="muted">只保存在本机浏览器 · 价格截至 ${esc(P.dates[P.n - 1])}</span></h2>
     <div class="seg" style="margin-bottom:12px">${HOLD_TABS.map(([k, n]) => `<button type="button" class="${k === tab ? "on" : ""}" data-tab="${k}">${n}</button>`).join("")}</div>
-    ${howto(HOLD_HOWTO[tab])}
+    ${howto(tab === "buyplan" ? PLAN_HOWTO : HOLD_HOWTO[tab])}
     ${err ? `<p class="warn">账本推算失败：${esc(err)}（请检查“交易记录”里的起始持仓日期）</p>` : ""}
     <div id="h-body"></div>`;
   document.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { location.hash = `#/holdings?tab=${b.dataset.tab}`; }));
@@ -145,6 +145,7 @@ PAGES.holdings = async (r) => {
   if (tab === "recon") { if (start) return renderReconTab(P, raw, sys, start); byId("h-body").innerHTML = empty; return bindRestore(); }
   if (!book) { byId("h-body").innerHTML = empty; return bindRestore(); }
   if (tab === "plan") return renderPlanTab(book);
+  if (tab === "buyplan") return renderBuyPlanTab(book, r.query);
   if (tab === "attrib") return renderAttribTab(P, raw, start, loadTrades());
   if (tab === "lots") return renderLotsTab(P, raw, start, loadTrades(), book);
   return renderPositionsTab(P, raw, book);
@@ -261,7 +262,7 @@ function drawCurve(P, raw, book, mode, period) {
 function syncCard(book) {
   let token = ""; try { token = localStorage.getItem(TOKEN_KEY) || ""; } catch { /* 忽略 */ }
   return `<section class="card"><h3>同步与备份</h3>
-    <p class="muted">“同步到后台”把推算出的当前持仓（${esc(book.snapshot.date)}：${Object.keys(book.snapshot.positions).length} 个标的、现金）连同账本加密保存到私有仓库；之后每日推送的“与你持仓相关”、周报的“建议 vs 实际”和实盘业绩都按它计算。每次录入新交易后同步一次。</p>
+    <p class="muted">“同步到后台”把推算出的当前持仓（含买入计划）（${esc(book.snapshot.date)}：${Object.keys(book.snapshot.positions).length} 个标的、现金）连同账本加密保存到私有仓库；之后每日推送的“与你持仓相关”、周报的“建议 vs 实际”和实盘业绩都按它计算。每次录入新交易后同步一次。</p>
     <div class="row"><button type="button" class="primary" id="h-sync">同步到后台</button><button type="button" class="ghost" id="h-export">导出备份（JSON）</button>
       <button type="button" class="ghost" id="h-import-btn">导入备份</button><input type="file" id="h-import" accept="application/json,.json" hidden><span class="muted" id="h-msg"></span></div>
     <details class="howto"><summary>同步设置（首次使用需要一个 GitHub token）${token ? " · 已保存 token" : ""}</summary>
@@ -299,24 +300,26 @@ function bindSync(book) {
     try { localStorage.setItem(TOKEN_KEY, v); byId("h-token").value = ""; byId("h-token-msg").textContent = "已保存 token"; } catch { byId("h-token-msg").textContent = "保存失败"; }
   };
   byId("h-token-del").onclick = () => { try { localStorage.removeItem(TOKEN_KEY); } catch { /* 忽略 */ } byId("h-token-msg").textContent = "已删除"; };
-  byId("h-sync").onclick = async () => {
-    let token = ""; try { token = localStorage.getItem(TOKEN_KEY) || ""; } catch { /* 忽略 */ }
-    if (!token) { msg("请先在“同步设置”中保存 GitHub token"); return; }
-    const s = book.snapshot;
-    if (!Object.keys(s.positions).length && !s.cash) { msg("持仓为空，未同步"); return; }
-    const payload = { ...s, ledger: { start: loadReconStart(), trades: loadTrades() } };
-    msg("同步中…");
-    try {
-      const resp = await fetch(`https://api.github.com/repos/${META.github_repo}/actions/workflows/update-holdings.yml/dispatches`, {
-        method: "POST",
-        headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
-        body: JSON.stringify({ ref: "main", inputs: { holdings: JSON.stringify(payload) } }),
-      });
-      msg(resp.status === 204
-        ? `已提交同步（${s.date}，${Object.keys(s.positions).length} 个标的）；约 1 分钟后生效，可在仓库 Actions 页查看 update-holdings 运行结果`
-        : `同步失败：HTTP ${resp.status}${resp.status === 401 || resp.status === 403 ? "（token 无效或缺少 Actions 写权限）" : resp.status === 404 ? "（token 没有该仓库的权限）" : resp.status === 422 ? "（内容过大或格式不符）" : ""}`);
-    } catch (e) { msg(`同步失败：${e.message}`); }
-  };
+  byId("h-sync").onclick = () => syncBackend(book, msg);
+}
+/* 同步到后台：当前持仓快照 + 账本 + 买入计划（本机没有编辑过计划时不带 plans，后台保留已有计划） */
+async function syncBackend(book, msg) {
+  let token = ""; try { token = localStorage.getItem(TOKEN_KEY) || ""; } catch { /* 忽略 */ }
+  if (!token) { msg("请先在“我的持仓 → 持仓 → 同步与备份”中保存 GitHub token"); return; }
+  const s = book.snapshot;
+  if (!Object.keys(s.positions).length && !s.cash) { msg("持仓为空，未同步"); return; }
+  const payload = { ...s, ledger: { start: loadReconStart(), trades: loadTrades() }, ...(plansEdited() ? { plans: loadPlans() } : {}) };
+  msg("同步中…");
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${META.github_repo}/actions/workflows/update-holdings.yml/dispatches`, {
+      method: "POST",
+      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
+      body: JSON.stringify({ ref: "main", inputs: { holdings: JSON.stringify(payload) } }),
+    });
+    msg(resp.status === 204
+      ? `已提交同步（${s.date}，${Object.keys(s.positions).length} 个标的${plansEdited() ? `，${loadPlans().length} 条买入计划` : ""}）；约 1 分钟后生效，可在仓库 Actions 页查看 update-holdings 运行结果`
+      : `同步失败：HTTP ${resp.status}${resp.status === 401 || resp.status === 403 ? "（token 无效或缺少 Actions 写权限）" : resp.status === 404 ? "（token 没有该仓库的权限）" : resp.status === 422 ? "（内容过大或格式不符）" : ""}`);
+  } catch (e) { msg(`同步失败：${e.message}`); }
 }
 
 // ---------------- 调仓建议（建议 vs 实际）----------------

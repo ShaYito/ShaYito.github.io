@@ -261,3 +261,4 @@ main:has(.stock-layout.with-nav) { max-width: 1440px; }
   .stock-layout.with-nav { grid-template-columns: minmax(0, 1fr); }
 }
 
+.chip.plan { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); border: 1px dashed var(--accent); }

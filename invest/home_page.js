@@ -63,6 +63,10 @@ function homeInsights(h, mine, held) {
   const days = (d) => Math.round((new Date(`${h.asof}T12:00:00Z`) - new Date(`${d}T12:00:00Z`)) / 864e5);
   const myBuys = (h.insider_buys || []).filter((x) => held.has(x.ticker) && days(x.date) <= 30);
   if (myBuys.length) out.push({ level: "medium", kind: "fact", text: `你持有的 ${[...new Set(myBuys.map((x) => x.ticker))].join("、")} 近 30 天有内部人在公开市场买入（${myBuys.slice(0, 2).map((x) => `${x.insider}，${insiderMoney(x.value)}`).join("；")}）。` });
+  const plannedSoon = (h.schedule || []).filter((e) => e.ticker && !held.has(e.ticker) && isPlanned(e.ticker) && e.kind === "earnings");
+  if (plannedSoon.length) out.push({ level: "info", kind: "fact", text: `买入计划中的 ${[...new Set(plannedSoon.map((e) => e.ticker))].join("、")} 近期发布财报（${plannedSoon.slice(0, 3).map((e) => esc(e.date.slice(5))).join("、")}），可以考虑等财报后再决定是否按计划买入。` });
+  const planBuys = (h.insider_buys || []).filter((x) => !held.has(x.ticker) && isPlanned(x.ticker) && days(x.date) <= 30);
+  if (planBuys.length) out.push({ level: "info", kind: "fact", text: `买入计划中的 ${[...new Set(planBuys.map((x) => x.ticker))].join("、")} 近 30 天有内部人在公开市场买入。` });
   const bigMove = (mine?.book?.rows || []).filter((r) => isNum(r.day_pct) && Math.abs(r.day_pct) >= 0.05);
   for (const r of bigMove.slice(0, 2)) out.push({ level: "medium", kind: "fact", text: `持仓 ${r.ticker} 当日 ${pct(r.day_pct, 1, true)}。` });
   return out;
@@ -137,8 +141,8 @@ function drawHomeHoldings(mine) {
 function homeSchedule(h, held, watch) {
   const ev = h.schedule || [];
   const mineFirst = held.size > 0;
-  const tag = (e) => (e.ticker && held.has(e.ticker) ? `<span class="chip on">持有</span>` : e.ticker && watch.has(e.ticker) ? `<span class="chip">★ 关注</span>` : "");
-  const show = ev.filter((e) => !e.ticker || held.has(e.ticker) || watch.has(e.ticker) || e.kind === "earnings");
+  const tag = (e) => (e.ticker ? holdChip(e.ticker, held, watch).trim() : "");
+  const show = ev.filter((e) => !e.ticker || held.has(e.ticker) || isPlanned(e.ticker) || watch.has(e.ticker) || e.kind === "earnings");
   const byDate = {};
   for (const e of show) (byDate[e.date] ||= []).push(e);
   const wd = (d) => "日一二三四五六"[new Date(`${d}T12:00:00Z`).getUTCDay()];
@@ -177,7 +181,7 @@ function drawSparks(h) {
 }
 
 function homeMovers(h, held) {
-  const row = (m) => `<tr><td><a href="#/stock/${esc(m.ticker)}"><b>${esc(m.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[m.ticker] || "")}</span>${held.has(m.ticker) ? ' <span class="chip on">持有</span>' : ""}</td>
+  const row = (m) => `<tr><td><a href="#/stock/${esc(m.ticker)}"><b>${esc(m.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[m.ticker] || "")}</span>${holdChip(m.ticker, held, null)}</td>
     <td class="num ${cls(m.w1)}">${pct(m.w1, 1, true)}</td><td class="num ${cls(m.d1)}">${pct(m.d1, 1, true)}</td></tr>`;
   const t = (title, list) => `<h4>${title}</h4><div class="table-wrap"><table><thead><tr><th>股票</th><th class="num">1 周</th><th class="num">当日</th></tr></thead><tbody>${list.map(row).join("")}</tbody></table></div>`;
   return `${t("涨幅最大", h.movers?.up || [])}${t("跌幅最大", h.movers?.down || [])}<p class="muted"><a href="#/performance">更多：相对表现 →</a></p>`;
@@ -189,7 +193,7 @@ function homeHeadlines(h, held) {
   const dir = { positive: "pos", negative: "neg" };
   return `<ul class="headlines">${list.map((e) => `<li><span class="chip">${esc(e.date.slice(5))}</span>
       <a href="#/news?date=${esc(e.date)}&event=${esc(e.id)}">${esc(e.headline)}</a>
-      ${(e.tickers || []).slice(0, 3).map((t) => `<span class="muted">${esc(t)}${held.has(t) ? "（持有）" : ""}</span>`).join(" ")}
+      ${(e.tickers || []).slice(0, 3).map((t) => `<span class="muted">${esc(t)}${held.has(t) ? "（持有）" : isPlanned(t) ? "（计划）" : ""}</span>`).join(" ")}
       ${e.direction ? `<span class="${dir[e.direction] || "muted"}">${esc(DIR_ZH[e.direction] || "")}</span>` : ""}</li>`).join("")}</ul>
     <p class="muted">标题与摘要来自新闻原文；“利好 / 利空”是 AI 的判断${list.some((e) => e.tier && e.tier !== "gemini" && e.tier !== "groq") ? "（部分为规则降级）" : ""}，仅供参考。<a href="#/news">全部新闻 →</a></p>`;
 }
@@ -209,9 +213,9 @@ const MOVE_ZH = { raise: "上调", lower: "下调", initiate: "首次给出" };
 function homeTargetMoves(h, held, watch) {
   const list = h.target_moves || [];
   if (!list.length) return `<section class="card"><h3>本周目标价变动 ${badge("fact")}</h3>${empty("近 7 天没有机构上调或下调选股池股票的目标价")}</section>`;
-  const rank = (m) => (held.has(m.ticker) ? 0 : watch.has(m.ticker) ? 1 : 2);
+  const rank = (m) => (held.has(m.ticker) ? 0 : isPlanned(m.ticker) ? 1 : watch.has(m.ticker) ? 2 : 3);
   const rows = [...list].sort((a, b) => rank(a) - rank(b) || (b.raises + b.lowers + b.initiates) - (a.raises + a.lowers + a.initiates));
-  const tag = (t) => (held.has(t) ? ' <span class="chip on">持有</span>' : watch.has(t) ? ' <span class="chip">★</span>' : "");
+  const tag = (t) => holdChip(t, held, watch, true);
   return `<section class="card"><h3>本周目标价变动（近 7 天）${badge("fact")}</h3>
     <div class="table-wrap"><table><thead><tr><th>股票</th><th class="num">上调</th><th class="num">下调</th><th class="num">首次</th><th class="num">调整幅度中位数</th><th>明细</th></tr></thead><tbody>
     ${rows.slice(0, 15).map((m) => `<tr><td class="nowrap"><a href="#/stock/${esc(m.ticker)}"><b>${esc(m.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[m.ticker] || "")}</span>${tag(m.ticker)}</td>
@@ -229,7 +233,7 @@ function homeInsiderBuys(h, held, watch) {
   if (!list.length) return `<section class="card">${head}${empty("选股池近期没有高管或董事在公开市场买入")}</section>`;
   const exec = /chief|ceo|cfo|president|chairman/i;
   const notable = (x) => (x.value || 0) >= 1e6 || exec.test(x.position || "");
-  const tag = (t) => (held.has(t) ? ' <span class="chip on">持有</span>' : watch.has(t) ? ' <span class="chip">★</span>' : "");
+  const tag = (t) => holdChip(t, held, watch, true);
   return `<section class="card">${head}
     <div class="table-wrap"><table><thead><tr><th>日期</th><th>股票</th><th>人员 / 职务</th><th class="num">股数</th><th class="num">金额</th><th></th></tr></thead><tbody>
     ${list.map((x) => `<tr class="${(x.value || 0) < 5e4 ? "muted" : ""}"><td class="nowrap">${esc(x.date)}</td>
