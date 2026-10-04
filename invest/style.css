@@ -242,3 +242,4 @@ table.metric-doc td { white-space: normal; vertical-align: top; font-size: 12.5p
 table.metric-doc td:first-child { white-space: nowrap; }
 table.metric-doc th:nth-child(2), table.metric-doc th:nth-child(3), table.metric-doc th:nth-child(4) { min-width: 180px; }
 table.metric-doc th:nth-child(5) { min-width: 220px; }
+#app.loading > :not(.stock-layout), #app.loading .stock-main { opacity: .5; transition: opacity .15s; pointer-events: none; }

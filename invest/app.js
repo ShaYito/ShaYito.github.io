@@ -87,7 +87,6 @@ function mkChart(el, option) {
   charts.push(c);
   return c;
 }
-function disposeCharts() { charts.forEach((c) => c.dispose()); charts = []; }
 window.addEventListener("resize", () => charts.forEach((c) => c.resize()));
 
 function lineSeries(name, payload, opts = {}) {
@@ -204,24 +203,40 @@ function restoreSidebarScroll() {
   if (SIDE_SCROLL) { el.scrollTop = SIDE_SCROLL.top; el.scrollLeft = SIDE_SCROLL.left; }
   else el.querySelector("a.on")?.scrollIntoView({ block: "nearest", inline: "center" }); // 首次进入：滚到当前股票
 }
+let ROUTE_SEQ = 0, ROUTE_DONE = 0; // 最近一次发起 / 完成的跳转序号
 async function route() {
+  const seq = ++ROUTE_SEQ;
   keepSidebarScroll();
   const r = parseHash();
-  disposeCharts();
+  // 旧图表等新页面渲染完成后再销毁（期间保留旧页面，避免整页闪白）
+  const oldCharts = charts;
+  charts = [];
   if (NAV_GROUPS[r.page]?.length) r.page = NAV_GROUPS[r.page][0][0]; // #/market → 第一个子标签
   const group = PAGE_GROUP[r.page] || r.page;
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === group));
   byId("glossary-link")?.classList.toggle("active", group === "glossary");
   renderSubnav(r.page, group);
   const fn = PAGES[r.page] || PAGES.overview;
-  app().innerHTML = empty("加载中…");
+  if (!app().children.length) app().innerHTML = empty("加载中…"); // 首次打开才显示占位
+  const dim = setTimeout(() => { if (seq === ROUTE_SEQ) app().classList.add("loading"); }, 150); // 加载较慢时淡显旧内容
   try {
     await fn(r);
+    if (seq !== ROUTE_SEQ) {
+      // 期间又发生了新的跳转：若新的那次已先完成，本次较慢的渲染刚把它覆盖了 → 按当前地址重绘
+      if (ROUTE_DONE === ROUTE_SEQ) route();
+      return;
+    }
+    ROUTE_DONE = seq;
     restoreSidebarScroll();
     bindGoto();
   } catch (e) {
     console.error(e);
+    if (seq !== ROUTE_SEQ) return;
     app().innerHTML = card("数据加载失败", `<p class="warn">${esc(e.message)}</p><p class="muted">可能尚未生成该部分数据（例如首份周报前）。</p>`);
+  } finally {
+    clearTimeout(dim);
+    oldCharts.forEach((c) => { try { c.dispose(); } catch { /* 已随旧页面移除 */ } });
+    if (seq === ROUTE_SEQ) app().classList.remove("loading");
   }
   if (!(r.page === "glossary" && r.query.t)) window.scrollTo(0, 0);
 }
