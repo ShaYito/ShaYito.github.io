@@ -95,7 +95,7 @@ function homeHoldings(mine) {
     <h4>持仓走势与成本价（近 6 个月实际价格）</h4>
     <div class="spark-grid">${rows.map((r, i) => `<div class="spark-cell"><div class="spark-head"><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span>
       <span class="num ${gc(r.unrealized_pct)}" style="float:right">${pct(r.unrealized_pct, 1, true)}</span></div>
-      <div class="muted">现价 ${money2(r.price)} · 成本 ${r.est_cost ? "≈" : ""}${money2(r.avg_cost)} · 占 ${pct(r.weight, 1)}</div>
+      <div class="muted">现价 ${money2(r.price)} · <span ${r.est_cost ? `title="${esc(estCostNote(r))}"` : ""}>成本 ${r.est_cost ? "≈" : ""}${money2(r.avg_cost)}</span> · 占 ${pct(r.weight, 1)}</div>
       <div id="hm-sp-${i}" class="chart spark"></div></div>`).join("")}</div></section>`;
 }
 

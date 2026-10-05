@@ -59,6 +59,10 @@ function isHeld(t) {
   if (h && Object.keys(h.positions).length) return (h.positions[t] || 0) > 0;
   return !!META.universe.find((u) => u.ticker === t)?.held;
 }
+/* 平均成本为估计值的原因（持仓页 / 首页悬停说明） */
+function estCostNote(r) {
+  return [r.est_start ? "起始持仓未填成本价，按起始日收盘价估计" : "", r.est_open ? `${r.est_open} 笔买入未填成交价，按当天开盘价估计` : ""].filter(Boolean).join("；");
+}
 function holdingsMode() { const h = loadHoldings(); return h && Object.keys(h.positions).length ? "mine" : "suggested"; }
 
 async function suggestedTarget() {
@@ -126,7 +130,7 @@ PAGES.holdings = async (r) => {
     try {
       book = Recon.ledgerBook(P, raw, start, loadTrades(), { cashInterest: HOLD_CFG.cashInterest });
       const sig = ledgerSig(localStorage.getItem(RECON_START_KEY), localStorage.getItem(TRADES_KEY));
-      saveHoldings({ ...book.snapshot, sig });
+      saveHoldings({ ...book.snapshot, sig, cost_est: book.rows.filter((r) => r.est_cost).map((r) => r.ticker) });
     } catch (e) { console.error(e); err = e.message; }
   }
   app().innerHTML = `
@@ -177,7 +181,7 @@ function renderPositionsTab(P, raw, book) {
   const noVal = rows.filter((r) => !(r.price > 0));
   if (noVal.length) ins.push({ level: "high", kind: "fact", text: `${noVal.map((r) => r.ticker).join("、")} 没有行情也没有成交价，无法估值（未计入账户总值）；请在“交易记录”里补填成本价。` });
   const est = rows.filter((r) => r.est_cost);
-  if (est.length) ins.push({ level: "info", kind: "derived", text: `${est.map((r) => r.ticker).join("、")} 的成本按起始日收盘价估计（标“≈”）；可在“交易记录”里补填成本价。` });
+  if (est.length) ins.push({ level: "info", kind: "derived", text: `${est.map((r) => r.ticker).join("、")} 的平均成本含估计（标“≈”：${[est.some((r) => r.est_start) ? "起始持仓未填成本价，按起始日收盘价计" : "", est.some((r) => r.est_open) ? `${est.reduce((a, r) => a + (r.est_open || 0), 0)} 笔买入未填成交价，按当天开盘价计` : ""].filter(Boolean).join("；")}）；在“交易记录”里补填成交价 / 成本价后即为准确值。` });
   const kpi = (label, v, sub = "", c = "") => `<div class="kpi"><span class="muted">${label}</span><b class="${c}">${v}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
   const gainCls = (v) => (isNum(v) ? cls(v) : "");
   const td = (v, f = money, c = true) => `<td class="num ${c ? gainCls(v) : ""}">${f(v)}</td>`;
@@ -200,7 +204,7 @@ function renderPositionsTab(P, raw, book) {
         <th class="num">平均成本</th><th class="num">市值</th><th class="num">成本总额</th><th class="num">浮动盈亏</th><th class="num">浮动 %</th><th class="num">占比</th><th class="num" title="已实现盈亏 + 收到的分红">已实现 + 分红</th></tr></thead>
       <tbody>${rows.map((r) => `<tr><td><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a> <span class="muted">${esc(name(r.ticker))}</span></td>
         <td class="num">${money2(r.price)}</td><td class="num ${gainCls(r.day_pct)}">${pct(r.day_pct, 2, true)}</td>${td(r.day_change, signed)}
-        <td class="num">${shareFmt(r.shares)}</td><td class="num" ${r.est_cost ? 'title="起始持仓未填成本价，按起始日收盘价估计"' : ""}>${r.est_cost ? "≈" : ""}${money2(r.avg_cost)}</td>
+        <td class="num">${shareFmt(r.shares)}</td><td class="num" ${r.est_cost ? `title="${esc(estCostNote(r))}"` : ""}>${r.est_cost ? "≈" : ""}${money2(r.avg_cost)}</td>
         <td class="num">${money(r.market_value)}</td><td class="num">${money(r.cost_basis)}</td>${td(r.unrealized, signed)}
         <td class="num ${gainCls(r.unrealized_pct)}">${pct(r.unrealized_pct, 1, true)}</td><td class="num">${pct(r.weight, 1)}</td>${td(r.realized + r.divs, signed)}</tr>`).join("")}
         <tr><td><b>现金</b> <span class="muted">SPAXX 等</span></td><td colspan="5"></td><td class="num">${money(a.cash)}</td><td></td><td></td><td></td><td class="num">${pct(a.cash / a.total_value, 1)}</td><td class="num">${signed(a.interest)}</td></tr>
@@ -395,7 +399,7 @@ function renderLedgerTab(P, raw) {
     try {
       const b = Recon.ledgerBook(P, raw, st, trades, { cashInterest: HOLD_CFG.cashInterest });
       // 与持仓页同样的完整推算（拆股、平均成本）存为缓存：全站成本价、持仓股数立刻按新账本显示
-      saveHoldings({ ...b.snapshot, sig: ledgerSig(localStorage.getItem(RECON_START_KEY), localStorage.getItem(TRADES_KEY)) });
+      saveHoldings({ ...b.snapshot, sig: ledgerSig(localStorage.getItem(RECON_START_KEY), localStorage.getItem(TRADES_KEY)), cost_est: b.rows.filter((r) => r.est_cost).map((r) => r.ticker) });
       byId("rc-summary").innerHTML = `按当前账本推算：${b.rows.length} 个持仓，账户总值 ${money(b.account.total_value)}，现金 ${money(b.account.cash)}。<a href="#/holdings">查看持仓 →</a>${b.warnings.length ? `<br><span class="warn">${b.warnings.map(esc).join("；")}</span>` : ""}`;
     } catch (e) { byId("rc-summary").textContent = `推算失败：${e.message}`; }
   };

@@ -1124,15 +1124,17 @@ function bindPriceMode() {
   }));
 }
 // K 线上的“你的平均成本”水平线（有持仓且知道成本时）；成本已按拆股换算，与复权价格的近期部分同口径
+// 平均成本是否含估计（未填成交价的买入按开盘价、起始持仓未填成本价按收盘价）；简化推算（未经持仓页 / 交易记录页完整推算）时不显示成本
+function costEst(t) { return !!loadHoldings()?.cost_est?.includes(t); }
 function myCost(t) {
   if (holdingsMode() !== "mine") return null;
   const h = loadHoldings();
   const c = h?.cost?.[t];
   return (h?.positions?.[t] || 0) > 0 && c > 0 ? c : null;
 }
-function costMarkLine(cost) {
+function costMarkLine(cost, t) {
   return { yAxis: cost, lineStyle: { color: palette()[6], type: "solid", width: 1.6 },
-    label: { show: true, position: "insideEndTop", formatter: `你的平均成本 ${num(cost, 2)}`, color: css("--ink"), fontSize: 11 } };
+    label: { show: true, position: "insideEndTop", formatter: `你的平均成本 ${costEst(t) ? "≈" : ""}${num(cost, 2)}`, color: css("--ink"), fontSize: 11 } };
 }
 // y 轴范围包含成本线（否则成本远离近期价格时看不到）
 const yWithCost = (cost) => (cost
@@ -1153,7 +1155,7 @@ function myPositionLine(t, s) {
   if (sh > 0) {
     const cost = h.cost?.[t];
     const w = personalOn() ? window.PERSONAL.weights?.[t] : null;
-    parts.push(`你持有 <b>${+sh.toFixed(4)}</b> 股${isNum(w) ? `，约占账户 ${pct(w, 1)}` : ""}${cost > 0 ? `，平均成本 ${num(cost, 2)}` : ""}${cost > 0 && isNum(last) ? `，浮动 <span class="${cls(last / cost - 1)}">${pct(last / cost - 1, 1, true)}</span>` : ""}`);
+    parts.push(`你持有 <b>${+sh.toFixed(4)}</b> 股${isNum(w) ? `，约占账户 ${pct(w, 1)}` : ""}${cost > 0 ? `，平均成本 ${costEst(t) ? `<span title="含估计：部分买入未填成交价（按开盘价）或起始持仓未填成本价">≈</span>` : ""}${num(cost, 2)}` : ""}${cost > 0 && isNum(last) ? `，浮动 <span class="${cls(last / cost - 1)}">${pct(last / cost - 1, 1, true)}</span>` : ""}`);
   }
   const rel = personalRelated().get(t);
   if (rel && !(sh > 0)) parts.push(`与你的持仓相关：${rel.slice(0, 4).map((l) => `${esc(l.via)} 的${esc(l.relation)}${l.note ? `（${esc(l.note)}）` : ""}`).join("；")}`);
@@ -1229,7 +1231,7 @@ PAGES.stock = async (r) => {
             : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
           data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d), ...(earningsLineStyle(s, d) || {}) })),
-            ...(cost ? [costMarkLine(cost)] : [])] } },
+            ...(cost ? [costMarkLine(cost, t)] : [])] } },
       { name: "MA50", type: "line", showSymbol: false, data: s.ma50, color: palette()[0], lineStyle: { width: 1.4 } },
       { name: "MA200", type: "line", showSymbol: false, data: s.ma200, color: palette()[1], lineStyle: { width: 1.4 } },
     ],

@@ -356,7 +356,7 @@
     const divAt = Object.fromEntries(tickers.map((t) => [t, Object.fromEntries((raw.corp?.[t]?.div || []).map(([k, d]) => [k, d]))]));
     const lastPx = {}; // 最近可用的估值价格
     const closeAt = (t, i) => { if (px[t]) { const c = px[t].close(i); if (Number.isFinite(c)) lastPx[t] = c; } return lastPx[t]; };
-    const st = Object.fromEntries(tickers.map((t) => [t, { shares: 0, basis: 0, realized: 0, divs: 0, fees: 0, bought: 0, sold: 0, estCost: false, first: null }]));
+    const st = Object.fromEntries(tickers.map((t) => [t, { shares: 0, basis: 0, realized: 0, divs: 0, fees: 0, bought: 0, sold: 0, estCost: false, openBuys: 0, first: null }]));
     let cash = start.cash || 0, interest = 0, flows = 0;
     for (const t of tickers) {
       const n = start.positions[t] || 0;
@@ -370,7 +370,7 @@
       if (isFlow(x)) { cash += flowAmount(x); flows += flowAmount(x); return; }
       const s = st[x.ticker];
       let p = x.price > 0 ? x.price : NaN;
-      if (!Number.isFinite(p) && px[x.ticker] && i != null) p = px[x.ticker].open(i);
+      if (!Number.isFinite(p) && px[x.ticker] && i != null) { p = px[x.ticker].open(i); if (x.side !== "sell" && Number.isFinite(p)) s.openBuys += 1; } // 没填成交价的买入：成本按开盘价估计
       if (!Number.isFinite(p)) { warnings.push(`${x.date} ${x.ticker} 没有成交价也没有行情，按 0 计，请补填成交价`); p = 0; }
       if (!px[x.ticker] || lastPx[x.ticker] == null) lastPx[x.ticker] = p;
       const fee = x.fee > 0 ? x.fee : 0;
@@ -381,7 +381,7 @@
         const out = s.shares > 0 ? s.basis * n / s.shares : 0;
         s.realized += x.shares * p - fee - out;
         s.basis -= out; s.shares -= x.shares; s.sold += x.shares * p;
-        if (Math.abs(s.shares) < 1e-9) { s.shares = 0; s.basis = 0; }
+        if (Math.abs(s.shares) < 1e-9) { s.shares = 0; s.basis = 0; s.openBuys = 0; s.estCost = false; }
         cash += x.shares * p - fee;
       } else {
         if (!(s.shares > 0)) s.first = x.date;
@@ -425,7 +425,7 @@
         const dayChg = Number.isFinite(pc) && !todayTraded.has(t) && !lateToday.has(t) ? s.shares * (p - pc) : NaN;
         rows.push({ ...base, shares: s.shares, price: p, prev_close: pc, day_change: dayChg, day_pct: Number.isFinite(pc) ? p / pc - 1 : NaN,
           market_value: mv, cost_basis: s.basis, avg_cost: s.basis / s.shares, unrealized: mv - s.basis, unrealized_pct: s.basis > 0 ? mv / s.basis - 1 : NaN,
-          weight: total > 0 ? mv / total : NaN, total_gain: mv - s.basis + s.realized + s.divs, est_cost: s.estCost, since: s.first });
+          weight: total > 0 ? mv / total : NaN, total_gain: mv - s.basis + s.realized + s.divs, est_cost: s.estCost || s.openBuys > 0, est_start: s.estCost, est_open: s.openBuys, since: s.first });
       } else if (Math.abs(s.realized) > 1e-9 || s.divs > 0) closed.push({ ...base, total_gain: s.realized + s.divs });
     }
     rows.sort((a, b) => (b.market_value || 0) - (a.market_value || 0));

@@ -103,7 +103,7 @@ function drawEtfK(e, t) {
     series: [
       { name: t, type: "candlestick", data: e.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") }, markArea: { silent: true, data: areas },
         markPoint: { data: tradeMarkPoints(e, t), tooltip: { formatter: tradeTooltip } },
-        ...(myCost(t) ? { markLine: { symbol: "none", silent: true, data: [costMarkLine(myCost(t))] } } : {}) },
+        ...(myCost(t) ? { markLine: { symbol: "none", silent: true, data: [costMarkLine(myCost(t), t)] } } : {}) },
       { name: "MA50", type: "line", showSymbol: false, data: e.ma50, color: palette()[0], lineStyle: { width: 1.4 } },
       { name: "MA200", type: "line", showSymbol: false, data: e.ma200, color: palette()[1], lineStyle: { width: 1.4 } },
     ],
