@@ -380,7 +380,7 @@ function renderLedgerTab(P, raw) {
         <textarea id="rs-now" rows="4" style="width:100%" placeholder="NVDA 50\nSPY 25\n现金 3200"></textarea>
         <div class="row"><label>当前持仓日期 <input type="date" id="rs-now-d" value="${esc(new Date().toISOString().slice(0, 10))}"></label><button type="button" class="ghost" id="rs-reverse">倒推</button></div></details></section>
     <section class="card"><h3>交易记录 ${badge("fact")}</h3>
-      <div class="table-wrap"><table><thead><tr><th>日期</th><th>方向</th><th>代码</th><th class="num">股数 / 金额</th><th class="num">成交价</th><th class="num">费用</th><th></th></tr></thead><tbody id="rc-rows"></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr id="rc-head"></tr></thead><tbody id="rc-rows"></tbody></table></div>
       <div class="row"><input type="date" id="rc-d" value="${esc(new Date().toISOString().slice(0, 10))}"><select id="rc-side"><option value="buy">买入</option><option value="sell">卖出</option><option value="deposit">存入现金</option><option value="withdraw">取出现金</option></select>
         <input type="text" id="rc-t" placeholder="代码" style="width:90px"><input type="number" id="rc-n" placeholder="股数" min="0" step="any" style="width:90px">
         <input type="number" id="rc-p" placeholder="成交价" min="0" step="0.01" style="width:100px"><input type="number" id="rc-f" placeholder="费用" min="0" step="0.01" style="width:80px">
@@ -412,9 +412,33 @@ function renderLedgerTab(P, raw) {
       <td class="num"><input type="number" id="re-f" value="${t.fee || ""}" min="0" step="0.01" ${f ? "disabled" : ""} style="width:70px"></td>
       <td class="nowrap"><button type="button" class="primary" id="re-save" data-i="${i}">保存</button> <button type="button" class="ghost" id="re-cancel">取消</button></td></tr>`;
   };
+  // 排序：点表头切换（同一列再点一次反向）；存储顺序始终按日期，显示顺序单独计算；选择记在本机
+  const SORT_KEY = "invest.trades.sort";
+  let sort = { k: "date", d: 1 };
+  try { sort = { ...sort, ...JSON.parse(localStorage.getItem(SORT_KEY) || "{}") }; } catch { /* 忽略 */ }
+  const COLS = [["date", "日期", ""], ["side", "方向", ""], ["ticker", "代码", ""], ["shares", "股数 / 金额", "num"], ["price", "成交价", "num"], ["fee", "费用", "num"]];
+  const SIDE_ORDER = { buy: 0, sell: 1, deposit: 2, withdraw: 3 };
+  const sortVal = (t, k) => (k === "side" ? SIDE_ORDER[t.side] ?? 9 : k === "ticker" ? (flowSide(t) ? "~现金" : t.ticker) : k === "price" || k === "fee" ? (flowSide(t) || !(t[k] > 0) ? null : t[k]) : t[k]);
+  const order = () => trades.map((_, i) => i).sort((a, b) => {
+    const x = sortVal(trades[a], sort.k), y = sortVal(trades[b], sort.k);
+    if (x == null || y == null) return x == null && y == null ? 0 : x == null ? 1 : -1; // 空值（开盘价 / 现金记录）总在最后
+    const c = typeof x === "string" ? x.localeCompare(y) : x - y;
+    return c * sort.d || trades[a].date.localeCompare(trades[b].date);
+  });
+  const drawHead = () => {
+    byId("rc-head").innerHTML = COLS.map(([k, n, c]) => `<th class="${c} sortable${sort.k === k ? " on" : ""}" data-k="${k}" title="点击排序">${n}${sort.k === k ? (sort.d > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + "<th></th>";
+    byId("rc-head").querySelectorAll("[data-k]").forEach((th) => (th.onclick = () => {
+      sort = sort.k === th.dataset.k ? { k: sort.k, d: -sort.d } : { k: th.dataset.k, d: th.dataset.k === "date" ? 1 : -1 };
+      try { localStorage.setItem(SORT_KEY, JSON.stringify(sort)); } catch { /* 忽略 */ }
+      draw();
+    }));
+  };
   const draw = () => {
+    const cur = editing >= 0 ? trades[editing] : null;
     trades.sort((a, b) => a.date.localeCompare(b.date));
-    byId("rc-rows").innerHTML = trades.map((t, i) => (i === editing ? editRow(t, i) : `<tr class="${start && t.date <= start.date ? "muted" : ""}"><td>${esc(t.date)}</td><td class="${SIDE[t.side]?.[1] || ""}">${SIDE[t.side]?.[0] || esc(t.side)}</td>
+    editing = cur ? trades.indexOf(cur) : -1;
+    drawHead();
+    byId("rc-rows").innerHTML = order().map((i) => [trades[i], i]).map(([t, i]) => (i === editing ? editRow(t, i) : `<tr class="${start && t.date <= start.date ? "muted" : ""}"><td>${esc(t.date)}</td><td class="${SIDE[t.side]?.[1] || ""}">${SIDE[t.side]?.[0] || esc(t.side)}</td>
       <td><b>${flowSide(t) ? "现金" : esc(t.ticker)}</b></td><td class="num">${flowSide(t) ? money2(t.shares) : shareFmt(t.shares)}</td>
       <td class="num">${flowSide(t) ? "–" : t.price > 0 ? money2(t.price) : "开盘价"}</td><td class="num">${flowSide(t) ? "–" : money2(t.fee || 0)}</td>
       <td class="nowrap"><button type="button" class="ghost rc-edit-btn" data-i="${i}">修改</button> <button type="button" class="ghost rc-del" data-i="${i}">删除</button></td></tr>`)).join("") || `<tr><td colspan="7" class="muted">还没有交易记录</td></tr>`;
