@@ -200,14 +200,8 @@ function renderPositionsTab(P, raw, book) {
         <div class="seg" id="h-cp">${["1M", "3M", "YTD", "1Y", "ALL"].map((k) => `<button type="button" data-p="${k}" class="${k === "ALL" ? "on" : ""}">${k === "ALL" ? "全部" : k === "YTD" ? "今年" : k.replace("M", " 个月").replace("1Y", "1 年")}</button>`).join("")}</div></div>
       ${chartDiv("c-h-curve")}</section>
     <section class="card"><h3>持仓 ${badge("fact")}${badge("derived")}</h3>
-      <div class="table-wrap"><table class="positions"><thead><tr><th>代码</th><th class="num">最新价</th><th class="num">今日</th><th class="num">今日盈亏</th><th class="num">股数</th>
-        <th class="num">平均成本</th><th class="num">市值</th><th class="num">成本总额</th><th class="num">浮动盈亏</th><th class="num">浮动 %</th><th class="num">占比</th><th class="num" title="已实现盈亏 + 收到的分红">已实现 + 分红</th></tr></thead>
-      <tbody>${rows.map((r) => `<tr><td><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a> <span class="muted">${esc(name(r.ticker))}</span></td>
-        <td class="num">${money2(r.price)}</td><td class="num ${gainCls(r.day_pct)}">${pct(r.day_pct, 2, true)}</td>${td(r.day_change, signed)}
-        <td class="num">${shareFmt(r.shares)}</td><td class="num" ${r.est_cost ? `title="${esc(estCostNote(r))}"` : ""}>${r.est_cost ? "≈" : ""}${money2(r.avg_cost)}</td>
-        <td class="num">${money(r.market_value)}</td><td class="num">${money(r.cost_basis)}</td>${td(r.unrealized, signed)}
-        <td class="num ${gainCls(r.unrealized_pct)}">${pct(r.unrealized_pct, 1, true)}</td><td class="num">${pct(r.weight, 1)}</td>${td(r.realized + r.divs, signed)}</tr>`).join("")}
-        <tr><td><b>现金</b> <span class="muted">SPAXX 等</span></td><td colspan="5"></td><td class="num">${money(a.cash)}</td><td></td><td></td><td></td><td class="num">${pct(a.cash / a.total_value, 1)}</td><td class="num">${signed(a.interest)}</td></tr>
+      <div class="table-wrap"><table class="positions"><thead><tr id="h-pos-head"></tr></thead>
+      <tbody id="h-pos-body"></tbody><tbody>        <tr><td><b>现金</b> <span class="muted">SPAXX 等</span></td><td colspan="5"></td><td class="num">${money(a.cash)}</td><td></td><td></td><td></td><td class="num">${pct(a.cash / a.total_value, 1)}</td><td class="num">${signed(a.interest)}</td></tr>
         <tr class="total"><td><b>合计</b></td><td></td><td class="num ${gainCls(a.day_pct)}">${pct(a.day_pct, 2, true)}</td>${td(a.day_change, signed)}<td></td><td></td>
           <td class="num"><b>${money(a.total_value)}</b></td><td class="num">${money(a.cost_basis)}</td>${td(a.unrealized, signed)}<td></td><td></td>${td(a.realized + a.dividends + a.interest, signed)}</tr></tbody></table></div>
       ${book.closed.length ? `<details class="howto"><summary>已清仓（${book.closed.length}）</summary><div class="table-wrap"><table><thead><tr><th>代码</th><th class="num">已实现盈亏</th><th class="num">分红</th><th class="num">费用</th><th class="num">合计</th></tr></thead><tbody>
@@ -215,6 +209,36 @@ function renderPositionsTab(P, raw, book) {
       <p class="muted">今日涨跌按前一交易日收盘计；当天有交易的标的不计今日盈亏。<label><input type="checkbox" id="h-int" ${HOLD_CFG.cashInterest ? "checked" : ""}> 现金按短期国债利率计息（放在 SPAXX 等货币基金中）</label></p></section>
     <section class="card"><h3>配置 ${badge("derived")}</h3><div class="grid two"><div>${chartDiv("c-h-w")}</div><div>${chartDiv("c-h-theme")}</div></div></section>
     ${syncCard(book)}`;
+  // 持仓表排序：点表头切换（同一列再点一次反向），只重排表格行；选择记在本机
+  const posRow = (r) => `<tr><td><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a> <span class="muted">${esc(name(r.ticker))}</span></td>
+        <td class="num">${money2(r.price)}</td><td class="num ${gainCls(r.day_pct)}">${pct(r.day_pct, 2, true)}</td>${td(r.day_change, signed)}
+        <td class="num">${shareFmt(r.shares)}</td><td class="num" ${r.est_cost ? `title="${esc(estCostNote(r))}"` : ""}>${r.est_cost ? "≈" : ""}${money2(r.avg_cost)}</td>
+        <td class="num">${money(r.market_value)}</td><td class="num">${money(r.cost_basis)}</td>${td(r.unrealized, signed)}
+        <td class="num ${gainCls(r.unrealized_pct)}">${pct(r.unrealized_pct, 1, true)}</td><td class="num">${pct(r.weight, 1)}</td>${td(r.realized + r.divs, signed)}</tr>`;
+  const POS_SORT_KEY = "invest.positions.sort";
+  const POS_COLS = [["ticker", "代码", ""], ["price", "最新价", "num"], ["day_pct", "今日", "num"], ["day_change", "今日盈亏", "num"], ["shares", "股数", "num"],
+    ["avg_cost", "平均成本", "num"], ["market_value", "市值", "num"], ["cost_basis", "成本总额", "num"], ["unrealized", "浮动盈亏", "num"], ["unrealized_pct", "浮动 %", "num"],
+    ["weight", "占比", "num"], ["realized_divs", "已实现 + 分红", "num", "已实现盈亏 + 收到的分红"]];
+  let psort = { k: "market_value", d: -1 };
+  try { psort = { ...psort, ...JSON.parse(localStorage.getItem(POS_SORT_KEY) || "{}") }; } catch { /* 忽略 */ }
+  const pval = (r, k) => (k === "realized_divs" ? r.realized + r.divs : r[k]);
+  const drawPos = () => {
+    byId("h-pos-head").innerHTML = POS_COLS.map(([k, n, c, tip]) => `<th class="${c} sortable${psort.k === k ? " on" : ""}" data-k="${k}" title="${esc(tip || "点击排序")}">${n}${psort.k === k ? (psort.d > 0 ? " ▲" : " ▼") : ""}</th>`).join("");
+    const sorted = [...rows].sort((a, b) => {
+      const x = pval(a, psort.k), y = pval(b, psort.k);
+      if (typeof x === "string") return x.localeCompare(y) * psort.d;
+      const ok = (v) => isNum(v);
+      if (!ok(x) || !ok(y)) return ok(x) ? -1 : ok(y) ? 1 : 0; // 缺值（如当天有交易的今日盈亏）在最后
+      return (x - y) * psort.d || (b.market_value || 0) - (a.market_value || 0);
+    });
+    byId("h-pos-body").innerHTML = sorted.map(posRow).join("");
+    byId("h-pos-head").querySelectorAll("[data-k]").forEach((th) => (th.onclick = () => {
+      psort = psort.k === th.dataset.k ? { k: psort.k, d: -psort.d } : { k: th.dataset.k, d: th.dataset.k === "ticker" ? 1 : -1 };
+      try { localStorage.setItem(POS_SORT_KEY, JSON.stringify(psort)); } catch { /* 忽略 */ }
+      drawPos();
+    }));
+  };
+  drawPos();
   byId("h-int").onchange = (e) => { try { localStorage.setItem("invest.hold.cash_interest", e.target.checked ? "1" : "0"); } catch { /* 忽略 */ } HOLD_CFG.cashInterest = e.target.checked; route(); };
   drawCurve(P, raw, book, "value", "ALL");
   document.querySelectorAll("#h-cm button, #h-cp button").forEach((b) => (b.onclick = () => {
