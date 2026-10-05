@@ -99,9 +99,9 @@ function cmpMyWeights(raw) {
 function compareSidebar(sel) {
   const on = new Set(sel);
   const item = (t, name, color) => `<label class="cmp-item ${on.has(t) ? "on" : ""}"><input type="checkbox" data-t="${t}" ${on.has(t) ? "checked" : ""} ${!on.has(t) && sel.length >= CMP_MAX ? "disabled" : ""}>
-    <span class="dot" style="background:${color}"></span>${isHeld(t) ? "● " : ""}<b>${esc(t)}</b>${esc(name || "")}</label>`;
+    <span class="dot" style="background:${color}"></span>${isHeld(t) ? "● " : isPlanned(t) ? "◇ " : ""}<b>${esc(t)}</b>${esc(name || "")}</label>`;
   const etfs = (META.etfs || []).map((x) => item(x.ticker, x.name_zh, BENCH_GRAY())).join("");
-  const groups = META.themes.map((th) => `<h4>${esc(th.name)}</h4>${META.universe.filter((u) => u.theme === th.key).map((u) => item(u.ticker, u.name_zh, themeColor(th.key))).join("")}`).join("");
+  const groups = META.themes.map((th) => `<h4>${esc(th.name)}</h4>${sidebarOrder(META.universe.filter((u) => u.theme === th.key)).map((u) => item(u.ticker, u.name_zh, themeColor(th.key))).join("")}`).join("");
   return `<aside class="stock-side" aria-label="选择对比的股票"><a href="#/stock">← 返回个股</a><h4>ETF / 大类资产</h4>${etfs}${groups}</aside>`;
 }
 

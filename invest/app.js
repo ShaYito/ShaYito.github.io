@@ -1077,9 +1077,14 @@ function drawSegGraph(el, t, g, sc) {
   c?.on("click", (p) => { if (p.dataType === "node" && p.data.kind === "other" && META.universe.some((u) => u.ticker === p.data.ticker)) location.hash = `#/stock/${p.data.ticker}`; });
 }
 
+// 侧栏组内顺序：持有 → 买入计划 → 其余；同一类内按代码字母
+function sidebarOrder(list) {
+  const rank = (t) => (isHeld(t) ? 0 : isPlanned(t) ? 1 : 2);
+  return [...list].sort((a, b) => rank(a.ticker) - rank(b.ticker) || a.ticker.localeCompare(b.ticker));
+}
 function stockSidebar(cur) {
   const groups = META.themes.map((th) => {
-    const items = META.universe.filter((u) => u.theme === th.key).map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}`)}">
+    const items = sidebarOrder(META.universe.filter((u) => u.theme === th.key)).map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}`)}">
       <span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
     return `<h4>${esc(th.name)}</h4>${items}`;
   }).join("");
@@ -1087,10 +1092,10 @@ function stockSidebar(cur) {
   let mine = "";
   if (holdingsMode() === "mine") {
     const link = (u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}"><span class="dot" style="background:${themeColor(u.theme)}"></span><b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}</a>`;
-    const held = META.universe.filter((u) => isHeld(u.ticker));
+    const held = sidebarOrder(META.universe.filter((u) => isHeld(u.ticker)));
     mine = held.length ? `<h4>你的持仓</h4>${held.map(link).join("")}` : "";
   }
-  const plannedU = META.universe.filter((u) => isPlanned(u.ticker) && !(holdingsMode() === "mine" && isHeld(u.ticker)));
+  const plannedU = sidebarOrder(META.universe).filter((u) => isPlanned(u.ticker) && !(holdingsMode() === "mine" && isHeld(u.ticker)));
   if (plannedU.length) mine += `<h4>买入计划</h4>${plannedU.map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}"><span class="dot" style="background:${themeColor(u.theme)}"></span>◇ <b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}</a>`).join("")}`;
   const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
