@@ -399,13 +399,52 @@ function renderLedgerTab(P, raw) {
   };
   const SIDE = { buy: ["买入", "pos"], sell: ["卖出", "neg"], deposit: ["存入现金", "pos"], withdraw: ["取出现金", "neg"] };
   const flowSide = (t) => t.side === "deposit" || t.side === "withdraw";
+  let editing = -1; // 正在修改的记录（排序后的下标）
+  const editRow = (t, i) => {
+    const f = flowSide(t);
+    return `<tr class="rc-edit"><td><input type="date" id="re-d" value="${esc(t.date)}"></td>
+      <td><select id="re-side">${Object.entries(SIDE).map(([k, [n]]) => `<option value="${k}" ${k === t.side ? "selected" : ""}>${n}</option>`).join("")}</select></td>
+      <td><input type="text" id="re-t" value="${f ? "" : esc(t.ticker)}" placeholder="${f ? "现金" : "代码"}" ${f ? "disabled" : ""} style="width:80px"></td>
+      <td class="num"><input type="number" id="re-n" value="${t.shares}" min="0" step="any" style="width:90px"></td>
+      <td class="num"><input type="number" id="re-p" value="${t.price > 0 ? t.price : ""}" placeholder="开盘价" min="0" step="0.01" ${f ? "disabled" : ""} style="width:90px"></td>
+      <td class="num"><input type="number" id="re-f" value="${t.fee || ""}" min="0" step="0.01" ${f ? "disabled" : ""} style="width:70px"></td>
+      <td class="nowrap"><button type="button" class="primary" id="re-save" data-i="${i}">保存</button> <button type="button" class="ghost" id="re-cancel">取消</button></td></tr>`;
+  };
   const draw = () => {
     trades.sort((a, b) => a.date.localeCompare(b.date));
-    byId("rc-rows").innerHTML = trades.map((t, i) => `<tr class="${start && t.date <= start.date ? "muted" : ""}"><td>${esc(t.date)}</td><td class="${SIDE[t.side]?.[1] || ""}">${SIDE[t.side]?.[0] || esc(t.side)}</td>
+    byId("rc-rows").innerHTML = trades.map((t, i) => (i === editing ? editRow(t, i) : `<tr class="${start && t.date <= start.date ? "muted" : ""}"><td>${esc(t.date)}</td><td class="${SIDE[t.side]?.[1] || ""}">${SIDE[t.side]?.[0] || esc(t.side)}</td>
       <td><b>${flowSide(t) ? "现金" : esc(t.ticker)}</b></td><td class="num">${flowSide(t) ? money2(t.shares) : shareFmt(t.shares)}</td>
       <td class="num">${flowSide(t) ? "–" : t.price > 0 ? money2(t.price) : "开盘价"}</td><td class="num">${flowSide(t) ? "–" : money2(t.fee || 0)}</td>
-      <td><button type="button" class="ghost rc-del" data-i="${i}">删除</button></td></tr>`).join("") || `<tr><td colspan="7" class="muted">还没有交易记录</td></tr>`;
-    document.querySelectorAll(".rc-del").forEach((b) => (b.onclick = () => { trades.splice(+b.dataset.i, 1); saveTrades(trades); draw(); }));
+      <td class="nowrap"><button type="button" class="ghost rc-edit-btn" data-i="${i}">修改</button> <button type="button" class="ghost rc-del" data-i="${i}">删除</button></td></tr>`)).join("") || `<tr><td colspan="7" class="muted">还没有交易记录</td></tr>`;
+    document.querySelectorAll(".rc-del").forEach((b) => (b.onclick = () => {
+      const t = trades[+b.dataset.i];
+      if (!confirm(`删除这条记录？（${t.date} ${SIDE[t.side]?.[0] || t.side} ${flowSide(t) ? money2(t.shares) : `${t.ticker} ${shareFmt(t.shares)} 股`}）`)) return;
+      trades.splice(+b.dataset.i, 1); editing = -1; saveTrades(trades); draw();
+    }));
+    document.querySelectorAll(".rc-edit-btn").forEach((b) => (b.onclick = () => { editing = +b.dataset.i; draw(); }));
+    if (editing >= 0 && byId("re-save")) {
+      const sideSync = () => {
+        const f = ["deposit", "withdraw"].includes(byId("re-side").value);
+        ["re-t", "re-p", "re-f"].forEach((k) => (byId(k).disabled = f));
+        byId("re-t").placeholder = f ? "现金" : "代码";
+      };
+      byId("re-side").onchange = sideSync;
+      byId("re-cancel").onclick = () => { editing = -1; draw(); };
+      byId("re-save").onclick = () => {
+        const side = byId("re-side").value, d = byId("re-d").value, n = +byId("re-n").value;
+        if (!d) { byId("rc-msg").textContent = "请填写日期"; return; }
+        if (!(n > 0)) { byId("rc-msg").textContent = side === "deposit" || side === "withdraw" ? "请填写金额" : "请填写股数"; return; }
+        let rec;
+        if (side === "deposit" || side === "withdraw") rec = { date: d, side, ticker: "CASH", shares: n, price: null, fee: 0 };
+        else {
+          const t = normTicker(byId("re-t").value);
+          if (!TICKER_RE.test(t)) { byId("rc-msg").textContent = "请填写代码"; return; }
+          rec = { date: d, side, ticker: t, shares: n, price: +byId("re-p").value || null, fee: +byId("re-f").value || 0 };
+        }
+        trades[editing] = { ...trades[editing], ...rec };
+        editing = -1; saveTrades(trades); draw(); byId("rc-msg").textContent = "已修改";
+      };
+    }
     summary();
   };
   const syncSide = () => {
@@ -426,12 +465,12 @@ function renderLedgerTab(P, raw) {
       if (!TICKER_RE.test(t) || !(n > 0)) { byId("rc-msg").textContent = "请填写代码与股数"; return; }
       trades.push({ date: d, side, ticker: t, shares: n, price: +byId("rc-p").value || null, fee: +byId("rc-f").value || 0 });
     }
-    saveTrades(trades); draw(); byId("rc-msg").textContent = "已添加";
+    editing = -1; saveTrades(trades); draw(); byId("rc-msg").textContent = "已添加";
     ["rc-t", "rc-n", "rc-p", "rc-f"].forEach((k) => (byId(k).value = ""));
   };
   byId("rc-paste-btn").onclick = () => {
     const p = Recon.parseTrades(byId("rc-paste").value);
-    trades.push(...p.trades); saveTrades(trades); draw();
+    trades.push(...p.trades); editing = -1; saveTrades(trades); draw();
     byId("rc-paste-msg").textContent = `追加 ${p.trades.length} 笔${p.errors.length ? `；${p.errors.length} 行无法识别：${p.errors.slice(0, 2).join("；")}` : ""}`;
   };
   // ---------- 起始持仓编辑器 ----------
