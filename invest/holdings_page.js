@@ -394,6 +394,8 @@ function renderLedgerTab(P, raw) {
     if (!st) { byId("rc-summary").textContent = "还没有起始持仓。"; return; }
     try {
       const b = Recon.ledgerBook(P, raw, st, trades, { cashInterest: HOLD_CFG.cashInterest });
+      // 与持仓页同样的完整推算（拆股、平均成本）存为缓存：全站成本价、持仓股数立刻按新账本显示
+      saveHoldings({ ...b.snapshot, sig: ledgerSig(localStorage.getItem(RECON_START_KEY), localStorage.getItem(TRADES_KEY)) });
       byId("rc-summary").innerHTML = `按当前账本推算：${b.rows.length} 个持仓，账户总值 ${money(b.account.total_value)}，现金 ${money(b.account.cash)}。<a href="#/holdings">查看持仓 →</a>${b.warnings.length ? `<br><span class="warn">${b.warnings.map(esc).join("；")}</span>` : ""}`;
     } catch (e) { byId("rc-summary").textContent = `推算失败：${e.message}`; }
   };
