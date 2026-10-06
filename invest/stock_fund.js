@@ -295,28 +295,33 @@ function valuationCard(s) {
     ${hints.length ? `<div class="warn-box">${hints.map((h) => `<p>💡 ${esc(h)}</p>`).join("")}</div>` : ""}
     <div class="grid three">${charts.join("")}</div>
     <div class="val-guide"><b>三个指标怎么看（各有适用场景）</b><ul>${VAL_GUIDE.map(([n, t]) => `<li><b>${n}</b>：${esc(t)}</li>`).join("")}</ul>
-      <p class="muted">另外：公司业务转型后（如英伟达从游戏显卡转向数据中心、西部数据分拆闪迪后），过去几年的估值区间可比性会变差。灰色带 = 自身历史 20%–80% 区间，虚线 = 中位数。</p></div>
+      <p class="muted">另外：公司业务转型后（如英伟达从游戏显卡转向数据中心、西部数据分拆闪迪后），过去几年的估值区间可比性会变差。三张图的时间范围跟随上方“价格走势”的区间按钮与缩放；灰色带 = 自身近 5 年 20%–80% 区间，虚线 = 近 5 年中位数（不随显示范围变化）。</p></div>
     ${v.margins?.periods?.length ? chartDiv("c-val-margin", "short") : empty("暂无利润率数据")}
     <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && v.pe.max > v.pe.median * 3 ? `；图表纵轴截断在中位数的 3 倍（历史最高 ${num(v.pe.max, 0)}，出现在盈利很低的时期）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率来自 SEC 财报（公司合计）。</p></section>`;
 }
-function drawValuation(s) {
+function drawValuation(s, k) {
   const v = s.valuation;
   if (!v) return;
+  const n = s.dates.length;
+  // 横轴 = 价格走势的日期（s.dates）：显示范围跟随 K 线的区间按钮 / 缩放；中位数与 20%–80% 区间仍按近 5 年计算
   const hist = (id, h, title, fmt, color, cap) => {
     if (!h || !byId(id)) return;
+    const at = Object.fromEntries(h.dates.map((d, i) => [d, h.values[i]]));
     const top = cap && h.max > h.median * 3 ? Math.ceil(h.median * 3) : null; // 早期极端值（盈利很低时）截断，避免压扁近期走势
-    mkChart(byId(id), { title: { text: title, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    const c = mkChart(byId(id), { title: { text: title, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
       tooltip: { trigger: "axis", valueFormatter: fmt }, legend: { show: false }, grid: { left: 48, right: 70, top: 30, bottom: 24 },
-      xAxis: { type: "category", data: h.dates, boundaryGap: false },
+      xAxis: { type: "category", data: s.dates, boundaryGap: false },
       yAxis: { type: "value", scale: true, max: top, axisLabel: { formatter: fmt } },
-      series: [{ name: title, type: "line", showSymbol: false, color, lineStyle: { width: 1.8 }, data: h.values,
+      dataZoom: [{ type: "inside", zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
+      series: [{ name: title, type: "line", showSymbol: false, connectNulls: true, color, lineStyle: { width: 1.8 }, data: s.dates.map((d) => at[d] ?? null),
         markArea: isNum(h.p20) ? { silent: true, itemStyle: { color: css("--chip"), opacity: 0.6 }, data: [[{ yAxis: h.p20 }, { yAxis: h.p80 }]] } : undefined,
         markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { color: css("--muted"), fontSize: 10, position: "end" },
-          data: [{ yAxis: h.median, label: { formatter: `中位 ${fmt(h.median)}` } }] } }] });
+          data: [{ yAxis: h.median, label: { formatter: `5 年中位 ${fmt(h.median)}` } }] } }] });
+    followKZoom(k, n, c);
   };
-  hist("c-val-pe", v.pe, `市盈率 P/E · 近 ${v.pe?.years || 5} 年`, (x) => num(x, 1), palette()[0], true);
-  hist("c-val-ps", v.ps_hist, `市销率 P/S · 近 ${v.ps_hist?.years || 5} 年`, (x) => num(x, 1), palette()[1], true);
-  hist("c-val-fcf", v.fcf_hist, `FCF 收益率 · 近 ${v.fcf_hist?.years || 5} 年`, (x) => pct(x, 1), palette()[2], false);
+  hist("c-val-pe", v.pe, "市盈率 P/E", (x) => num(x, 1), palette()[0], true);
+  hist("c-val-ps", v.ps_hist, "市销率 P/S", (x) => num(x, 1), palette()[1], true);
+  hist("c-val-fcf", v.fcf_hist, "FCF 收益率", (x) => pct(x, 1), palette()[2], false);
   const m = v.margins;
   if (m?.periods?.length && byId("c-val-margin")) {
     const labels = m.periods.map((d) => periodLabel(d, m.frequency));

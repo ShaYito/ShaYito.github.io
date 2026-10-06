@@ -41,6 +41,14 @@ function bindKPeriod(k, n) {
   k.on("datazoom", mark);
 }
 
+/* 让 chart 的显示范围跟随 K 线（同一组日期 s.dates 作横轴）；chart 自身不响应滚轮 / 拖动 */
+function followKZoom(k, n, chart) {
+  if (!k || !chart) return;
+  const sync = () => { const [a, b] = zoomRange(k, n); chart.dispatchAction({ type: "dataZoom", startValue: a, endValue: b }); };
+  k.on("datazoom", sync);
+  sync();
+}
+
 const REL_KEY = "invest.relstr.v1";
 function relPrefs() { try { return JSON.parse(localStorage.getItem(REL_KEY) || "{}") || {}; } catch { return {}; } }
 function saveRelPrefs(p) { try { localStorage.setItem(REL_KEY, JSON.stringify({ ...relPrefs(), ...p })); } catch { /* 忽略 */ } }
