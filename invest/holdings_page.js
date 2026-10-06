@@ -201,12 +201,10 @@ function renderPositionsTab(P, raw, book) {
       ${chartDiv("c-h-curve")}</section>
     <section class="card"><h3>持仓 ${badge("fact")}${badge("derived")}</h3>
       <div class="table-wrap"><table class="positions"><thead><tr id="h-pos-head"></tr></thead>
-      <tbody id="h-pos-body"></tbody><tbody>        <tr><td><b>现金</b> <span class="muted">SPAXX 等</span></td><td colspan="5"></td><td class="num">${money(a.cash)}</td><td></td><td></td><td></td><td class="num">${pct(a.cash / a.total_value, 1)}</td><td class="num">${signed(a.interest)}</td></tr>
+      <tbody id="h-pos-body"></tbody><tbody>        <tr><td><b>现金</b> <span class="muted">SPAXX 等</span></td><td colspan="5"></td><td class="num">${money(a.cash)}</td><td></td><td></td><td></td><td class="num">${pct(a.cash / a.total_value, 1)}</td><td class="num">${signed(a.interest)}</td><td class="num ${gainCls(a.interest)}" title="现金利息">${signed(a.interest)}</td></tr>
         <tr class="total"><td><b>合计</b></td><td></td><td class="num ${gainCls(a.day_pct)}">${pct(a.day_pct, 2, true)}</td>${td(a.day_change, signed)}<td></td><td></td>
-          <td class="num"><b>${money(a.total_value)}</b></td><td class="num">${money(a.cost_basis)}</td>${td(a.unrealized, signed)}<td></td><td></td>${td(a.realized + a.dividends + a.interest, signed)}</tr></tbody></table></div>
-      ${book.closed.length ? `<details class="howto"><summary>已清仓（${book.closed.length}）</summary><div class="table-wrap"><table><thead><tr><th>代码</th><th class="num">已实现盈亏</th><th class="num">分红</th><th class="num">费用</th><th class="num">合计</th></tr></thead><tbody>
-        ${book.closed.map((c) => `<tr><td><b>${esc(c.ticker)}</b> <span class="muted">${esc(name(c.ticker))}</span></td>${td(c.realized, signed)}<td class="num">${money(c.divs)}</td><td class="num">${money2(c.fees)}</td>${td(c.total_gain, signed)}</tr>`).join("")}</tbody></table></div></details>` : ""}
-      <p class="muted">今日涨跌按前一交易日收盘计；当天有交易的标的不计今日盈亏。<label><input type="checkbox" id="h-int" ${HOLD_CFG.cashInterest ? "checked" : ""}> 现金按短期国债利率计息（放在 SPAXX 等货币基金中）</label></p></section>
+          <td class="num"><b>${money(a.total_value)}</b></td><td class="num">${money(a.cost_basis)}</td>${td(a.unrealized, signed)}<td></td><td></td>${td(a.realized + a.dividends + a.interest, signed)}<td class="num" id="h-pos-total"></td></tr></tbody></table></div>
+      <p class="muted">“总盈亏”= 浮动盈亏 + 已实现盈亏 + 分红（从买入算起，已扣除交易费用）；合计含已清仓股票与现金利息${book.closed.length ? `（已清仓 ${book.closed.length} 只）` : ""}。今日涨跌按前一交易日收盘计；当天有交易的标的不计今日盈亏。${book.closed.length ? `<label><input type="checkbox" id="h-closed"> 显示已清仓</label>` : ""}<label><input type="checkbox" id="h-int" ${HOLD_CFG.cashInterest ? "checked" : ""}> 现金按短期国债利率计息（放在 SPAXX 等货币基金中）</label></p></section>
     <section class="card"><h3>配置 ${badge("derived")}</h3><div class="grid two"><div>${chartDiv("c-h-w")}</div><div>${chartDiv("c-h-theme")}</div></div></section>
     ${syncCard(book)}`;
   // 持仓表排序：点表头切换（同一列再点一次反向），只重排表格行；选择记在本机
@@ -214,11 +212,18 @@ function renderPositionsTab(P, raw, book) {
         <td class="num">${money2(r.price)}</td><td class="num ${gainCls(r.day_pct)}">${pct(r.day_pct, 2, true)}</td>${td(r.day_change, signed)}
         <td class="num">${shareFmt(r.shares)}</td><td class="num" ${r.est_cost ? `title="${esc(estCostNote(r))}"` : ""}>${r.est_cost ? "≈" : ""}${money2(r.avg_cost)}</td>
         <td class="num">${money(r.market_value)}</td><td class="num">${money(r.cost_basis)}</td>${td(r.unrealized, signed)}
-        <td class="num ${gainCls(r.unrealized_pct)}">${pct(r.unrealized_pct, 1, true)}</td><td class="num">${pct(r.weight, 1)}</td>${td(r.realized + r.divs, signed)}</tr>`;
+        <td class="num ${gainCls(r.unrealized_pct)}">${pct(r.unrealized_pct, 1, true)}</td><td class="num">${pct(r.weight, 1)}</td>${td(r.realized + r.divs, signed)}${td(r.total_gain, signed)}</tr>`;
   const POS_SORT_KEY = "invest.positions.sort";
   const POS_COLS = [["ticker", "代码", ""], ["price", "最新价", "num"], ["day_pct", "今日", "num"], ["day_change", "今日盈亏", "num"], ["shares", "股数", "num"],
     ["avg_cost", "平均成本", "num"], ["market_value", "市值", "num"], ["cost_basis", "成本总额", "num"], ["unrealized", "浮动盈亏", "num"], ["unrealized_pct", "浮动 %", "num"],
-    ["weight", "占比", "num"], ["realized_divs", "已实现 + 分红", "num", "已实现盈亏 + 收到的分红"]];
+    ["weight", "占比", "num"], ["realized_divs", "已实现 + 分红", "num", "已实现盈亏 + 收到的分红"],
+    ["total_gain", "总盈亏", "num", "浮动盈亏 + 已实现盈亏 + 分红（从买入算起，已扣除交易费用）"]];
+  // 已清仓：灰色行放在持仓之后（同样参与排序；没有的列显示“–”），可以隐藏
+  const CLOSED_KEY = "invest.positions.show_closed";
+  let showClosed = true;
+  try { showClosed = localStorage.getItem(CLOSED_KEY) !== "0"; } catch { /* 忽略 */ }
+  const closedRow = (c) => `<tr class="muted closed-row" title="已清仓"><td><a href="#/stock/${esc(c.ticker)}"><b>${esc(c.ticker)}</b></a> <span class="muted">${esc(name(c.ticker))} · 已清仓</span></td>
+        <td colspan="10" class="muted" style="text-align:center">已清仓 · 已实现 ${signed(c.realized)}${c.divs ? ` · 分红 ${money(c.divs)}` : ""}${c.fees ? ` · 费用 ${money2(c.fees)}` : ""}</td>${td(c.realized + c.divs, signed)}${td(c.total_gain, signed)}</tr>`;
   let psort = { k: "market_value", d: -1 };
   try { psort = { ...psort, ...JSON.parse(localStorage.getItem(POS_SORT_KEY) || "{}") }; } catch { /* 忽略 */ }
   const pval = (r, k) => (k === "realized_divs" ? r.realized + r.divs : r[k]);
@@ -231,7 +236,15 @@ function renderPositionsTab(P, raw, book) {
       if (!ok(x) || !ok(y)) return ok(x) ? -1 : ok(y) ? 1 : 0; // 缺值（如当天有交易的今日盈亏）在最后
       return (x - y) * psort.d || (b.market_value || 0) - (a.market_value || 0);
     });
-    byId("h-pos-body").innerHTML = sorted.map(posRow).join("");
+    const closed = [...book.closed].sort((a, b) => {
+      const x = psort.k === "ticker" ? a.ticker : pval(a, psort.k), y = psort.k === "ticker" ? b.ticker : pval(b, psort.k);
+      if (typeof x === "string") return x.localeCompare(y) * psort.d;
+      if (!isNum(x) || !isNum(y)) return isNum(x) ? -1 : isNum(y) ? 1 : a.ticker.localeCompare(b.ticker);
+      return (x - y) * psort.d;
+    });
+    byId("h-pos-body").innerHTML = sorted.map(posRow).join("") + (showClosed ? closed.map(closedRow).join("") : "");
+    const tg = rows.reduce((x, r) => x + (isNum(r.total_gain) ? r.total_gain : 0), 0) + book.closed.reduce((x, c) => x + c.total_gain, 0) + a.interest;
+    byId("h-pos-total").innerHTML = `<b class="${gainCls(tg)}">${signed(tg)}</b>`;
     byId("h-pos-head").querySelectorAll("[data-k]").forEach((th) => (th.onclick = () => {
       psort = psort.k === th.dataset.k ? { k: psort.k, d: -psort.d } : { k: th.dataset.k, d: th.dataset.k === "ticker" ? 1 : -1 };
       try { localStorage.setItem(POS_SORT_KEY, JSON.stringify(psort)); } catch { /* 忽略 */ }
@@ -239,6 +252,11 @@ function renderPositionsTab(P, raw, book) {
     }));
   };
   drawPos();
+  const hc = byId("h-closed");
+  if (hc) {
+    hc.checked = showClosed;
+    hc.onchange = () => { showClosed = hc.checked; try { localStorage.setItem(CLOSED_KEY, showClosed ? "1" : "0"); } catch { /* 忽略 */ } drawPos(); };
+  }
   byId("h-int").onchange = (e) => { try { localStorage.setItem("invest.hold.cash_interest", e.target.checked ? "1" : "0"); } catch { /* 忽略 */ } HOLD_CFG.cashInterest = e.target.checked; route(); };
   drawCurve(P, raw, book, "value", "ALL");
   document.querySelectorAll("#h-cm button, #h-cp button").forEach((b) => (b.onclick = () => {
