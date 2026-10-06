@@ -262,3 +262,9 @@ main:has(.stock-layout.with-nav), main:has(.stock-layout[data-no-secnav]) { max-
 }
 
 .chip.plan { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); border: 1px dashed var(--accent); }
+/* 个股页估值栏：针对该股的提示、三个指标的适用场景说明 */
+.warn-box { background: var(--warn-bg); border-radius: 8px; padding: 6px 12px; margin: 8px 0; }
+.warn-box p { margin: 4px 0; }
+.val-guide { background: var(--chip); border-radius: 8px; padding: 8px 14px; margin: 10px 0; font-size: 13.5px; }
+.val-guide ul { margin: 6px 0; padding-left: 18px; }
+.val-guide li { margin: 4px 0; line-height: 1.55; }

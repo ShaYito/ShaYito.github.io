@@ -242,6 +242,13 @@ function valuationInsights(s) {
     else out.push({ level: p >= 0.85 ? "medium" : p <= 0.15 ? "good" : "info", kind: "derived", target: "val-card",
       text: `市盈率 P/E ${num(v.pe.now, 1)}，处于自身近 ${v.pe.years} 年的第 ${Math.round(p * 100)} 百分位（中位数 ${num(v.pe.median, 0)}）${p >= 0.85 ? "：偏贵，对业绩失望更敏感" : p <= 0.15 ? "：处于历史低位" : ""}。` });
   }
+  if (v.ps_hist) {
+    const p = v.ps_hist.pct;
+    if (p >= 0.85 || p <= 0.15 || v.cyclical) out.push({ level: p >= 0.85 ? "medium" : p <= 0.15 ? "good" : "info", kind: "derived", target: "val-card",
+      text: `市销率 P/S ${num(v.ps_hist.now, 1)}，处于自身近 ${v.ps_hist.years} 年的第 ${Math.round(p * 100)} 百分位（中位数 ${num(v.ps_hist.median, 1)}）${v.cyclical ? "；周期股以 P/S 为准" : ""}。` });
+  }
+  if (v.fcf_hist && isNum(v.fcf_hist.capex_share) && v.fcf_hist.capex_share >= 0.5) out.push({ level: "info", kind: "derived", target: "val-card",
+    text: `FCF 收益率 ${pct(v.fcf_hist.now, 1)}（中位数 ${pct(v.fcf_hist.median, 1)}）：资本支出占经营现金流的 ${pct(v.fcf_hist.capex_share, 0)}，现金正大量投入未来，FCF 收益率偏低不等于变贵。` });
   const m = v.margins;
   if (m?.op_margin?.length >= 5) {
     const a = m.op_margin.at(-1), b = m.op_margin.at(m.frequency === "annual" ? -2 : -5);
@@ -251,34 +258,65 @@ function valuationInsights(s) {
   return out;
 }
 
+// 三个估值指标各自适用的场景（网页常驻说明）
+const VAL_GUIDE = [
+  ["市盈率 P/E", "适合盈利稳定的公司。周期股（存储芯片、半导体设备、硬盘）是反过来的：盈利低谷时 P/E 最高，往往正是底部；盈利高峰时 P/E 最低，往往接近顶部。亏损时没有意义。"],
+  ["市销率 P/S", "不受利润率波动影响，适合高增长、利润还不稳定的公司，也是周期股更可靠的估值尺子。但它忽略利润率变化：利润率大幅提高时，同样的 P/S 其实更便宜。"],
+  ["自由现金流收益率 FCF yield", "= 近 4 季（经营现金流 − 资本支出）÷ 市值，最贴近“这家公司每年实际能拿回多少现金”，适合成熟公司（如 AAPL、MSFT、COST）。越高越便宜。资本支出大的公司（如正在大建 AI 数据中心的 AMZN、ORCL）会骤降甚至为负——这本身是有用的信息（现金在投入未来），但不能简单理解为“变贵了”。"],
+];
+// 针对这只股票：该优先看哪个指标
+function valuationHints(v) {
+  const out = [];
+  if (v.cyclical) out.push("周期股：优先看 P/S 与 FCF 收益率；P/E 偏高未必贵（可能处于盈利低谷），偏低未必便宜（可能处于盈利高峰）。");
+  if (!v.pe && !(v.trailing_pe > 0)) out.push("近 4 季亏损或盈利很低：P/E 没有意义，看 P/S。");
+  const cs = v.fcf_hist?.capex_share;
+  if (isNum(cs) && cs >= 0.5) out.push(`资本支出占经营现金流的 ${pct(cs, 0)}：FCF 收益率被大量投资压低${v.fcf_hist.now < 0 ? "（目前为负）" : ""}，要结合投资回报判断，不能单看它“变贵”。`);
+  else if (v.fcf_hist && v.fcf_hist.now > 0 && !v.cyclical) out.push("现金流稳定、资本支出不高：FCF 收益率是这只股票最直接的估值尺子。");
+  return out;
+}
 function valuationCard(s) {
   const v = s.valuation;
   if (!v) return "";
   const kpi = (label, val, sub = "") => `<div class="kpi"><span class="muted">${label}</span><b>${val}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
+  const rank = (h) => (h ? `近 ${h.years} 年第 ${Math.round(h.pct * 100)} 百分位` : "");
+  const hints = valuationHints(v);
+  const charts = [v.pe ? chartDiv("c-val-pe", "short") : empty("暂无历史市盈率（亏损或数据不足）"),
+    v.ps_hist ? chartDiv("c-val-ps", "short") : empty(v.hist_note || "暂无 P/S 历史（外国公司只有年报且涉及外币 / ADR 口径，或 SEC 数据不足）"),
+    v.fcf_hist ? chartDiv("c-val-fcf", "short") : empty(v.ps_hist ? "暂无 FCF 收益率历史（缺少资本支出数据，银行等行业不适用）" : "暂无 FCF 收益率历史")];
   return `<section class="card" id="val-card"><h3>估值与利润率 ${badge("fact")}${badge("derived")}</h3>
-    <p class="muted">${rich("估值决定“同样的好消息还能涨多少”：市盈率处于自身历史高位时，市场已经预期了很多，稍有失望就容易大跌；处于低位时相反。利润率扩张意味着每一美元收入赚得更多，常常是盈利超预期的来源。")}</p>
+    <p class="muted">${rich("估值决定“同样的好消息还能涨多少”：处于自身历史高位时，市场已经预期了很多，稍有失望就容易大跌；处于低位时相反。估值对未来几周的涨跌几乎没有预测力，适合用来判断风险与控制仓位，而不是择时。利润率扩张意味着每一美元收入赚得更多，常常是盈利超预期的来源。")}</p>
     <div class="kpis">
-      ${kpi("市盈率 P/E", num(v.pe?.now ?? v.trailing_pe, 1), v.pe ? (v.pe.oneoff ? "⚠ 可能受一次性收益影响" : `近 ${v.pe.years} 年第 ${Math.round(v.pe.pct * 100)} 百分位`) : "")}
+      ${kpi("市盈率 P/E", num(v.pe?.now ?? v.trailing_pe, 1), v.pe ? (v.pe.oneoff ? "⚠ 可能受一次性收益影响" : rank(v.pe)) : "")}
       ${kpi("预期市盈率 Forward P/E", num(v.forward_pe, 1), "按未来 12 个月 EPS 预期")}
-      ${kpi("市销率 P/S", num(v.ps, 1), "按过去 12 个月收入")}
+      ${kpi("市销率 P/S", num(v.ps_hist?.now ?? v.ps, 1), v.ps_hist ? rank(v.ps_hist) : "按过去 12 个月收入")}
+      ${kpi("FCF 收益率", v.fcf_hist ? pct(v.fcf_hist.now, 1) : "–", v.fcf_hist ? `${rank(v.fcf_hist)}（越高越便宜）` : "")}
       ${kpi("PEG", num(v.peg, 2), "市盈率 ÷ 盈利增速；约 1 为合理")}
     </div>
-    <div class="grid two">${v.pe ? chartDiv("c-val-pe", "short") : empty("暂无历史市盈率（亏损或数据不足）")}${v.margins?.periods?.length ? chartDiv("c-val-margin", "short") : empty("暂无利润率数据")}</div>
-    <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && v.pe.max > v.pe.median * 3 ? `；图表纵轴截断在中位数的 3 倍（历史最高 ${num(v.pe.max, 0)}，出现在盈利很低的时期）` : ""}。利润率来自 SEC 财报（公司合计）。</p></section>`;
+    ${hints.length ? `<div class="warn-box">${hints.map((h) => `<p>💡 ${esc(h)}</p>`).join("")}</div>` : ""}
+    <div class="grid three">${charts.join("")}</div>
+    <div class="val-guide"><b>三个指标怎么看（各有适用场景）</b><ul>${VAL_GUIDE.map(([n, t]) => `<li><b>${n}</b>：${esc(t)}</li>`).join("")}</ul>
+      <p class="muted">另外：公司业务转型后（如英伟达从游戏显卡转向数据中心、西部数据分拆闪迪后），过去几年的估值区间可比性会变差。灰色带 = 自身历史 20%–80% 区间，虚线 = 中位数。</p></div>
+    ${v.margins?.periods?.length ? chartDiv("c-val-margin", "short") : empty("暂无利润率数据")}
+    <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && v.pe.max > v.pe.median * 3 ? `；图表纵轴截断在中位数的 3 倍（历史最高 ${num(v.pe.max, 0)}，出现在盈利很低的时期）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率来自 SEC 财报（公司合计）。</p></section>`;
 }
-
 function drawValuation(s) {
   const v = s.valuation;
   if (!v) return;
-  if (v.pe && byId("c-val-pe")) {
-    mkChart(byId("c-val-pe"), { title: { text: `市盈率 P/E · 近 ${v.pe.years} 年`, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
-      tooltip: { trigger: "axis", valueFormatter: (x) => num(x, 1) }, legend: { show: false }, grid: { left: 44, right: 60, top: 30, bottom: 24 },
-      xAxis: { type: "category", data: v.pe.dates, boundaryGap: false },
-      yAxis: { type: "value", scale: true, max: v.pe.max > v.pe.median * 3 ? Math.ceil(v.pe.median * 3) : null }, // 早期极端值（盈利很低时）截断，避免压扁近期走势
-      series: [{ name: "市盈率", type: "line", showSymbol: false, color: palette()[0], lineStyle: { width: 1.8 }, data: v.pe.values,
+  const hist = (id, h, title, fmt, color, cap) => {
+    if (!h || !byId(id)) return;
+    const top = cap && h.max > h.median * 3 ? Math.ceil(h.median * 3) : null; // 早期极端值（盈利很低时）截断，避免压扁近期走势
+    mkChart(byId(id), { title: { text: title, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+      tooltip: { trigger: "axis", valueFormatter: fmt }, legend: { show: false }, grid: { left: 48, right: 70, top: 30, bottom: 24 },
+      xAxis: { type: "category", data: h.dates, boundaryGap: false },
+      yAxis: { type: "value", scale: true, max: top, axisLabel: { formatter: fmt } },
+      series: [{ name: title, type: "line", showSymbol: false, color, lineStyle: { width: 1.8 }, data: h.values,
+        markArea: isNum(h.p20) ? { silent: true, itemStyle: { color: css("--chip"), opacity: 0.6 }, data: [[{ yAxis: h.p20 }, { yAxis: h.p80 }]] } : undefined,
         markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { color: css("--muted"), fontSize: 10, position: "end" },
-          data: [{ yAxis: v.pe.median, label: { formatter: `中位数 ${num(v.pe.median, 0)}` } }] } }] });
-  }
+          data: [{ yAxis: h.median, label: { formatter: `中位 ${fmt(h.median)}` } }] } }] });
+  };
+  hist("c-val-pe", v.pe, `市盈率 P/E · 近 ${v.pe?.years || 5} 年`, (x) => num(x, 1), palette()[0], true);
+  hist("c-val-ps", v.ps_hist, `市销率 P/S · 近 ${v.ps_hist?.years || 5} 年`, (x) => num(x, 1), palette()[1], true);
+  hist("c-val-fcf", v.fcf_hist, `FCF 收益率 · 近 ${v.fcf_hist?.years || 5} 年`, (x) => pct(x, 1), palette()[2], false);
   const m = v.margins;
   if (m?.periods?.length && byId("c-val-margin")) {
     const labels = m.periods.map((d) => periodLabel(d, m.frequency));
