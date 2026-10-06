@@ -1183,8 +1183,8 @@ PAGES.stock = async (r) => {
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""} · <a href="#/holdings?tab=buyplan&t=${t}">加入买入计划</a></span></h2>
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p>${priceModeToggle(s)}${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
-    ${relCard(t, s)}
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
+    ${relCard()}
     ${metricsCard(s)}${earningsCard(s)}${revisionsCard(s)}${targetsCard(s)}${valuationCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
     ${insiderCard(s, t)}
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
@@ -1212,12 +1212,13 @@ PAGES.stock = async (r) => {
   const closeOn = Object.fromEntries(s.dates.map((d, i) => [d, s.ohlc[i][1]]));
   const cost = myCost(t);
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];
-  drawRelStr(t, s).catch((e) => console.error(e));
+  const nK = s.dates.length;
   const k = mkChart(byId("c-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
-    grid: { left: 56, right: 20, top: 36, bottom: 60 },
+    grid: { ...K_GRID_X, top: 36, bottom: 60 },
     xAxis: { type: "category", data: s.dates, boundaryGap: true }, yAxis: yWithCost(cost),
-    dataZoom: [{ type: "inside", start: 40, end: 100 }, { type: "slider", start: 40, end: 100, height: 18, bottom: 10 }],
+    dataZoom: [{ type: "inside", startValue: kPeriodStart(nK, kPeriod()), endValue: nK - 1 },
+      { type: "slider", startValue: kPeriodStart(nK, kPeriod()), endValue: nK - 1, height: 18, bottom: 10 }],
     series: [
       { name: t, type: "candlestick", data: s.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") },
         markPoint: { label: { show: false },
@@ -1241,6 +1242,11 @@ PAGES.stock = async (r) => {
       { name: "MA200", type: "line", showSymbol: false, data: s.ma200, color: palette()[1], lineStyle: { width: 1.4 } },
     ],
   });
+  bindKPeriod(k, nK);
+  // 显示范围较长（> 约 1.2 年）时财报竖线不显示文字，避免挤在一起
+  const earnLabels = () => { const [a, b] = zoomRange(k, nK); k?.setOption({ series: [{ markLine: { label: { show: b - a <= 300 } } }] }); };
+  if (k) { earnLabels(); k.on("datazoom", earnLabels); }
+  drawRelStr(t, s, k).catch((e) => console.error(e));
   k?.on("click", (p) => {
     if (p.componentType !== "markPoint") return;
     if (p.data.kind === "turning") { byId("tp-detail").innerHTML = turningDetail(s.turning[p.data.idx], s.benchmark); byId("tp-card").scrollIntoView({ block: "nearest" }); return; }
