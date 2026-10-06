@@ -600,7 +600,7 @@ function matrixInsights(m, h, rows, date) {
 }
 
 // ---------------- 3. 新闻与产业链 ----------------
-const NEWS_SRC_ZH = { google_news: "Google News", finnhub: "Finnhub", alpha_vantage: "Alpha Vantage", yahoo: "Yahoo Finance" };
+const NEWS_SRC_ZH = { google_news: "Google News", finnhub: "Finnhub", alpha_vantage: "Alpha Vantage", yahoo: "Yahoo Finance", sec_edgar: "SEC 公告（8-K / 6-K）" };
 /* 所选范围内各新闻源的抓取条数（每日存档 stats.sources 合计）与筛选漏斗；某来源合计为 0 时标出 */
 function newsSourceLine(recs) {
   const live = recs.filter((r) => r.stats?.sources);
