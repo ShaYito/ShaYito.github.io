@@ -600,6 +600,20 @@ function matrixInsights(m, h, rows, date) {
 }
 
 // ---------------- 3. 新闻与产业链 ----------------
+const NEWS_SRC_ZH = { google_news: "Google News", finnhub: "Finnhub", alpha_vantage: "Alpha Vantage", yahoo: "Yahoo Finance" };
+/* 所选范围内各新闻源的抓取条数（每日存档 stats.sources 合计）与筛选漏斗；某来源合计为 0 时标出 */
+function newsSourceLine(recs) {
+  const live = recs.filter((r) => r.stats?.sources);
+  if (!live.length) return "";
+  const tot = {}, funnel = { fetched: 0, unique: 0, relevant: 0, analyzed: 0 };
+  for (const r of live) {
+    for (const [k, v] of Object.entries(r.stats.sources)) tot[k] = (tot[k] || 0) + (v || 0);
+    for (const k of Object.keys(funnel)) funnel[k] += r.stats[k] || 0;
+  }
+  const parts = Object.entries(tot).sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${esc(NEWS_SRC_ZH[k] || k)} ${v.toLocaleString()}${v === 0 ? ' <span class="warn" title="这段时间没有抓到新闻：接口可能已失效或被限流">⚠</span>' : ""}`);
+  return `<p class="muted">新闻源（抓取条数${live.length > 1 ? `，${live.length} 天合计` : ""}）：${parts.join(" · ")}。去重后 ${funnel.unique.toLocaleString()} → 与选股池相关 ${funnel.relevant.toLocaleString()} → 进入分析 ${funnel.analyzed.toLocaleString()}（每只股票 / 每个主题取相关度最高、最新的若干条）。</p>`;
+}
 PAGES.news = async (r) => {
   const idx = await load("news/index.json");
   const days = idx.days;
@@ -639,6 +653,7 @@ PAGES.news = async (r) => {
       <label>范围 <select id="n-range"><optgroup label="按周">${weekOpts}</optgroup><optgroup label="按天（最近 21 天）">${dayOpts}</optgroup></select></label>
       <label>股票 <select id="n-ticker">${tickOpts}</select></label>
       <span class="muted">深度事件 ${events.length} · 其他要闻 ${briefs.length} · 相关报道 ${articles.length}</span></div>
+      ${newsSourceLine(recs)}
       <p class="muted">历史回补的新闻：情绪由 FinBERT 判断；每周仅对最重要的 2–3 个事件做 LLM 深度分析。</p></section>
     ${howto(NEWS_HOWTO)}${insightBox(newsInsights(events))}
     ${personalNewsCard(personalNews(pickDays.map((d) => d.date)).filter((n) => !ticker || (n.lines || []).some((l) => l.startsWith(ticker))))}
@@ -647,7 +662,7 @@ PAGES.news = async (r) => {
       <section class="card"><h3>深度分析（点击事件，在右侧产业链图中查看传导）${badge("fact")}${badge("model")}</h3>
       <p class="muted">每个事件中“关键事实”来自新闻原文（附链接）；“直接影响”“产业链传导”“对组合的含义”是 AI 推断。</p>${events.map(eventCard).join("") || empty("该范围内没有深度分析事件")}</section>
       <div>${graphCard()}${card("其他要闻", briefs.slice(0, 40).map((b) => `<p>• <span class="chip">${esc(b.date.slice(5))}</span>${esc((b.tickers || []).join("/") || "行业")}：${esc(b.text)} <span class="src">${srcLinks(b.sources, 1)}</span></p>`).join("") || empty("无"))}
-      ${card(`相关报道（${Math.min(articles.length, 80)} / ${articles.length}）`, `<div class="table-wrap"><table><tbody>${articles.slice(0, 80).map((a) => `<tr><td class="num ${cls(a.sentiment)}">${num(a.sentiment, 2, true)}</td><td class="wrap"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a> <span class="muted">${esc(a.publisher || "")} · ${esc((a.published || "").slice(5, 16).replace("T", " "))}</span></td></tr>`).join("")}</tbody></table></div>`)}</div>
+      ${card(`相关报道（${Math.min(articles.length, 80)} / ${articles.length}）`, `<div class="table-wrap"><table><tbody>${articles.slice(0, 80).map((a) => `<tr><td class="num ${cls(a.sentiment)}">${num(a.sentiment, 2, true)}</td><td class="wrap"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a> <span class="muted">${esc(a.publisher || "")}${a.source ? ` · 经 ${esc(NEWS_SRC_ZH[a.source] || a.source)}` : ""} · ${esc((a.published || "").slice(5, 16).replace("T", " "))}</span></td></tr>`).join("")}</tbody></table></div>`)}</div>
     </div>`;
   byId("n-range").onchange = (e) => { const [k, v] = e.target.value.split(":"); location.hash = `#/news?${k === "w" ? "week" : "date"}=${v}${ticker ? `&ticker=${ticker}` : ""}`; };
   byId("n-ticker").onchange = (e) => { location.hash = `#/news?${week ? `week=${week}` : `date=${r.query.date}`}${e.target.value ? `&ticker=${e.target.value}` : ""}`; };
