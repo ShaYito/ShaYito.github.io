@@ -204,7 +204,7 @@ function restoreSidebarScroll() {
   if (SIDE_SCROLL) { el.scrollTop = SIDE_SCROLL.top; el.scrollLeft = SIDE_SCROLL.left; }
   else el.querySelector("a.on")?.scrollIntoView({ block: "nearest", inline: "center" }); // 首次进入：滚到当前股票
 }
-// 右侧栏目导航：扫描 .stock-main 中的卡片标题，生成可点击跳转、随滚动高亮的目录（个股 / ETF / 多股对比）
+// 右侧栏目导航：扫描 .stock-main 中的卡片标题，生成可点击跳转、随滚动高亮的目录（个股 / ETF；多股对比不显示）
 let SEC_SCROLL = null;
 function buildSectionNav() {
   if (SEC_SCROLL) window.removeEventListener("scroll", SEC_SCROLL);
@@ -228,7 +228,8 @@ function buildSectionNav() {
     if (!el.id) el.id = `sec-${i}`;
     items.push({ id: el.id, text, group: el.matches("h3.section-title") && !el.dataset.nav });
   });
-  if (items.filter((x) => !x.group).length < 4) { layout.classList.remove("with-nav"); return; }
+  // 栏目少于 4 个、或页面标了 data-no-secnav（如多股对比）时不显示
+  if (layout.hasAttribute("data-no-secnav") || items.filter((x) => !x.group).length < 4) { layout.classList.remove("with-nav"); return; }
   layout.classList.add("with-nav");
   layout.querySelector(".sec-nav")?.remove();
   const nav = document.createElement("nav");

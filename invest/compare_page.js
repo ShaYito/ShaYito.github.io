@@ -129,7 +129,7 @@ PAGES.compare = async (r) => {
     ? `<section class="card">${empty("在左侧勾选至少 2 只（最多 8 只），或点上方的快捷按钮。")}</section>`
     : cmpBody(st, raw, sel, i0, end, color, myW);
   app().innerHTML = `
-    <div class="stock-layout">${compareSidebar(sel)}<div class="stock-main">
+    <div class="stock-layout" data-no-secnav>${compareSidebar(sel)}<div class="stock-main">
     <h2>多股对比 <span class="muted">已选 ${sel.length} / ${CMP_MAX} · 价格截至 ${esc(dates[end])}</span></h2>
     <section class="card"><div class="row"><span class="muted">快捷选择</span>${presets.map(([n, ts], i) => `<button type="button" class="ghost cmp-preset" data-i="${i}" title="${esc(ts.join("、"))}">${esc(n)}${ts.length > CMP_MAX ? `（前 ${CMP_MAX}）` : ""}</button>`).join("")}
       ${sel.length ? `<button type="button" class="ghost" id="cmp-clear">清空</button>` : ""}</div>
