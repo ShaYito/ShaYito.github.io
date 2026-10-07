@@ -326,6 +326,9 @@ async function cmpCycle(sel, color) {
   const rank = { strong: 0, medium: 1, weak: 2 };
   // 全部股票：已选的在前，其余按 强 → 中 → 弱、收入跌幅从大到小
   const order = Object.keys(R).sort((a, b) => (sel.includes(b) - sel.includes(a)) || rank[R[a].tier] - rank[R[b].tier] || (R[a].revenue_dd ?? 0) - (R[b].revenue_dd ?? 0));
+  // 能画在地图上的（收入跌幅与利润率波动都有）/ 不能画的
+  const pts = Object.entries(R).filter(([, r]) => isNum(r.revenue_dd) && isNum(r.margin_range));
+  const off = Object.entries(R).filter(([, r]) => !(isNum(r.revenue_dd) && isNum(r.margin_range))).map(([t]) => t);
   host.innerHTML = `<p class="muted">${rich("用 2015 年以来的财报衡量盈利随行业周期大起大落的程度（只描述过去，不预测未来）。周期性越强，P/E 越容易误导：盈利高峰时 P/E 最低、低谷时最高，这类股票更适合用 P/S 与自由现金流收益率估值。")}</p>
     <div class="grid two">${chartDiv("c-cyc-map")}${chartDiv("c-cyc-yoy")}</div>
     ${off.length ? `<p class="muted">未在地图上（缺少收入跌幅或利润率波动，原因见下表“依据 / 说明”）：${off.map(esc).join("、")}；分档按其余可用指标判断。</p>` : ""}
@@ -338,8 +341,6 @@ async function cmpCycle(sel, color) {
         <td class="wrap muted">${esc([r.override || (r.reasons || []).join("；") || "各项都低于“中等”阈值", ...(r.notes || [])].join("。"))}</td></tr>`; }).join("") || `<tr><td colspan="6" class="muted">暂无数据</td></tr>`}</tbody></table></div>
     <p class="muted">分档规则：任一指标达到“强周期”阈值（收入跌 ≥ ${f0(-cy.strong.revenue_dd)} 或利润率波动 ≥ ${pp(cy.strong.margin_range)}）为强周期；否则任一达到“中等”阈值（收入跌 ≥ ${f0(-cy.medium.revenue_dd)}、EPS 跌 ≥ ${f0(-cy.medium.eps_dd)}、利润率波动 ≥ ${pp(cy.medium.margin_range)}）为中等。量化指标分不清行业周期与结构性衰退、一次性事件、会计口径（如 INTC 份额流失、AMZN 2022 年投资亏损），这些人工注明。外国公司没有美元口径的 SEC 季度收入，只按 EPS 判断。</p>`;
   // 周期性地图：全部股票；已选的加粗并标注
-  const pts = Object.entries(R).filter(([, r]) => isNum(r.revenue_dd) && isNum(r.margin_range));
-  const off = Object.entries(R).filter(([, r]) => !(isNum(r.revenue_dd) && isNum(r.margin_range))).map(([t]) => t);
   mkChart(byId("c-cyc-map"), { title: { text: "周期性地图（右上 = 周期性强）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
     tooltip: { formatter: (p) => { const r = R[p.data.t]; return `<b>${esc(p.data.t)}</b> · ${CYC_ZH[r.tier]}<br>收入最大跌幅 ${f0(r.revenue_dd)}<br>EPS 最大跌幅 ${f0(r.eps_dd)}<br>利润率波动 ${pp(r.margin_range)}`; } },
     grid: { left: 48, right: 20, top: 34, bottom: 40 },
