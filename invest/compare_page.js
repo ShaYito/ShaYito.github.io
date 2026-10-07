@@ -322,35 +322,41 @@ async function cmpCycle(sel, color) {
   if (!host) return;
   if (!cy?.rows) { host.innerHTML = empty("暂无周期性数据"); return; }
   const R = cy.rows, f0 = (x) => (isNum(x) ? `${(x * 100).toFixed(0)}%` : "–"), pp = (x) => (isNum(x) ? `${(x * 100).toFixed(0)} 个百分点` : "–");
+  const r2 = (x) => (isNum(x) ? `${x > 0 ? "+" : ""}${num(x, 2)}` : "–");
   const tierColor = { strong: css("--neg"), medium: palette()[1], weak: palette()[2] };
   const rank = { strong: 0, medium: 1, weak: 2 };
-  // 全部股票：已选的在前，其余按 强 → 中 → 弱、收入跌幅从大到小
-  const order = Object.keys(R).sort((a, b) => (sel.includes(b) - sel.includes(a)) || rank[R[a].tier] - rank[R[b].tier] || (R[a].revenue_dd ?? 0) - (R[b].revenue_dd ?? 0));
-  // 能画在地图上的（收入跌幅与利润率波动都有）/ 不能画的
-  const pts = Object.entries(R).filter(([, r]) => isNum(r.revenue_dd) && isNum(r.margin_range));
-  const off = Object.entries(R).filter(([, r]) => !(isNum(r.revenue_dd) && isNum(r.margin_range))).map(([t]) => t);
-  host.innerHTML = `<p class="muted">${rich("用 2015 年以来的财报衡量盈利随行业周期大起大落的程度（只描述过去，不预测未来）。周期性越强，P/E 越容易误导：盈利高峰时 P/E 最低、低谷时最高，这类股票更适合用 P/S 与自由现金流收益率估值。")}</p>
+  // 全部股票：已选的在前，其余按 强 → 中 → 弱、波动幅度从大到小
+  const order = Object.keys(R).sort((a, b) => (sel.includes(b) - sel.includes(a)) || rank[R[a].tier] - rank[R[b].tier] || (R[b].amplitude ?? 0) - (R[a].amplitude ?? 0));
+  // 能画在地图上的（周期敏感度与波动幅度都有）/ 不能画的
+  const pts = Object.entries(R).filter(([, r]) => isNum(r.sensitivity) && isNum(r.amplitude));
+  const off = Object.entries(R).filter(([, r]) => !(isNum(r.sensitivity) && isNum(r.amplitude))).map(([t]) => t);
+  const S = cy.strong, M = cy.medium;
+  host.innerHTML = `<p class="muted">${rich("周期股 = 盈利随一个共同的行业周期大起大落。这里从两个维度衡量（只描述 2015 年以来的历史，不预测未来）：横轴“周期敏感度”回答“是不是跟着行业周期走”，纵轴“波动幅度”回答“起落有多猛”。周期性越强，P/E 越容易误导：盈利高峰时 P/E 最低、低谷时最高，这类股票更适合用 P/S 与自由现金流收益率估值。")}</p>
     <div class="grid two">${chartDiv("c-cyc-map")}${chartDiv("c-cyc-yoy")}</div>
-    ${off.length ? `<p class="muted">未在地图上（缺少收入跌幅或利润率波动，原因见下表“依据 / 说明”）：${off.map(esc).join("、")}；分档按其余可用指标判断。</p>` : ""}
-    <p class="muted">左图：每个点是选股池中的一只股票（按分档着色：红 = 强周期、橙 = 中等、绿 = 弱；已选的放大并用对比颜色；标签重叠时自动隐藏，悬停可看）；收入最大跌幅为 0% 表示 2015 年以来近 4 季收入从未下降（一路增长，如 AMZN、COST、NFLX）；收入历史不足 5 年或数据中断的记为“数据不足”，不当作 0%。利润率波动带 * 的用净利率替代（SEC 数据中没有营业利润）。右图：收入同比增速大起大落、反复穿过 0 的，就是典型的周期。</p>
-    <div class="table-wrap"><table><thead><tr><th>股票</th><th>分档</th><th class="num" title="近 4 季收入从高点的最大跌幅（SEC 季度数据）">收入最大跌幅</th><th class="num" title="近 4 季 EPS 之和从高点的最大跌幅；转为亏损时可超过 −100%">EPS 最大跌幅</th><th class="num" title="近 5 年季度营业利润率的 P90 − P10">利润率波动</th><th>依据 / 说明</th></tr></thead><tbody>
+    ${off.length ? `<p class="muted">未在地图上（缺少周期敏感度或波动幅度，原因见下表“依据 / 说明”）：${off.map(esc).join("、")}；分档按其余可用指标判断。</p>` : ""}
+    <p class="muted">左图：横轴 = 公司近 4 季收入同比增速与“行业周期”同比增速的相关系数（半导体 / AI 基础设施用选股池同行、排除自身的收入同比中位数；其他公司用美国工业生产指数）；纵轴 = 波动幅度（收入从高点最大跌幅、利润率 P90−P10 波动、EPS 最大跌幅三项的平均）；点越大 = 2015 年以来收入同比转负的次数越多（反复下行 = 周期，一次 = 可能是一次性事件）。颜色：红 = 强周期、橙 = 中等、绿 = 弱；已选的放大并用对比颜色。虚线框 = 强周期区。
+    右图：收入同比增速大起大落、反复穿过 0 的，就是典型的周期。</p>
+    <div class="table-wrap"><table><thead><tr><th>股票</th><th>分档</th><th class="num" title="与行业周期的相关系数（参照见说明）">周期敏感度</th><th class="num" title="三项平均：收入跌幅、利润率波动、EPS 跌幅（截断在 100%）">波动幅度</th><th class="num" title="2015 年以来收入同比转负的次数">下行次数</th>
+      <th class="num" title="近 4 季收入从高点的最大跌幅（SEC 季度数据）">收入最大跌幅</th><th class="num" title="近 4 季 EPS 之和从高点的最大跌幅；转为亏损时可超过 −100%">EPS 最大跌幅</th><th class="num" title="近 5 年季度营业利润率的 P90 − P10">利润率波动</th><th>依据 / 说明</th></tr></thead><tbody>
       ${order.map((t) => { const r = R[t]; return `<tr class="${sel.includes(t) ? "sel" : ""}"><td class="nowrap"><span class="dot" style="background:${color[t] || tierColor[r.tier]}"></span><a href="#/stock/${esc(t)}"><b>${esc(t)}</b></a> <span class="muted">${esc(META.names_zh?.[t] || "")}</span></td>
-        <td><span class="chip ${r.tier === "strong" ? "warnchip" : ""}">${CYC_ZH[r.tier]}</span>${r.tier_data && r.tier_data !== r.tier ? ` <span class="muted">（数据：${CYC_ZH[r.tier_data]}）</span>` : ""}</td>
+        <td class="nowrap"><span class="chip ${r.tier === "strong" ? "warnchip" : ""}">${CYC_ZH[r.tier]}</span>${r.tier_data && r.tier_data !== r.tier ? ` <span class="muted">（数据：${CYC_ZH[r.tier_data]}）</span>` : ""}</td>
+        <td class="num" title="${esc(r.ref ? `参照：${r.ref}；${r.sens_n} 个季度` : "")}">${r2(r.sensitivity)}</td><td class="num">${f0(r.amplitude)}</td><td class="num">${r.downturns ?? "–"}</td>
         <td class="num">${isNum(r.revenue_dd) ? f0(r.revenue_dd) : '<span class="muted" title="见右侧说明">数据不足</span>'}</td><td class="num">${f0(r.eps_dd)}</td>
         <td class="num">${pp(r.margin_range)}${isNum(r.margin_range) && r.margin_basis === "净利率" ? '<sup title="用净利率替代营业利润率">*</sup>' : ""}</td>
-        <td class="wrap muted">${esc([r.override || (r.reasons || []).join("；") || "各项都低于“中等”阈值", ...(r.notes || [])].join("。"))}</td></tr>`; }).join("") || `<tr><td colspan="6" class="muted">暂无数据</td></tr>`}</tbody></table></div>
-    <p class="muted">分档规则：任一指标达到“强周期”阈值（收入跌 ≥ ${f0(-cy.strong.revenue_dd)} 或利润率波动 ≥ ${pp(cy.strong.margin_range)}）为强周期；否则任一达到“中等”阈值（收入跌 ≥ ${f0(-cy.medium.revenue_dd)}、EPS 跌 ≥ ${f0(-cy.medium.eps_dd)}、利润率波动 ≥ ${pp(cy.medium.margin_range)}）为中等。量化指标分不清行业周期与结构性衰退、一次性事件、会计口径（如 INTC 份额流失、AMZN 2022 年投资亏损），这些人工注明。外国公司没有美元口径的 SEC 季度收入，只按 EPS 判断。</p>`;
-  // 周期性地图：全部股票；已选的加粗并标注
+        <td class="wrap muted">${esc([r.override || (r.reasons || []).join("；") || "波动幅度低于“中等”门槛", ...(r.notes || [])].join("。"))}</td></tr>`; }).join("") || `<tr><td colspan="9" class="muted">暂无数据</td></tr>`}</tbody></table></div>
+    <p class="muted">分档规则：强周期 = 波动幅度 ≥ ${f0(S.amplitude)} 且与行业周期相关 ≥ ${num(S.sensitivity, 1)}（算不出相关性时要求利润率波动本身 ≥ ${f0(S.amplitude)}）；中等 = 波动幅度 ≥ ${f0(M.amplitude)}，或波动幅度 ≥ ${f0(M.amplitude_if_sensitive)} 且相关 ≥ ${num(M.sensitivity, 1)}；其余为弱。波动大但与行业周期相关性低的（如英特尔份额流失）只算中等——更可能是自身原因而非周期。收入最大跌幅为 0% 表示 2015 年以来近 4 季收入从未下降；收入历史不足 5 年或数据中断的记为“数据不足”。一次性事件、会计口径（如 AMZN 2022 年投资亏损）人工注明。利润率波动带 * 的用净利率替代。外国公司没有美元口径的 SEC 季度收入，只按 EPS 判断幅度。</p>`;
   mkChart(byId("c-cyc-map"), { title: { text: "周期性地图（右上 = 周期性强）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
-    tooltip: { formatter: (p) => { const r = R[p.data.t]; return `<b>${esc(p.data.t)}</b> · ${CYC_ZH[r.tier]}<br>收入最大跌幅 ${f0(r.revenue_dd)}<br>EPS 最大跌幅 ${f0(r.eps_dd)}<br>利润率波动 ${pp(r.margin_range)}`; } },
+    tooltip: { formatter: (p) => { const r = R[p.data.t]; return `<b>${esc(p.data.t)}</b> · ${CYC_ZH[r.tier]}<br>周期敏感度 ${r2(r.sensitivity)}（${esc(r.ref)}）<br>波动幅度 ${f0(r.amplitude)} · 下行 ${r.downturns ?? "–"} 次<br>收入最大跌幅 ${f0(r.revenue_dd)} · EPS 最大跌幅 ${f0(r.eps_dd)}<br>利润率波动 ${pp(r.margin_range)}`; } },
     grid: { left: 48, right: 20, top: 34, bottom: 40 },
-    xAxis: { type: "value", name: "收入从高点最大跌幅", nameLocation: "middle", nameGap: 26, axisLabel: { formatter: (x) => `${x}%` } },
-    yAxis: { type: "value", name: "利润率波动（百分点）", nameLocation: "middle", nameGap: 34 },
+    xAxis: { type: "value", name: "周期敏感度（与行业周期的相关系数）", nameLocation: "middle", nameGap: 26, min: -0.5, max: 1 },
+    yAxis: { type: "value", name: "波动幅度", nameLocation: "middle", nameGap: 34, min: 0, axisLabel: { formatter: (x) => `${x}%` } },
     series: [{ type: "scatter", data: pts.map(([t, r]) => { const on = sel.includes(t);
-      return { t, value: [Math.round(-r.revenue_dd * 100), Math.round(r.margin_range * 100)], symbolSize: on ? 14 : 8,
-        itemStyle: { color: on ? color[t] : tierColor[r.tier], opacity: on ? 1 : 0.45, borderColor: on ? css("--ink") : "transparent" },
+      return { t, value: [r.sensitivity, Math.round(r.amplitude * 100)], symbolSize: (on ? 10 : 7) + 3 * (r.downturns || 0),
+        itemStyle: { color: on ? color[t] : tierColor[r.tier], opacity: on ? 1 : 0.55, borderColor: on ? css("--ink") : "transparent" },
         label: { show: true, formatter: t, position: "right", fontSize: on ? 12 : 10, color: on ? css("--ink") : css("--muted"), fontWeight: on ? 600 : 400 } }; }),
-      labelLayout: { hideOverlap: true } }] });
+      labelLayout: { hideOverlap: true },
+      markArea: { silent: true, itemStyle: { color: "transparent", borderColor: css("--neg"), borderType: "dashed", borderWidth: 1 },
+        data: [[{ xAxis: S.sensitivity, yAxis: S.amplitude * 100 }, { xAxis: 1, yAxis: "max" }]] } }] });
   // 收入同比增速（近 4 季合计）：周期股呈大幅起伏的波浪
   const yoy = (rows) => rows.map(([d, v], i) => { const j = rows.findIndex(([d0]) => Math.abs((Date.parse(d) - Date.parse(d0)) / 864e5 - 365) <= 20); return j >= 0 && j < i && rows[j][1] > 0 ? [d, +((v / rows[j][1] - 1) * 100).toFixed(1)] : null; }).filter(Boolean);
   // 没有选择时默认显示强周期股，便于对照
