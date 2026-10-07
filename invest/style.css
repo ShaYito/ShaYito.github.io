@@ -280,3 +280,11 @@ main:has(.stock-layout.with-nav), main:has(.stock-layout[data-no-secnav]) { max-
 .cand-table .cand-bar { margin-left: 0; width: 100%; max-width: 110px; }
 .cand-quick { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 button.sm { padding: 2px 8px; font-size: 12px; }
+.cand-weights { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin: 10px 0; padding: 8px 12px; background: var(--chip); border-radius: 8px; }
+.cand-w { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.cand-w input[type=range] { width: 110px; }
+.cand-w b { min-width: 58px; font-weight: 600; font-size: 12px; }
+.cand-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.cand-dot.seg-etf { background: #5b8def; } .cand-dot.seg-filings { background: #2fa37a; } .cand-dot.seg-text { background: #e0a43a; } .cand-dot.seg-relations { background: #c564b5; }
+.cand-method td { white-space: normal; vertical-align: top; font-size: 13px; line-height: 1.5; }
+.cand-table tr.uni-row td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
