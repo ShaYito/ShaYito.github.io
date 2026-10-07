@@ -29,7 +29,12 @@ async function drawCandidates() {
       <td class="num">${capFmt(r.market_cap)}</td><td class="num"><b>${num(r.score, 0)}</b>${bar(r)}</td>
       <td class="wrap">${Object.keys(r.etfs).map((e) => `<span class="chip" title="权重 ${pct(r.etfs[e], 2)}">${esc(e)}</span>`).join("")} ${Object.keys(r.queries).length ? `<span class="muted">检索命中 ${Object.keys(r.queries).length} 词 / ${Object.values(r.queries).reduce((x, y) => x + y, 0)} 份文件</span>` : ""}
         ${a ? `<br><span class="muted">年报 AI 词密度 ${num(a.ai_density, 1)}/万词 · 点名</span> ${named(a) || '<span class="muted">无</span>'}` : '<br><span class="muted">未取到年报</span>'}</td>
-      <td class="nowrap">${st !== "pending" ? `<span class="chip ${st === "add" ? "on" : ""}">${CAND_REVIEW_ZH[st] || st}</span>` : ""}</td></tr>
+      <td>${st !== "pending" ? `<span class="chip ${st === "add" ? "on" : ""}">${CAND_REVIEW_ZH[st] || st}</span>` : ""}
+        ${r.in_universe ? "" : `<div class="cand-act cand-quick" data-t="${esc(r.ticker)}">
+          ${st !== "watch" ? '<button type="button" class="ghost sm" data-act="watch">关注</button>' : ""}
+          ${st !== "ignore" ? '<button type="button" class="ghost sm" data-act="ignore">忽略</button>' : ""}
+          ${st !== "pending" ? '<button type="button" class="ghost sm" data-act="reset">撤销</button>' : ""}
+          <button type="button" class="ghost sm cand-open" title="展开下方，选择主题并填写中文名">加入选股池…</button></div>`}</td></tr>
       <tr class="cand-detail"><td></td><td colspan="5"><details><summary>证据与审核</summary>
         ${a ? `<p class="muted">最新年报：<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.form)}（${esc(a.date)}）</a>；点名次数：${esc(Object.entries(a.named || {}).map(([t, n]) => `${t} ${n}`).join("、") || "无")}（可能是客户、供应商、合作方，也可能是竞争对手，见摘录）</p>
           ${a.snippets?.length ? `<ul class="cand-snip">${a.snippets.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}` : ""}
@@ -47,12 +52,19 @@ async function drawCandidates() {
     <p class="muted">${rich(`从公开数据中找出选股池以外、与 AI 相关的美国上市公司（含 ADR），每周日更新；只列证据，不判断投资价值，加入关注 / 选股池由你审核。来源：${d.sources.etfs.map((e) => `${e.ticker}（${e.name}，${e.holdings} 只）`).join("、")} 的持仓，以及 SEC 全文检索（近 15 个月年报 / 季报中提到 ${Object.keys(d.sources.sec_queries).map((q) => `“${q}”`).join("、")} 的公司）。门槛：市值 ≥ ${capFmt(d.thresholds.min_market_cap)} 美元、近 3 个月日均成交额 ≥ ${num(d.thresholds.min_dollar_volume / 1e6, 0)} 百万美元。`)}</p>
     <p class="muted">得分（0–100）由四类证据各占 ${d.weights.etf} 分：${Object.values(CAND_COMP).join("、")}（色条从左到右依次对应）。局限：偏向在申报文件里大量谈论 AI 基础设施、数据中心的公司；以软件为主的 AI 公司（如 Palantir）信号较弱、得分偏低；“点名”的公司可能是客户、供应商，也可能是竞争对手；比特币矿商转型 AI 数据中心的也会出现。加入选股池后会参与系统模型的训练与回测，但它“被挑中”本身带有事后选择偏差，建议先关注观察一段时间。</p>
     <div class="row"><div class="seg" id="cand-f">${seg.map(([k, n]) => `<button type="button" data-v="${k}" class="${CAND_STATE.filter === k ? "on" : ""}">${n}${k !== "all" ? `（${counts[k] || 0}）` : ""}</button>`).join("")}</div></div>
-    <div class="table-wrap"><table class="cand-table"><colgroup><col style="width:4%"><col style="width:25%"><col style="width:10%"><col style="width:11%"><col style="width:40%"><col style="width:10%"></colgroup><thead><tr><th class="num">#</th><th>公司</th><th class="num">市值（美元）</th><th class="num">得分</th><th>证据</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="cand-table"><colgroup><col style="width:4%"><col style="width:23%"><col style="width:9%"><col style="width:10%"><col style="width:38%"><col style="width:16%"></colgroup><thead><tr><th class="num">#</th><th>公司</th><th class="num">市值（美元）</th><th class="num">得分</th><th>证据</th><th>审核</th></tr></thead>
       <tbody>${shown.map(row).join("") || `<tr><td colspan="6" class="muted">没有符合条件的候选</td></tr>`}</tbody></table></div>
     ${list.length > shown.length ? `<p><button type="button" class="ghost" id="cand-more">显示全部 ${list.length} 只</button></p>` : ""}`;
   host.querySelectorAll("#cand-f button").forEach((b) => (b.onclick = () => { CAND_STATE = { filter: b.dataset.v, all: false }; drawCandidates(); }));
   byId("cand-more")?.addEventListener("click", () => { CAND_STATE.all = true; drawCandidates(); });
-  host.querySelectorAll(".cand-act button").forEach((b) => (b.onclick = () => candReview(b)));
+  host.querySelectorAll(".cand-act button[data-act]").forEach((b) => (b.onclick = () => candReview(b)));
+  // “加入选股池…”：展开这一行下方的证据与审核，定位到中文名输入框
+  host.querySelectorAll(".cand-open").forEach((b) => (b.onclick = () => {
+    const det = b.closest("tr").nextElementSibling?.querySelector("details");
+    if (!det) return;
+    det.open = true;
+    det.querySelector(".cand-name")?.focus();
+  }));
 }
 
 async function candReview(b) {

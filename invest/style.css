@@ -278,3 +278,5 @@ main:has(.stock-layout.with-nav), main:has(.stock-layout[data-no-secnav]) { max-
 .cand-table { table-layout: fixed; width: 100%; }
 .cand-table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
 .cand-table .cand-bar { margin-left: 0; width: 100%; max-width: 110px; }
+.cand-quick { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+button.sm { padding: 2px 8px; font-size: 12px; }
