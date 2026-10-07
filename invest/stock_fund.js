@@ -244,8 +244,9 @@ function valuationInsights(s) {
   }
   if (v.ps_hist) {
     const p = v.ps_hist.pct;
-    if (p >= 0.85 || p <= 0.15 || v.cyclical) out.push({ level: p >= 0.85 ? "medium" : p <= 0.15 ? "good" : "info", kind: "derived", target: "val-card",
-      text: `市销率 P/S ${num(v.ps_hist.now, 1)}，处于自身近 ${v.ps_hist.years} 年的第 ${Math.round(p * 100)} 百分位（中位数 ${num(v.ps_hist.median, 1)}）${v.cyclical ? "；周期股以 P/S 为准" : ""}。` });
+    const cyc = v.cyclicality?.tier === "strong";
+    if (p >= 0.85 || p <= 0.15 || cyc) out.push({ level: p >= 0.85 ? "medium" : p <= 0.15 ? "good" : "info", kind: "derived", target: "val-card",
+      text: `市销率 P/S ${num(v.ps_hist.now, 1)}，处于自身近 ${v.ps_hist.years} 年的第 ${Math.round(p * 100)} 百分位（中位数 ${num(v.ps_hist.median, 1)}）${cyc ? "；强周期股以 P/S 为准" : ""}。` });
   }
   if (v.fcf_hist && isNum(v.fcf_hist.capex_share) && v.fcf_hist.capex_share >= 0.5) out.push({ level: "info", kind: "derived", target: "val-card",
     text: `FCF 收益率 ${pct(v.fcf_hist.now, 1)}（中位数 ${pct(v.fcf_hist.median, 1)}）：资本支出占经营现金流的 ${pct(v.fcf_hist.capex_share, 0)}，现金正大量投入未来，FCF 收益率偏低不等于变贵。` });
@@ -267,11 +268,14 @@ const VAL_GUIDE = [
 // 针对这只股票：该优先看哪个指标
 function valuationHints(v) {
   const out = [];
-  if (v.cyclical) out.push("周期股：优先看 P/S 与 FCF 收益率；P/E 偏高未必贵（可能处于盈利低谷），偏低未必便宜（可能处于盈利高峰）。");
+  const cy = v.cyclicality;
+  if (cy?.tier === "strong") out.push(`强周期（${cy.reasons?.join("；") || "人工判断"}）：优先看 P/S 与 FCF 收益率；P/E 偏高未必贵（可能处于盈利低谷），偏低未必便宜（可能处于盈利高峰）。`);
+  else if (cy?.tier === "medium") out.push(`中等周期性（${cy.reasons?.join("；") || "人工判断"}）：参考 P/E 时留意盈利处于周期的哪个阶段，结合 P/S 一起看。`);
+  if (cy?.override) out.push(`周期性人工修正：${cy.override}`);
   if (!v.pe && !(v.trailing_pe > 0)) out.push("近 4 季亏损或盈利很低：P/E 没有意义，看 P/S。");
   const cs = v.fcf_hist?.capex_share;
   if (isNum(cs) && cs >= 0.5) out.push(`资本支出占经营现金流的 ${pct(cs, 0)}：FCF 收益率被大量投资压低${v.fcf_hist.now < 0 ? "（目前为负）" : ""}，要结合投资回报判断，不能单看它“变贵”。`);
-  else if (v.fcf_hist && v.fcf_hist.now > 0 && !v.cyclical) out.push("现金流稳定、资本支出不高：FCF 收益率是这只股票最直接的估值尺子。");
+  else if (v.fcf_hist && v.fcf_hist.now > 0 && cy?.tier !== "strong") out.push("现金流稳定、资本支出不高：FCF 收益率是这只股票最直接的估值尺子。");
   return out;
 }
 function valuationCard(s) {
@@ -468,21 +472,27 @@ function metricCompare(it, d) {
   const good = d.better ? (d.better === "high") === higher : null;
   const text = pctOrX ? `${higher ? "高于" : "低于"}${who} ${pct(Math.abs(diff), 0)}` : `${higher ? "高于" : "低于"}${who} ${(Math.abs(diff) * 100).toFixed(1)} 个百分点`;
   return good === null
-    ? `<span class="dir-neutral" title="该指标没有通用的好坏方向（如涨跌、Beta、持股结构），只列出与同行的差距">${text}</span>`
+    ? `<span class="dir-neutral" title="${esc(d.neutralNote || "该指标没有通用的好坏方向（如涨跌、Beta、持股结构），只列出与同行的差距")}">${text}${d.neutralNote ? " ⓘ" : ""}</span>`
     : `<span class="${good ? "pos" : "neg"}">${text}</span>`;
 }
+// 强周期股：P/E 类指标与同行相比的高低主要反映盈利处于周期的哪个阶段，不分好坏（标蓝）
+const CYC_NEUTRAL = ["pe_ttm", "pe_fwd", "peg", "ev_ebitda"];
+const CYC_NOTE = "强周期股：P/E 高低主要反映盈利处于周期的哪个阶段（盈利高峰时 P/E 最低、低谷时最高），不分好坏；参考 P/S 与自由现金流收益率";
 function metricsCard(s) {
   const m = s.metrics;
   if (!m) return "";
+  const cycStrong = s.valuation?.cyclicality?.tier === "strong";
   const groups = m.groups.map((g) => `<div class="metric-group"><h4>${esc(g.name)}</h4><div class="table-wrap"><table class="metrics"><colgroup><col style="width:34%"><col style="width:13%"><col style="width:14%"><col style="width:14%"><col></colgroup><thead><tr><th>指标（点击看说明）</th><th class="num">本股</th>
       <th class="num">同行中位数</th><th class="num">选股池中位数</th><th>比较</th></tr></thead><tbody>${g.items.map((it) => {
-      const d = METRIC_DEFS[it.key] || { name: it.key, fmt: "num2" };
+      const d0 = METRIC_DEFS[it.key] || { name: it.key, fmt: "num2" };
+      const d = cycStrong && CYC_NEUTRAL.includes(it.key) ? { ...d0, better: null, neutralNote: CYC_NOTE } : d0;
       return `<tr><td class="def"><details><summary><b>${esc(d.name)}</b></summary><p>${esc(d.def || "")}</p><p><b>如何理解：</b>${esc(d.read || "")}</p><p><b>如何使用：</b>${esc(d.use || "")}</p>${d.value ? `<p><b>参考价值：${esc(d.value[0])}</b>——${esc(d.value[1])}</p>` : ""}${d.caveat ? `<p class="muted">注意：${esc(d.caveat)}</p>` : ""}</details></td>
         <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${fmtMetric(it.theme_median, d.fmt)}</td><td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
     }).join("")}</tbody></table></div></div>`).join("");
   return `<section class="card" id="metrics-card"><h3>关键指标 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 公司数据 ${esc(m.fetched || "")}（yfinance）· 价格类按最新收盘计算</span></h3>
     ${m.fin_currency && m.fin_currency !== "USD" ? `<p class="warn">该公司财报以 ${esc(m.fin_currency)} 计、股价以美元计：P/S、自由现金流收益率、净现金占比已按最新汇率换算；P/B 与 EV/EBITDA 涉及 ADR 换股比例，无法可靠换算，不显示；P/E 沿用 yfinance 数值，每股收益口径（外币或美元）因公司而异，可能有约一成的汇率偏差。</p>` : ""}
     <p class="muted">同行 = 同主题且同行业${m.sector ? `（${esc(m.sector)}）` : ""}：${m.peers.length >= 3 ? m.peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、") : "不足 3 只，只与选股池比较"}。</p>
+    ${cycStrong ? `<p class="warn">⚠ ${esc(CYC_NOTE)}；因此下表中市盈率 P/E、预期市盈率、PEG、EV/EBITDA（同样基于盈利）与同行的比较标为蓝色（不分好坏）。周期性依据见“估值与利润率”。</p>` : ""}
     <p class="muted">${rich("先看估值和增长是否匹配，再看盈利能力和财务健康是否支撑，最后看价格位置与市场预期。“比较”一栏的颜色含义见表格下方；“–”表示该行业不适用或暂无数据。")}
       点击指标名可看含义、用法与参考价值；全部指标的对照表见 <a href="#/glossary?t=metric-dict">术语与说明 → 指标词典</a>。</p>
     ${groups}

@@ -224,7 +224,7 @@ async function cmpAllTable(sel) {
       <select id="ca-theme"><option value="">全部主题</option>${META.themes.map((t) => `<option value="${t.key}" ${t.key === CMP_ALL.theme ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>
       <span class="muted">点表头排序；悬停表头看指标说明；已选股票（${sel.length}）高亮并排在最前</span></div>
       <div class="table-wrap"><table class="cmp-all"><thead><tr><th>股票</th>${keys.map(th).join("")}</tr></thead><tbody>
-      ${rows.map((r) => `<tr class="${sel.includes(r.ticker) ? "sel" : ""}"><td class="nowrap"><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a>${r.fin_currency && r.fin_currency !== "USD" ? `<sup title="财报以 ${esc(r.fin_currency)} 计">†</sup>` : ""} <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span></td>
+      ${rows.map((r) => `<tr class="${sel.includes(r.ticker) ? "sel" : ""}"><td class="nowrap"><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a>${r.cyc_tier === "strong" ? ' <span class="chip warnchip" title="强周期：P/E 高低主要反映处于周期的哪个阶段">强周期</span>' : r.cyc_tier === "medium" ? ' <span class="chip" title="中等周期性">中周期</span>' : ""}${r.fin_currency && r.fin_currency !== "USD" ? `<sup title="财报以 ${esc(r.fin_currency)} 计">†</sup>` : ""} <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span></td>
         ${keys.map((key) => { const d = cmpDef(key); return `<td class="num ${d.fmt === "pp" ? cls(r[key]) : ""}">${cmpFmt(r[key], d.fmt)}</td>`; }).join("")}</tr>`).join("")}
       <tr class="total"><td><b>中位数</b></td>${keys.map((key) => `<td class="num">${key === "next_earnings" ? "" : cmpFmt(med(key), cmpDef(key).fmt)}</td>`).join("")}</tr></tbody></table></div>
       <details class="howto" open><summary>本组指标的含义、用法与参考价值</summary>${metricDocTable(keys, cmpDef)}<p class="muted">${esc(METRIC_VALUE_NOTE)}</p></details>
@@ -282,10 +282,51 @@ function cmpBody(st, raw, sel, i0, end, color, myW) {
       <tbody>${sel.map((t) => { const s = stats[t]; return `<tr><td><span class="dot" style="background:${color[t]}"></span><a href="#/stock/${t}"><b>${esc(t)}</b></a> <span class="muted">${esc(META.names_zh?.[t] || (META.etfs || []).find((e) => e.ticker === t)?.name_zh || "")}</span></td>
         ${s ? `<td class="num ${cls(s.ret)}">${pct(s.ret, 1, true)}</td><td class="num">${pct(s.vol, 0)}</td><td class="num neg">${pct(s.mdd, 1)}</td><td class="num">${num(s.beta, 2)}</td><td class="num">${num(s.corr, 2)}</td>
           <td class="num ${cls(relS[t].rel)}" title="相对 ${esc(relS[t].bench)}">${pct(relS[t].rel, 1, true)}${relS[t].bench !== "SPY" ? ` <span class="muted">vs ${esc(relS[t].bench)}</span>` : ""}</td><td class="num ${cls(relS[t].resid)}">${pct(relS[t].resid, 1, true)}</td>` : `<td colspan="7" class="muted">区间内无数据</td>`}
-        ${myW ? `<td class="num">${myW[t] ? pct(myW[t], 1) : "–"}</td>` : ""}</tr>`; }).join("")}</tbody></table></div></section>`;
+        ${myW ? `<td class="num">${myW[t] ? pct(myW[t], 1) : "–"}</td>` : ""}</tr>`; }).join("")}</tbody></table></div></section>
+    <section class="card" id="cmp-cyc"><h3>周期性 ${badge("fact")}${badge("derived")}</h3><div id="cmp-cyc-body">${empty("加载中…")}</div></section>`;
+}
+
+// ---------------- 周期性（cyclicality.json：财报数据分档 + 人工修正）----------------
+const CYC_ZH = { strong: "强周期", medium: "中等", weak: "弱" };
+async function cmpCycle(sel, color) {
+  const host = byId("cmp-cyc-body");
+  const cy = await load("cyclicality.json").catch(() => null);
+  if (!host) return;
+  if (!cy?.rows) { host.innerHTML = empty("暂无周期性数据"); return; }
+  const R = cy.rows, f0 = (x) => (isNum(x) ? `${(x * 100).toFixed(0)}%` : "–"), pp = (x) => (isNum(x) ? `${(x * 100).toFixed(0)} 个百分点` : "–");
+  const tierColor = { strong: css("--neg"), medium: palette()[1], weak: palette()[2] };
+  host.innerHTML = `<p class="muted">${rich("用 2015 年以来的财报衡量盈利随行业周期大起大落的程度（只描述过去，不预测未来）。周期性越强，P/E 越容易误导：盈利高峰时 P/E 最低、低谷时最高，这类股票更适合用 P/S 与自由现金流收益率估值。")}</p>
+    <div class="grid two">${chartDiv("c-cyc-map")}${chartDiv("c-cyc-yoy")}</div>
+    <p class="muted">左图：每个点是选股池中的一只股票（未选的按分档着色：红 = 强周期、橙 = 中等、绿 = 弱；已选的用对比颜色并标注）；分拆或上市不久的公司（如 SNDK、ARM）收入历史短，横轴会偏低。右图：收入同比增速大起大落、反复穿过 0 的，就是典型的周期。</p>
+    <div class="table-wrap"><table><thead><tr><th>股票</th><th>分档</th><th class="num" title="近 4 季收入从高点的最大跌幅（SEC 季度数据）">收入最大跌幅</th><th class="num" title="近 4 季 EPS 之和从高点的最大跌幅；转为亏损时可超过 −100%">EPS 最大跌幅</th><th class="num" title="近 5 年季度营业利润率的 P90 − P10">利润率波动</th><th>依据 / 说明</th></tr></thead><tbody>
+      ${sel.filter((t) => R[t]).map((t) => { const r = R[t]; return `<tr><td><span class="dot" style="background:${color[t]}"></span><a href="#/stock/${esc(t)}"><b>${esc(t)}</b></a></td>
+        <td><span class="chip ${r.tier === "strong" ? "warnchip" : ""}">${CYC_ZH[r.tier]}</span>${r.tier_data && r.tier_data !== r.tier ? ` <span class="muted">（数据：${CYC_ZH[r.tier_data]}）</span>` : ""}</td>
+        <td class="num">${f0(r.revenue_dd)}</td><td class="num">${f0(r.eps_dd)}</td><td class="num">${pp(r.margin_range)}</td>
+        <td class="wrap muted">${esc(r.override || (r.reasons || []).join("；") || "各项都低于“中等”阈值")}</td></tr>`; }).join("") || `<tr><td colspan="6" class="muted">所选股票没有周期性数据（ETF 不适用）</td></tr>`}</tbody></table></div>
+    <p class="muted">分档规则：任一指标达到“强周期”阈值（收入跌 ≥ ${f0(-cy.strong.revenue_dd)} 或利润率波动 ≥ ${pp(cy.strong.margin_range)}）为强周期；否则任一达到“中等”阈值（收入跌 ≥ ${f0(-cy.medium.revenue_dd)}、EPS 跌 ≥ ${f0(-cy.medium.eps_dd)}、利润率波动 ≥ ${pp(cy.medium.margin_range)}）为中等。量化指标分不清行业周期与结构性衰退、一次性事件、会计口径（如 INTC 份额流失、AMZN 2022 年投资亏损），这些人工注明。外国公司没有美元口径的 SEC 季度收入，只按 EPS 判断。</p>`;
+  // 周期性地图：全部股票；已选的加粗并标注
+  const pts = Object.entries(R).filter(([, r]) => isNum(r.revenue_dd) && isNum(r.margin_range));
+  mkChart(byId("c-cyc-map"), { title: { text: "周期性地图（右上 = 周期性强）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    tooltip: { formatter: (p) => { const r = R[p.data.t]; return `<b>${esc(p.data.t)}</b> · ${CYC_ZH[r.tier]}<br>收入最大跌幅 ${f0(r.revenue_dd)}<br>EPS 最大跌幅 ${f0(r.eps_dd)}<br>利润率波动 ${pp(r.margin_range)}`; } },
+    grid: { left: 48, right: 20, top: 34, bottom: 40 },
+    xAxis: { type: "value", name: "收入从高点最大跌幅", nameLocation: "middle", nameGap: 26, axisLabel: { formatter: (x) => `${x}%` } },
+    yAxis: { type: "value", name: "利润率波动（百分点）", nameLocation: "middle", nameGap: 34 },
+    series: [{ type: "scatter", data: pts.map(([t, r]) => { const on = sel.includes(t);
+      return { t, value: [Math.round(-r.revenue_dd * 100), Math.round(r.margin_range * 100)], symbolSize: on ? 14 : 8,
+        itemStyle: { color: on ? color[t] : tierColor[r.tier], opacity: on ? 1 : 0.45, borderColor: on ? css("--ink") : "transparent" },
+        label: { show: on || r.tier === "strong", formatter: t, position: "right", fontSize: on ? 12 : 10, color: on ? css("--ink") : css("--muted"), fontWeight: on ? 600 : 400 } }; }) }] });
+  // 收入同比增速（近 4 季合计）：周期股呈大幅起伏的波浪
+  const yoy = (rows) => rows.map(([d, v], i) => { const j = rows.findIndex(([d0]) => Math.abs((Date.parse(d) - Date.parse(d0)) / 864e5 - 365) <= 20); return j >= 0 && j < i && rows[j][1] > 0 ? [d, +((v / rows[j][1] - 1) * 100).toFixed(1)] : null; }).filter(Boolean);
+  const ser = sel.filter((t) => R[t]?.rev_ttm?.length >= 8).map((t) => ({ name: t, type: "line", showSymbol: false, color: color[t], lineStyle: { width: 2 }, data: yoy(R[t].rev_ttm) }));
+  if (!ser.length) { byId("c-cyc-yoy").outerHTML = empty("所选股票没有可用的季度收入（外国公司只有年报）"); return; }
+  mkChart(byId("c-cyc-yoy"), { title: { text: "收入同比增速（近 4 季合计）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    tooltip: { trigger: "axis", valueFormatter: (x) => (isNum(x) ? `${x > 0 ? "+" : ""}${num(x, 0)}%` : "–") }, legend: { top: 0, right: 0 }, grid: { left: 48, right: 20, top: 34, bottom: 30 },
+    xAxis: { type: "time" }, yAxis: { type: "value", axisLabel: { formatter: (x) => `${x}%` } },
+    series: ser.map((x, i) => (i ? x : { ...x, markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }] } })) });
 }
 
 function cmpDraw(st, raw, sel, i0, end, color, apply) {
+  cmpCycle(sel, color).catch((e) => console.error(e));
   const dates = raw.dates.slice(i0, end + 1);
   const relMode = st.m !== "raw";
   const series = sel.map((t) => {
