@@ -328,15 +328,18 @@ async function cmpCycle(sel, color) {
   const order = Object.keys(R).sort((a, b) => (sel.includes(b) - sel.includes(a)) || rank[R[a].tier] - rank[R[b].tier] || (R[a].revenue_dd ?? 0) - (R[b].revenue_dd ?? 0));
   host.innerHTML = `<p class="muted">${rich("用 2015 年以来的财报衡量盈利随行业周期大起大落的程度（只描述过去，不预测未来）。周期性越强，P/E 越容易误导：盈利高峰时 P/E 最低、低谷时最高，这类股票更适合用 P/S 与自由现金流收益率估值。")}</p>
     <div class="grid two">${chartDiv("c-cyc-map")}${chartDiv("c-cyc-yoy")}</div>
-    <p class="muted">左图：每个点是选股池中的一只股票（按分档着色：红 = 强周期、橙 = 中等、绿 = 弱；已选的放大并用对比颜色；标签重叠时自动隐藏，悬停可看）；分拆或上市不久的公司（如 SNDK、ARM）收入历史短，横轴会偏低。右图：收入同比增速大起大落、反复穿过 0 的，就是典型的周期。</p>
+    ${off.length ? `<p class="muted">未在地图上（缺少收入跌幅或利润率波动，原因见下表“依据 / 说明”）：${off.map(esc).join("、")}；分档按其余可用指标判断。</p>` : ""}
+    <p class="muted">左图：每个点是选股池中的一只股票（按分档着色：红 = 强周期、橙 = 中等、绿 = 弱；已选的放大并用对比颜色；标签重叠时自动隐藏，悬停可看）；收入最大跌幅为 0% 表示 2015 年以来近 4 季收入从未下降（一路增长，如 AMZN、COST、NFLX）；收入历史不足 5 年或数据中断的记为“数据不足”，不当作 0%。利润率波动带 * 的用净利率替代（SEC 数据中没有营业利润）。右图：收入同比增速大起大落、反复穿过 0 的，就是典型的周期。</p>
     <div class="table-wrap"><table><thead><tr><th>股票</th><th>分档</th><th class="num" title="近 4 季收入从高点的最大跌幅（SEC 季度数据）">收入最大跌幅</th><th class="num" title="近 4 季 EPS 之和从高点的最大跌幅；转为亏损时可超过 −100%">EPS 最大跌幅</th><th class="num" title="近 5 年季度营业利润率的 P90 − P10">利润率波动</th><th>依据 / 说明</th></tr></thead><tbody>
       ${order.map((t) => { const r = R[t]; return `<tr class="${sel.includes(t) ? "sel" : ""}"><td class="nowrap"><span class="dot" style="background:${color[t] || tierColor[r.tier]}"></span><a href="#/stock/${esc(t)}"><b>${esc(t)}</b></a> <span class="muted">${esc(META.names_zh?.[t] || "")}</span></td>
         <td><span class="chip ${r.tier === "strong" ? "warnchip" : ""}">${CYC_ZH[r.tier]}</span>${r.tier_data && r.tier_data !== r.tier ? ` <span class="muted">（数据：${CYC_ZH[r.tier_data]}）</span>` : ""}</td>
-        <td class="num">${f0(r.revenue_dd)}</td><td class="num">${f0(r.eps_dd)}</td><td class="num">${pp(r.margin_range)}</td>
-        <td class="wrap muted">${esc(r.override || (r.reasons || []).join("；") || "各项都低于“中等”阈值")}</td></tr>`; }).join("") || `<tr><td colspan="6" class="muted">暂无数据</td></tr>`}</tbody></table></div>
+        <td class="num">${isNum(r.revenue_dd) ? f0(r.revenue_dd) : '<span class="muted" title="见右侧说明">数据不足</span>'}</td><td class="num">${f0(r.eps_dd)}</td>
+        <td class="num">${pp(r.margin_range)}${isNum(r.margin_range) && r.margin_basis === "净利率" ? '<sup title="用净利率替代营业利润率">*</sup>' : ""}</td>
+        <td class="wrap muted">${esc([r.override || (r.reasons || []).join("；") || "各项都低于“中等”阈值", ...(r.notes || [])].join("。"))}</td></tr>`; }).join("") || `<tr><td colspan="6" class="muted">暂无数据</td></tr>`}</tbody></table></div>
     <p class="muted">分档规则：任一指标达到“强周期”阈值（收入跌 ≥ ${f0(-cy.strong.revenue_dd)} 或利润率波动 ≥ ${pp(cy.strong.margin_range)}）为强周期；否则任一达到“中等”阈值（收入跌 ≥ ${f0(-cy.medium.revenue_dd)}、EPS 跌 ≥ ${f0(-cy.medium.eps_dd)}、利润率波动 ≥ ${pp(cy.medium.margin_range)}）为中等。量化指标分不清行业周期与结构性衰退、一次性事件、会计口径（如 INTC 份额流失、AMZN 2022 年投资亏损），这些人工注明。外国公司没有美元口径的 SEC 季度收入，只按 EPS 判断。</p>`;
   // 周期性地图：全部股票；已选的加粗并标注
   const pts = Object.entries(R).filter(([, r]) => isNum(r.revenue_dd) && isNum(r.margin_range));
+  const off = Object.entries(R).filter(([, r]) => !(isNum(r.revenue_dd) && isNum(r.margin_range))).map(([t]) => t);
   mkChart(byId("c-cyc-map"), { title: { text: "周期性地图（右上 = 周期性强）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
     tooltip: { formatter: (p) => { const r = R[p.data.t]; return `<b>${esc(p.data.t)}</b> · ${CYC_ZH[r.tier]}<br>收入最大跌幅 ${f0(r.revenue_dd)}<br>EPS 最大跌幅 ${f0(r.eps_dd)}<br>利润率波动 ${pp(r.margin_range)}`; } },
     grid: { left: 48, right: 20, top: 34, bottom: 40 },
