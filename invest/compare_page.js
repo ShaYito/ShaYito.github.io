@@ -1,14 +1,18 @@
 "use strict";
-/* 多股对比（#/compare?t=NVDA,AMD,SMH&p=1Y&w=252）：最多 8 只股票 / ETF。
+/* 多股对比（#/compare?t=NVDA,AMD,SMH&p=1Y&w=252）：股票 / ETF 数量不限。
    走势对比（起点 = 100 / 相对基准 / 剔除 β，可选 SPY 或主题基准、对数坐标）、相关性矩阵、选中一对的滚动相关性、汇总表。
    数据：sim/prices.json 的日频复权收盘价（2015 年起，覆盖选股池与 ETF）。 */
 
-const CMP_MAX = 8;
+const CMP_MAX = Infinity; // 不限制选择数量（超过 8 只时颜色自动扩展）
+// 第 i 只的颜色：前 8 只用主题调色板，之后按色相均匀取色
+function cmpColor(i) { return i < 8 ? palette()[i] : `hsl(${Math.round((i * 137.5) % 360)} 62% ${isDark() ? 62 : 44}%)`; }
+// 区块标题上的“参考价值”标签（排序依据）
+function valueChip(v) { return `<span class="chip" title="对判断与决策的参考价值；本页各区块按此从高到低排列">参考价值 ${esc(v)}</span> `; }
 const CMP_PERIODS = [["1M", 21, "1 月"], ["3M", 63, "3 月"], ["6M", 126, "6 月"], ["YTD", "ytd", "今年"], ["1Y", 252, "1 年"], ["3Y", 756, "3 年"], ["5Y", 1260, "5 年"]];
 const CMP_WINDOWS = [[60, "60 天"], [252, "1 年"], [756, "3 年"]];
 const CMP_ROLL = 60;
 const CMP_HOWTO = [
-  "在左侧勾选最多 8 只股票或 ETF（也可以用上方的快捷按钮一键选中一组），选择会记在网址里，可以收藏或分享。",
+  "在左侧勾选股票或 ETF（数量不限，也可以用上方的快捷按钮一键选中一组），选择会记在网址里，可以收藏或分享。本页各区块按对判断的参考价值从高到低排列（标题上标有“参考价值”）：全部股票指标对比、周期性不需要选择即可查看；收益与风险、相关性、走势对比需要选择至少 2 只。",
   "走势对比：每只从区间起点归一为 100（[[index100|指数化]]），直接比涨幅；打开“相对 SPY”后，线高于 100 表示区间内跑赢大盘；区间较长时可打开“对数坐标”：每往上一条横线代表翻一倍，相同斜率 = 相同的涨幅速度，不会被涨得最多的那只把其他线压扁。价格为复权价（含分红）。",
   "相关性矩阵：两两之间日收益率的[[correlation|相关系数]]（−1 ~ 1）。越接近 1 越同涨同跌，接近 0 表示关系不大，负值表示常常反向。几只持仓两两相关都很高，意味着它们其实押在同一件事上，分散效果有限。点矩阵中任意一格，下方显示这两只的滚动 60 天相关性变化。",
   "走势切换：“相对大盘”= 每天涨跌减去基准涨跌后累计（线在 0 以上 = 跑赢）；“剔除 β”= 减去 [[beta|β]] × 基准涨跌后累计，去掉大盘 / 板块带动的部分，只看公司自身因素（β 用此前一年日收益估计，不用未来数据）。基准可选 SPY 或各自的主题基准（行业 ETF）。",
@@ -112,7 +116,7 @@ PAGES.compare = async (r) => {
   const perN = CMP_PERIODS.find(([k]) => k === st.p)[1];
   const i0 = perN === "ytd" ? Math.max(0, dates.findIndex((d) => d >= `${dates[end].slice(0, 4)}-01-01`) - 1) : Math.max(0, end - perN);
   const sel = st.t.filter((t) => raw.close[t]);
-  const color = Object.fromEntries(sel.map((t, i) => [t, palette()[i % 8]]));
+  const color = Object.fromEntries(sel.map((t, i) => [t, cmpColor(i)]));
   const myW = cmpMyWeights(raw);
   // 快捷选择
   const alloc = (await load("overview.json").catch(() => null))?.allocation || [];
@@ -125,21 +129,22 @@ PAGES.compare = async (r) => {
     ...META.themes.map((th) => [th.name, META.universe.filter((u) => u.theme === th.key).map((u) => u.ticker)]),
   ];
   const seg = (id, items, cur) => `<div class="seg" id="${id}">${items.map(([k, n]) => `<button type="button" data-v="${k}" class="${String(cur) === String(k) ? "on" : ""}">${n}</button>`).join("")}</div>`;
-  const body = sel.length < 2
-    ? `<section class="card">${empty("在左侧勾选至少 2 只（最多 8 只），或点上方的快捷按钮。")}</section>`
-    : cmpBody(st, raw, sel, i0, end, color, myW);
+  const parts = sel.length < 2 ? null : cmpBody(st, raw, sel, i0, end, color, myW);
+  const need2 = `<section class="card">${empty("在左侧勾选至少 2 只（数量不限），或点上方的快捷按钮，下方显示收益与风险、相关性与走势对比。")}</section>`;
   app().innerHTML = `
     <div class="stock-layout" data-no-secnav>${compareSidebar(sel)}<div class="stock-main">
-    <h2>多股对比 <span class="muted">已选 ${sel.length} / ${CMP_MAX} · 价格截至 ${esc(dates[end])}</span></h2>
+    <h2>多股对比 <span class="muted">已选 ${sel.length} 只 · 价格截至 ${esc(dates[end])}</span></h2>
     <section class="card"><div class="row"><span class="muted">快捷选择</span>${presets.map(([n, ts], i) => `<button type="button" class="ghost cmp-preset" data-i="${i}" title="${esc(ts.join("、"))}">${esc(n)}${ts.length > CMP_MAX ? `（前 ${CMP_MAX}）` : ""}</button>`).join("")}
       ${sel.length ? `<button type="button" class="ghost" id="cmp-clear">清空</button>` : ""}</div>
       ${sel.length ? `<p>${sel.map((t) => `<span class="chip" style="border-color:${color[t]}"><span class="dot" style="background:${color[t]}"></span>${esc(t)} ${esc(META.names_zh?.[t] || "")} <a href="#" class="cmp-x" data-t="${t}" title="移除">×</a></span>`).join("")}</p>` : ""}</section>
     ${howto(CMP_HOWTO)}
+    ${parts ? parts.ins : ""}
+    <section class="card" id="cmp-all"><h3>全部股票指标对比 ${valueChip("中–高")}${badge("fact")}${badge("derived")}</h3><div id="cmp-all-body">${empty("加载中…")}</div></section>
+    <section class="card" id="cmp-cyc"><h3>周期性 ${valueChip("中–高")}${badge("fact")}${badge("derived")}</h3><div id="cmp-cyc-body">${empty("加载中…")}</div></section>
     ${sel.length >= 2 ? `<section class="card"><div class="row"><span class="muted">区间</span>${seg("cmp-p", CMP_PERIODS.map(([k, , n]) => [k, n]), st.p)}
       <span class="muted">走势</span>${seg("cmp-m", [["raw", "原始"], ["rel", "相对大盘"], ["resid", "剔除 β"]], st.m)}
       ${st.m !== "raw" ? `<span class="muted">基准</span>${seg("cmp-b", [["spy", "SPY"], ["theme", "各自主题基准"]], st.b)}` : `<label><input type="checkbox" id="cmp-log" ${st.log ? "checked" : ""}> 对数坐标</label>`}</div></section>` : ""}
-    ${body}
-    <section class="card" id="cmp-all"><h3>全部股票指标对比 ${badge("fact")}${badge("derived")}</h3><div id="cmp-all-body">${empty("加载中…")}</div></section>
+    ${parts ? parts.summary + parts.corr + parts.trend : need2}
     </div></div>`;
   // 交互
   const apply = (patch) => cmpGo({ ...st, t: sel, ...patch });
@@ -157,6 +162,7 @@ PAGES.compare = async (r) => {
   byId("cmp-log")?.addEventListener("change", (e) => apply({ log: e.target.checked }));
   if (sel.length >= 2) cmpDraw(st, raw, sel, i0, end, color, apply);
   cmpAllTable(sel);
+  cmpCycle(sel, color).catch((e) => console.error(e)); // 不依赖选择：默认显示全部股票
 };
 
 // ---------------- 全部股票指标对比（compare_metrics.json；ETF / 黄金等不适用的不列）----------------
@@ -186,13 +192,34 @@ const CMP_EXTRA_DEFS = {
 };
 const CMP_GROUPS = [
   ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
+  ["traits", "经营特征", ["op_leverage", "share_change", "cash_conversion", "capex_intensity"]],
   ["growth", "增长与盈利", ["revenue_growth", "earnings_growth", "eps_fwd_growth", "gross_margin", "op_margin", "net_margin", "roe", "roa"]],
   ["health", "财务健康", ["net_cash_pct", "debt_to_equity", "current_ratio", "payout"]],
   ["price", "价格与风险", ["price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
   ["expect", "市场预期", ["median_target", "median_upside", "moves_up", "moves_down", "weighted_target", "weighted_upside", "analysts", "rec_mean", "short_pct_float", "short_change", "days_to_cover", "insiders_pct", "institutions_pct", "next_earnings"]],
 ];
-const CMP_ALL = { group: "valuation", sort: "pe_fwd", dir: 1, theme: "" };
+const CMP_ALL = { group: null, sort: null, dir: 1, theme: "" };
 function cmpDef(k) { return CMP_EXTRA_DEFS[k] || METRIC_DEFS[k] || { name: k, fmt: "num2" }; }
+// 参考价值评级 → 分数（取评级文字开头，如“中–高”“高（风险）”“低（科技）/ 中（银行）”取“低”）
+const VALUE_SCORE = { "高": 5, "中–高": 4, "中": 3, "低–中": 2, "低": 1 };
+function valueScore(k) {
+  const v = (cmpDef(k).value || [""])[0].split(/[（(/ ]/)[0].trim();
+  return VALUE_SCORE[v] ?? 0;
+}
+/* 按参考价值排序：组内指标按评级从高到低；组按组内最高三项的平均评级从高到低（同分按全组平均） */
+let CMP_SORTED = null;
+function cmpGroups() {
+  if (CMP_SORTED) return CMP_SORTED;
+  const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const groups = CMP_GROUPS.map(([g, n, ks]) => {
+    const keys = [...ks].sort((a, b) => valueScore(b) - valueScore(a));
+    const sc = keys.map(valueScore);
+    return [g, n, keys, avg(sc.slice(0, 3)), avg(sc)];
+  }).sort((a, b) => b[3] - a[3] || b[4] - a[4]);
+  CMP_SORTED = groups.map(([g, n, ks]) => [g, n, ks]);
+  if (!CMP_ALL.group) { CMP_ALL.group = CMP_SORTED[0][0]; CMP_ALL.sort = CMP_SORTED[0][2][0]; CMP_ALL.dir = cmpDef(CMP_ALL.sort).better === "high" ? -1 : 1; }
+  return CMP_SORTED;
+}
 function cmpFmt(v, f) {
   if (f === "cap") return isNum(v) ? (v >= 1e12 ? `${(v / 1e12).toFixed(2)}T` : `${(v / 1e9).toFixed(0)}B`) : "–";
   if (f === "int") return isNum(v) ? String(v) : "–";
@@ -205,7 +232,7 @@ async function cmpAllTable(sel) {
   const data = await load("compare_metrics.json").catch(() => null);
   if (!data) { host.innerHTML = empty("暂无数据"); return; }
   const draw = () => {
-    const keys = CMP_GROUPS.find(([g]) => g === CMP_ALL.group)[2];
+    const keys = cmpGroups().find(([g]) => g === CMP_ALL.group)[2];
     const rows = data.rows.filter((r) => !CMP_ALL.theme || r.theme === CMP_ALL.theme);
     const k = CMP_ALL.sort;
     const val = (r) => (k === "next_earnings" ? (r[k] ? Date.parse(r[k]) : null) : r[k]);
@@ -220,7 +247,7 @@ async function cmpAllTable(sel) {
     });
     const med = (key) => { const xs = rows.map((r) => r[key]).filter(isNum).sort((a, b) => a - b); return xs.length ? xs[Math.floor((xs.length - 1) / 2)] : null; };
     const th = (key) => { const d = cmpDef(key); return `<th class="num sortable ${key === k ? "on" : ""}" data-k="${key}" title="${esc(`${d.name}：${d.def || ""}${d.read ? ` 如何理解：${d.read}` : ""}`)}">${esc(d.name)}${key === k ? (CMP_ALL.dir > 0 ? " ▲" : " ▼") : ""}</th>`; };
-    host.innerHTML = `<div class="row"><div class="seg" id="ca-g">${CMP_GROUPS.map(([g, n]) => `<button type="button" data-g="${g}" class="${g === CMP_ALL.group ? "on" : ""}">${n}</button>`).join("")}</div>
+    host.innerHTML = `<div class="row"><div class="seg" id="ca-g">${cmpGroups().map(([g, n]) => `<button type="button" data-g="${g}" class="${g === CMP_ALL.group ? "on" : ""}">${n}</button>`).join("")}</div>
       <select id="ca-theme"><option value="">全部主题</option>${META.themes.map((t) => `<option value="${t.key}" ${t.key === CMP_ALL.theme ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>
       <span class="muted">点表头排序；悬停表头看指标说明；已选股票（${sel.length}）高亮并排在最前</span></div>
       <div class="table-wrap"><table class="cmp-all"><thead><tr><th>股票</th>${keys.map(th).join("")}</tr></thead><tbody>
@@ -229,7 +256,7 @@ async function cmpAllTable(sel) {
       <tr class="total"><td><b>中位数</b></td>${keys.map((key) => `<td class="num">${key === "next_earnings" ? "" : cmpFmt(med(key), cmpDef(key).fmt)}</td>`).join("")}</tr></tbody></table></div>
       <details class="howto" open><summary>本组指标的含义、用法与参考价值</summary>${metricDocTable(keys, cmpDef)}<p class="muted">${esc(METRIC_VALUE_NOTE)}</p></details>
       <p class="muted">公司数据来自 yfinance（${esc(data.asof)}），价格类按最新收盘计算；“–”表示该公司不适用或暂无数据（如银行没有毛利率、EV/EBITDA）。ETF 与黄金没有这些公司指标，不列入。† = 财报以外币计（如台积电 TWD、ASML EUR）：总额类比率已按汇率换算，P/B 与 EV/EBITDA 不显示，P/E 可能有约一成的汇率口径偏差。每个指标的含义与用法见个股页“关键指标”。</p>`;
-    host.querySelectorAll("#ca-g button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = CMP_GROUPS.find(([g]) => g === CMP_ALL.group)[2]; if (!ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
+    host.querySelectorAll("#ca-g button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = cmpGroups().find(([g]) => g === CMP_ALL.group)[2]; if (!ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
     byId("ca-theme").onchange = (e) => { CMP_ALL.theme = e.target.value; draw(); };
     host.querySelectorAll("th.sortable").forEach((h) => (h.onclick = () => { if (CMP_ALL.sort === h.dataset.k) CMP_ALL.dir *= -1; else { CMP_ALL.sort = h.dataset.k; CMP_ALL.dir = cmpDef(h.dataset.k).better === "high" ? -1 : 1; } draw(); }));
   };
@@ -268,22 +295,23 @@ function cmpBody(st, raw, sel, i0, end, color, myW) {
   if (rr.length >= 2) ins.push({ level: "info", kind: "derived", text: `剔除 β 后（公司自身因素）区间最强：${rr[0]}（${pct(relS[rr[0]].resid, 1, true)}）；最弱：${rr[rr.length - 1]}（${pct(relS[rr[rr.length - 1]].resid, 1, true)}）${st.b === "theme" ? "，相对各自主题基准" : "，相对 SPY"}。` });
   const late = sel.filter((t) => stats[t]?.late);
   const pair = st.pair.length === 2 && sel.includes(st.pair[0]) && sel.includes(st.pair[1]) ? st.pair : ok.length ? ok[0].slice(0, 2) : sel.slice(0, 2);
-  return `${insightBox(ins, 6)}
-    <section class="card"><h3>走势对比（${st.m === "raw" ? "起点 = 100" : `${st.m === "rel" ? "相对" : "剔除 β 后，相对"}${st.b === "theme" ? "各自主题基准" : " SPY"}，区间累计`}）${badge("fact")}${badge("derived")}</h3>${chartDiv("c-cmp", "tall")}
+  return { ins: insightBox(ins, 6), trend: `
+    <section class="card"><h3>走势对比（${st.m === "raw" ? "起点 = 100" : `${st.m === "rel" ? "相对" : "剔除 β 后，相对"}${st.b === "theme" ? "各自主题基准" : " SPY"}，区间累计`}）${valueChip("低–中")}${badge("fact")}${badge("derived")}</h3>${chartDiv("c-cmp", "tall")}
       ${st.m !== "raw" ? `<p class="muted">${st.m === "rel" ? "每天的涨跌减去基准涨跌后从区间起点累计：线在 0 以上 = 区间内跑赢基准。" : "每天的涨跌减去 β × 基准涨跌（β 用此前一年日收益估计，不用未来数据）后累计，去掉大盘 / 板块带动的部分，剩下公司自身因素：高 β 股票在牛市里“相对大盘”会显得偏强，这里不会。"}${st.b === "theme" ? "主题基准：每只股票用所属主题的行业 ETF（ETF 用 SPY）。" : ""}读法与局限见个股页“相对大盘走势”。</p>` : ""}
       ${late.length ? `<p class="muted">${late.map((t) => `${t} 从 ${raw.dates[stats[t].late]} 才有数据，从该日起归一。`).join("")}</p>` : ""}</section>
-    <div class="grid two"><section class="card"><h3>相关性矩阵 ${badge("derived")}</h3>
+`, corr: `
+    <div class="grid two"><section class="card"><h3>相关性矩阵 ${valueChip("中")}${badge("derived")}</h3>
         <div class="row"><span class="muted">计算窗口</span><div class="seg" id="cmp-w">${CMP_WINDOWS.map(([k, n]) => `<button type="button" data-v="${k}" class="${st.w === k ? "on" : ""}">${n}</button>`).join("")}</div></div>
         ${chartDiv("c-cmp-corr")}<p class="muted">点任意一格查看这两只的滚动相关性。</p></section>
       <section class="card"><h3>滚动 ${CMP_ROLL} 天相关性：${esc(pair[0])} × ${esc(pair[1])} ${badge("derived")}</h3>${chartDiv("c-cmp-roll")}
         <p class="muted">近 3 年，每周取一个点。线往上 = 两者走得越来越像；往下 = 开始分化。</p></section></div>
-    <section class="card"><h3>汇总（${esc(CMP_PERIODS.find(([k]) => k === st.p)[2])}）${badge("derived")}</h3><div class="table-wrap"><table>
+`, summary: `
+    <section class="card"><h3>汇总：收益与风险（${esc(CMP_PERIODS.find(([k]) => k === st.p)[2])}）${valueChip("中")}${badge("derived")}</h3><div class="table-wrap"><table>
       <thead><tr><th>标的</th><th class="num">区间收益</th><th class="num">年化波动</th><th class="num">最大回撤</th><th class="num">Beta（vs SPY）</th><th class="num">与 SPY 相关</th><th class="num">相对基准</th><th class="num">剔除 β 后</th>${myW ? `<th class="num">占你账户</th>` : ""}</tr></thead>
       <tbody>${sel.map((t) => { const s = stats[t]; return `<tr><td><span class="dot" style="background:${color[t]}"></span><a href="#/stock/${t}"><b>${esc(t)}</b></a> <span class="muted">${esc(META.names_zh?.[t] || (META.etfs || []).find((e) => e.ticker === t)?.name_zh || "")}</span></td>
         ${s ? `<td class="num ${cls(s.ret)}">${pct(s.ret, 1, true)}</td><td class="num">${pct(s.vol, 0)}</td><td class="num neg">${pct(s.mdd, 1)}</td><td class="num">${num(s.beta, 2)}</td><td class="num">${num(s.corr, 2)}</td>
           <td class="num ${cls(relS[t].rel)}" title="相对 ${esc(relS[t].bench)}">${pct(relS[t].rel, 1, true)}${relS[t].bench !== "SPY" ? ` <span class="muted">vs ${esc(relS[t].bench)}</span>` : ""}</td><td class="num ${cls(relS[t].resid)}">${pct(relS[t].resid, 1, true)}</td>` : `<td colspan="7" class="muted">区间内无数据</td>`}
-        ${myW ? `<td class="num">${myW[t] ? pct(myW[t], 1) : "–"}</td>` : ""}</tr>`; }).join("")}</tbody></table></div></section>
-    <section class="card" id="cmp-cyc"><h3>周期性 ${badge("fact")}${badge("derived")}</h3><div id="cmp-cyc-body">${empty("加载中…")}</div></section>`;
+        ${myW ? `<td class="num">${myW[t] ? pct(myW[t], 1) : "–"}</td>` : ""}</tr>`; }).join("")}</tbody></table></div></section>` };
 }
 
 // ---------------- 周期性（cyclicality.json：财报数据分档 + 人工修正）----------------
@@ -295,14 +323,17 @@ async function cmpCycle(sel, color) {
   if (!cy?.rows) { host.innerHTML = empty("暂无周期性数据"); return; }
   const R = cy.rows, f0 = (x) => (isNum(x) ? `${(x * 100).toFixed(0)}%` : "–"), pp = (x) => (isNum(x) ? `${(x * 100).toFixed(0)} 个百分点` : "–");
   const tierColor = { strong: css("--neg"), medium: palette()[1], weak: palette()[2] };
+  const rank = { strong: 0, medium: 1, weak: 2 };
+  // 全部股票：已选的在前，其余按 强 → 中 → 弱、收入跌幅从大到小
+  const order = Object.keys(R).sort((a, b) => (sel.includes(b) - sel.includes(a)) || rank[R[a].tier] - rank[R[b].tier] || (R[a].revenue_dd ?? 0) - (R[b].revenue_dd ?? 0));
   host.innerHTML = `<p class="muted">${rich("用 2015 年以来的财报衡量盈利随行业周期大起大落的程度（只描述过去，不预测未来）。周期性越强，P/E 越容易误导：盈利高峰时 P/E 最低、低谷时最高，这类股票更适合用 P/S 与自由现金流收益率估值。")}</p>
     <div class="grid two">${chartDiv("c-cyc-map")}${chartDiv("c-cyc-yoy")}</div>
-    <p class="muted">左图：每个点是选股池中的一只股票（未选的按分档着色：红 = 强周期、橙 = 中等、绿 = 弱；已选的用对比颜色并标注）；分拆或上市不久的公司（如 SNDK、ARM）收入历史短，横轴会偏低。右图：收入同比增速大起大落、反复穿过 0 的，就是典型的周期。</p>
+    <p class="muted">左图：每个点是选股池中的一只股票（按分档着色：红 = 强周期、橙 = 中等、绿 = 弱；已选的放大并用对比颜色；标签重叠时自动隐藏，悬停可看）；分拆或上市不久的公司（如 SNDK、ARM）收入历史短，横轴会偏低。右图：收入同比增速大起大落、反复穿过 0 的，就是典型的周期。</p>
     <div class="table-wrap"><table><thead><tr><th>股票</th><th>分档</th><th class="num" title="近 4 季收入从高点的最大跌幅（SEC 季度数据）">收入最大跌幅</th><th class="num" title="近 4 季 EPS 之和从高点的最大跌幅；转为亏损时可超过 −100%">EPS 最大跌幅</th><th class="num" title="近 5 年季度营业利润率的 P90 − P10">利润率波动</th><th>依据 / 说明</th></tr></thead><tbody>
-      ${sel.filter((t) => R[t]).map((t) => { const r = R[t]; return `<tr><td><span class="dot" style="background:${color[t]}"></span><a href="#/stock/${esc(t)}"><b>${esc(t)}</b></a></td>
+      ${order.map((t) => { const r = R[t]; return `<tr class="${sel.includes(t) ? "sel" : ""}"><td class="nowrap"><span class="dot" style="background:${color[t] || tierColor[r.tier]}"></span><a href="#/stock/${esc(t)}"><b>${esc(t)}</b></a> <span class="muted">${esc(META.names_zh?.[t] || "")}</span></td>
         <td><span class="chip ${r.tier === "strong" ? "warnchip" : ""}">${CYC_ZH[r.tier]}</span>${r.tier_data && r.tier_data !== r.tier ? ` <span class="muted">（数据：${CYC_ZH[r.tier_data]}）</span>` : ""}</td>
         <td class="num">${f0(r.revenue_dd)}</td><td class="num">${f0(r.eps_dd)}</td><td class="num">${pp(r.margin_range)}</td>
-        <td class="wrap muted">${esc(r.override || (r.reasons || []).join("；") || "各项都低于“中等”阈值")}</td></tr>`; }).join("") || `<tr><td colspan="6" class="muted">所选股票没有周期性数据（ETF 不适用）</td></tr>`}</tbody></table></div>
+        <td class="wrap muted">${esc(r.override || (r.reasons || []).join("；") || "各项都低于“中等”阈值")}</td></tr>`; }).join("") || `<tr><td colspan="6" class="muted">暂无数据</td></tr>`}</tbody></table></div>
     <p class="muted">分档规则：任一指标达到“强周期”阈值（收入跌 ≥ ${f0(-cy.strong.revenue_dd)} 或利润率波动 ≥ ${pp(cy.strong.margin_range)}）为强周期；否则任一达到“中等”阈值（收入跌 ≥ ${f0(-cy.medium.revenue_dd)}、EPS 跌 ≥ ${f0(-cy.medium.eps_dd)}、利润率波动 ≥ ${pp(cy.medium.margin_range)}）为中等。量化指标分不清行业周期与结构性衰退、一次性事件、会计口径（如 INTC 份额流失、AMZN 2022 年投资亏损），这些人工注明。外国公司没有美元口径的 SEC 季度收入，只按 EPS 判断。</p>`;
   // 周期性地图：全部股票；已选的加粗并标注
   const pts = Object.entries(R).filter(([, r]) => isNum(r.revenue_dd) && isNum(r.margin_range));
@@ -314,19 +345,22 @@ async function cmpCycle(sel, color) {
     series: [{ type: "scatter", data: pts.map(([t, r]) => { const on = sel.includes(t);
       return { t, value: [Math.round(-r.revenue_dd * 100), Math.round(r.margin_range * 100)], symbolSize: on ? 14 : 8,
         itemStyle: { color: on ? color[t] : tierColor[r.tier], opacity: on ? 1 : 0.45, borderColor: on ? css("--ink") : "transparent" },
-        label: { show: on || r.tier === "strong", formatter: t, position: "right", fontSize: on ? 12 : 10, color: on ? css("--ink") : css("--muted"), fontWeight: on ? 600 : 400 } }; }) }] });
+        label: { show: true, formatter: t, position: "right", fontSize: on ? 12 : 10, color: on ? css("--ink") : css("--muted"), fontWeight: on ? 600 : 400 } }; }),
+      labelLayout: { hideOverlap: true } }] });
   // 收入同比增速（近 4 季合计）：周期股呈大幅起伏的波浪
   const yoy = (rows) => rows.map(([d, v], i) => { const j = rows.findIndex(([d0]) => Math.abs((Date.parse(d) - Date.parse(d0)) / 864e5 - 365) <= 20); return j >= 0 && j < i && rows[j][1] > 0 ? [d, +((v / rows[j][1] - 1) * 100).toFixed(1)] : null; }).filter(Boolean);
-  const ser = sel.filter((t) => R[t]?.rev_ttm?.length >= 8).map((t) => ({ name: t, type: "line", showSymbol: false, color: color[t], lineStyle: { width: 2 }, data: yoy(R[t].rev_ttm) }));
+  // 没有选择时默认显示强周期股，便于对照
+  const pick = sel.filter((t) => R[t]?.rev_ttm?.length >= 8);
+  const shown = pick.length ? pick : order.filter((t) => R[t].tier === "strong" && R[t].rev_ttm?.length >= 8);
+  const ser = shown.map((t, i) => ({ name: t, type: "line", showSymbol: false, color: color[t] || cmpColor(i), lineStyle: { width: 2 }, data: yoy(R[t].rev_ttm) }));
   if (!ser.length) { byId("c-cyc-yoy").outerHTML = empty("所选股票没有可用的季度收入（外国公司只有年报）"); return; }
-  mkChart(byId("c-cyc-yoy"), { title: { text: "收入同比增速（近 4 季合计）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
-    tooltip: { trigger: "axis", valueFormatter: (x) => (isNum(x) ? `${x > 0 ? "+" : ""}${num(x, 0)}%` : "–") }, legend: { top: 0, right: 0 }, grid: { left: 48, right: 20, top: 34, bottom: 30 },
+  mkChart(byId("c-cyc-yoy"), { title: { text: `收入同比增速（近 4 季合计）${pick.length ? "" : " · 未选股票时显示强周期股"}`, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    tooltip: { trigger: "axis", valueFormatter: (x) => (isNum(x) ? `${x > 0 ? "+" : ""}${num(x, 0)}%` : "–") }, legend: { type: "scroll", top: 20, left: 0, right: 0 }, grid: { left: 48, right: 20, top: 52, bottom: 30 },
     xAxis: { type: "time" }, yAxis: { type: "value", axisLabel: { formatter: (x) => `${x}%` } },
     series: ser.map((x, i) => (i ? x : { ...x, markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }] } })) });
 }
 
 function cmpDraw(st, raw, sel, i0, end, color, apply) {
-  cmpCycle(sel, color).catch((e) => console.error(e));
   const dates = raw.dates.slice(i0, end + 1);
   const relMode = st.m !== "raw";
   const series = sel.map((t) => {
