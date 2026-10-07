@@ -76,6 +76,7 @@ PAGES.chain = async (r) => {
         <div class="chain-chips">${s.members.map((m) => chainChip(m, c, mode, hl)).join("")}</div></div>`).join("")}</div>
     </section>
     ${relationsCard(rels)}
+    <section class="card" id="cand-card" data-nav="AI 候选池"><h3>AI 相关股票候选池</h3>${empty("加载中…")}</section>
     <section class="card" id="flow-card"><h3>业务关系图：上下游供应关系（业务线）${badge("fact")}${badge("model")}</h3>
       <div class="row"><span class="muted">着色</span><div class="seg" id="fl-color">${[["growth", "收入增速"], ["theme", "主题"]].map(([k, n], i) => `<button type="button" data-c="${k}" class="${i ? "" : "on"}">${n}</button>`).join("")}</div>
         <label class="muted"><input type="checkbox" id="fl-partner"> 显示合作关系</label></div>
@@ -86,6 +87,7 @@ PAGES.chain = async (r) => {
       <p class="muted">${rich("连线只表示存在供应关系（经你审核的产业链关系，属[[model|人工判断]]），粗细不代表交易额：公开数据里没有公司之间的交易金额（财报只披露“大客户占收入 x%”且多不具名）。虚线 = 该关系只确认到公司层面、还没细化到具体业务（挂在该公司收入最大的业务上）。悬停圆点可只看它的上下游。")}</p>
     </section>`;
   bindRelations();
+  drawCandidates().catch((e) => console.error(e));
   drawFlow(flow, "growth", false);
   document.querySelectorAll("#fl-color button").forEach((b) => (b.onclick = () => {
     b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
