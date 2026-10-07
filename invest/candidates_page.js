@@ -16,9 +16,9 @@ const CAND_METHOD = [
     "中", "ETF 发行商按各自指数规则选股，“AI 主题”定义较宽（会包含特斯拉、百度、互联网与数据中心 REIT）；目前只取到 4 只免费公开持仓的 ETF（iShares、VanEck 等需要浏览器会话），大公司更容易被多只持有；被持有不代表收入来自 AI。"],
   ["filings", "SEC 全文检索近 15 个月的年报、季报与 8-K：命中几个 AI 检索短语（占 50%），以及命中文件总数（取对数，20 份及以上满分，占 50%）。",
     "中–低", "实测 EDGAR 全文检索没有收录部分大公司的年报 / 季报（如 Dell 只命中 8-K 与委托书），会系统性低估这些公司；季报多的公司命中更多；外国公司只交年报（20-F），命中偏少；检索短语偏硬件与基础设施（“NVIDIA”“hyperscale”“AI infrastructure”“accelerated computing”“AI data center”），文件中出现也可能只是风险因素或竞争描述。"],
-  ["text", "直接下载最新年报（10-K / 20-F / 40-F）全文，统计 11 个 AI 关键词（artificial intelligence、data center、GPU、inference 等）每万词出现次数，在本页全部股票（候选 + 选股池）中按排名换算成 0–100%。",
+  ["text", "直接下载最新年报（10-K / 20-F / 40-F）全文，统计下列 AI 关键词（整词匹配、不区分大小写）每万词合计出现次数，在本页全部股票（候选 + 选股池）中按排名换算成 0–100%；没有年报按 0 分。关键词：{TERMS}。",
     "中–低", "只数词频、不看收入：管理层“讲 AI”多不等于 AI 收入多；“data center”“inference”等词也用于非 AI 语境；年报越长（含大量财务报表、业务线多）密度越被稀释（如 Dell、Apple 偏低）；是相对排名，会随参与比较的股票变化。"],
-  ["relations", "最新年报中点名了几家选股池里的 AI 生态公司（半导体、云与 AI 平台、AI 基础设施、消费科技主题；不含自己）：5 家及以上满分。",
+  ["relations", "最新年报中点名了几家选股池里的 AI 生态公司（半导体、云与 AI 平台、AI 基础设施、消费科技主题；不含自己）：5 家及以上满分；没有年报按 0 分。",
     "中", "被点名的可能是客户、供应商、合作方，也可能是竞争对手，需看“证据与审核”里的原文摘录判断；业务线多的大公司天然点名更多；公司别名有限（如只认“Nvidia”），个别写法会漏。客户集中度披露（如“客户包括 Microsoft、Meta”）是这一项里最有力的证据。"],
 ];
 
@@ -26,11 +26,10 @@ function candWeights(def) {
   try { const w = JSON.parse(localStorage.getItem(CAND_W_KEY) || "null"); if (w && Object.keys(CAND_COMP).every((k) => isNum(w[k]))) return w; } catch { /* 忽略 */ }
   return { ...def };
 }
-// 按权重计算得分（0–100）：缺失的证据（没有年报）不计入，按其余权重重新分配
+// 按权重计算得分（0–100）：缺失的证据（没有年报）按 0 分
 function candScore(r, w) {
-  const keys = Object.keys(CAND_COMP).filter((k) => r.components[k] != null && w[k] > 0);
-  const ws = keys.reduce((a, k) => a + w[k], 0);
-  return ws > 0 ? (keys.reduce((a, k) => a + w[k] * r.components[k], 0) / ws) * 100 : 0;
+  const ws = Object.keys(CAND_COMP).reduce((a, k) => a + (w[k] || 0), 0);
+  return ws > 0 ? (Object.keys(CAND_COMP).reduce((a, k) => a + (w[k] || 0) * (r.components[k] ?? 0), 0) / ws) * 100 : 0;
 }
 
 async function drawCandidates() {
@@ -48,8 +47,8 @@ async function drawCandidates() {
     <p class="muted">${rich(`从公开数据中找出选股池以外、与 AI 相关的美国上市公司（含 ADR），每周日更新；只列证据，不判断投资价值，加入关注 / 选股池由你审核。来源：${d.sources.etfs.map((e) => `${e.ticker}（${e.name}，${e.holdings} 只）`).join("、")} 的持仓，以及 SEC 全文检索（近 15 个月年报、季报与 8-K 中提到 ${Object.keys(d.sources.sec_queries).map((q) => `“${q}”`).join("、")} 的公司）。门槛：市值 ≥ ${capFmt(d.thresholds.min_market_cap)} 美元、近 3 个月日均成交额 ≥ ${num(d.thresholds.min_dollar_volume / 1e6, 0)} 百万美元。`)}</p>
     <details class="howto" open><summary>四类得分怎么算、可信度如何</summary>
       <div class="table-wrap"><table class="cand-method"><thead><tr><th style="width:14%">证据</th><th>怎么算</th><th style="width:7%">可信度</th><th style="width:38%">已知问题</th></tr></thead><tbody>
-      ${CAND_METHOD.map(([k, how, rel, issue]) => `<tr><td><span class="cand-dot seg-${k}"></span><b>${CAND_COMP[k]}</b></td><td>${esc(how)}</td><td><b>${esc(rel)}</b></td><td class="muted">${esc(issue)}</td></tr>`).join("")}</tbody></table></div>
-      <p class="muted">总分 = 四项按权重加权平均 × 100（没有年报的股票只用其余两项，按权重重新分配，不把缺失当 0 分）。这个得分衡量的是“公开文件中与 AI 相关的证据有多少”，用于缩小研究范围，<b>不是质量、估值或未来收益的预测，也没有做过回测验证</b>；以软件为主的 AI 公司（如 Palantir）信号较弱、得分偏低；比特币矿商转型 AI 数据中心的也会出现。勾选“同时显示选股池”可以看到现有股票在同一尺子下的得分，用来校准：选股池里一些明显与 AI 相关的公司（如 Dell）得分也不高，正是上表“已知问题”造成的。加入选股池后会参与系统模型的训练与回测，但它“被挑中”本身带有事后选择偏差，建议先关注观察一段时间。</p></details>
+      ${CAND_METHOD.map(([k, how, rel, issue]) => `<tr><td><span class="cand-dot seg-${k}"></span><b>${CAND_COMP[k]}</b></td><td>${esc(how.replace("{TERMS}", (d.ai_terms || []).map((x) => `“${x}”`).join("、")))}</td><td><b>${esc(rel)}</b></td><td class="muted">${esc(issue)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="muted">总分 = 四项按权重加权平均 × 100（没有年报的股票，文本强度与点名两项按 0 分）。页面只保留得分前 ${d.max_candidates || 100} 只候选（已审核过的始终保留）。这个得分衡量的是“公开文件中与 AI 相关的证据有多少”，用于缩小研究范围，<b>不是质量、估值或未来收益的预测，也没有做过回测验证</b>；以软件为主的 AI 公司（如 Palantir）信号较弱、得分偏低；比特币矿商转型 AI 数据中心的也会出现。勾选“同时显示选股池”可以看到现有股票在同一尺子下的得分，用来校准：选股池里一些明显与 AI 相关的公司（如 Dell）得分也不高，正是上表“已知问题”造成的。加入选股池后会参与系统模型的训练与回测，但它“被挑中”本身带有事后选择偏差，建议先关注观察一段时间。</p></details>
     <div class="cand-weights"><b>权重</b> <span class="muted">（拖动即时重算得分与排名；只影响本页显示，记在这台设备）</span>
       ${Object.keys(CAND_COMP).map((k) => `<label class="cand-w"><span class="cand-dot seg-${k}"></span>${CAND_COMP[k]} <input type="range" min="0" max="50" step="5" data-w="${k}"><b data-wv="${k}"></b></label>`).join("")}
       <button type="button" class="ghost sm" id="cand-w-reset">恢复默认（各 ${d.weights.etf}）</button></div>
@@ -63,7 +62,7 @@ async function drawCandidates() {
     host.querySelectorAll("[data-w]").forEach((el) => { el.value = W[el.dataset.w]; });
     host.querySelectorAll("[data-wv]").forEach((el) => { el.textContent = `${W[el.dataset.wv]}（${Math.round((W[el.dataset.wv] / total()) * 100)}%）`; });
   };
-  const bar = (r) => `<div class="cand-bar" title="${esc(Object.entries(r.components).map(([k, v]) => `${CAND_COMP[k]}：${v == null ? "无年报，不计入" : `${Math.round(v * 100)}%`}`).join("\n"))}">
+  const bar = (r) => `<div class="cand-bar" title="${esc(Object.entries(r.components).map(([k, v]) => `${CAND_COMP[k]}：${v == null ? "无年报，按 0 分" : `${Math.round(v * 100)}%`}`).join("\n"))}">
       ${Object.entries(r.components).map(([k, v]) => `<span class="seg-${k}" style="width:${v == null ? 0 : (v * W[k]) / total() * 100}%"></span>`).join("")}</div>`;
   const named = (a) => Object.keys(a?.named || {}).slice(0, 6).map((t) => `<span class="chip">${esc(t)}</span>`).join("");
   const row = (r, i) => {
