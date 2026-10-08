@@ -301,3 +301,28 @@ button.sm { padding: 2px 8px; font-size: 12px; }
 .cand-todo.warn { background: color-mix(in srgb, #e0a43a 16%, transparent); }
 .cand-bar .seg-market, .cand-dot.seg-market { background: #6f42c1; } .cand-bar .seg-trend, .cand-dot.seg-trend { background: #20c997; }
 #app section.card[id] { scroll-margin-top: 80px; }   /* 链接 ?sec= 跳转时不被顶栏遮住 */
+
+/* FCF 收益率上升期卡片 */
+.ph-verdict { font-size: 15px; line-height: 1.7; margin: 6px 0 10px; }
+.ph-track-row { display: flex; align-items: stretch; gap: 4px; margin: 8px 0; flex-wrap: wrap; }
+.ph-step { flex: 1 1 120px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.ph-step b { font-size: 13px; color: var(--ink-2); }
+.ph-step.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--ink-2); }
+.ph-step.on b { color: var(--accent); }
+.ph-step.ph-hi.on { border-color: #e0a43a; background: color-mix(in srgb, #e0a43a 18%, transparent); } .ph-step.ph-hi.on b { color: #b07a12; }
+.ph-step.ph-down.on { border-color: var(--neg); background: color-mix(in srgb, var(--neg) 12%, transparent); } .ph-step.ph-down.on b { color: var(--neg); }
+.ph-arrow { align-self: center; color: var(--muted); }
+.ph-bar { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+.ph-lbl { width: 84px; color: var(--ink-2); }
+.ph-track { position: relative; flex: 1; height: 12px; background: var(--chip); border-radius: 3px; }
+.ph-track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.ph-fill { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.ph-fill.up { background: var(--pos); } .ph-fill.dn { background: var(--neg); }
+.ph-bar b { width: 56px; text-align: right; }
+.ph-kinds { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.ph-kind { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; opacity: 0.6; }
+.ph-kind b { font-size: 13px; }
+.ph-kind.on { opacity: 1; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--ink-2); }
+.ph-checks { margin: 4px 0 10px; padding-left: 18px; font-size: 13px; line-height: 1.7; }
+.ph-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; margin: 10px 0 4px; }
+.ph-legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--border); }
