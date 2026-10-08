@@ -1205,7 +1205,7 @@ PAGES.stock = async (r) => {
     ${insiderCard(s, t)}
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid" data-nav-skip>
-      ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span></li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
+      ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span>${e.more?.length ? ` <span class="muted">· 后续 ${e.more.length} 条：${e.more.map((m) => `<a class="muted" href="#/news?date=${m.date}&event=${m.id}" title="${esc(m.headline)}">${esc(m.date.slice(5))}</a>`).join(" ")}</span>` : ""}</li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
       ${card("每日新闻情绪（相对平常水平，−1 ~ 1）", Object.keys(s.sentiment).length ? `${chartDiv("c-sent", "short")}<p class="muted">${rich("0 = 该打分来源的平常水平（已扣除财经新闻整体偏乐观的倾向）；浅色柱 = 当天少于 3 篇，仅供参考。情绪描述的是正在发生什么，实测对下一周涨跌没有预测力（见[[sentiment|新闻情绪]]）。")}</p>` : empty("近期无相关新闻"))}
     </div>
     ${segGraphCard(t, graphData)}
