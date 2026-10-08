@@ -297,3 +297,5 @@ button.sm { padding: 2px 8px; font-size: 12px; }
 .cand-bar .g-rule40, .cand-dot.g-rule40 { background: #c564b5; } .cand-bar .g-rs, .cand-dot.g-rs { background: #e0a43a; }
 .g-add { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .g-add[hidden], .cand-quick[hidden] { display: none; }
+.cand-todo { margin: 8px 0 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.6; background: var(--chip); color: var(--ink-2); }
+.cand-todo.warn { background: color-mix(in srgb, #e0a43a 16%, transparent); }

@@ -74,6 +74,7 @@ async function drawGrowth() {
   const th = d.thresholds;
   host.innerHTML = `<h3>高成长科技股候选池 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 扫描于 ${esc(d.generated)} · ${d.stats.passed} 只通过门槛，显示前 ${d.max_candidates}</span></h3>
     <p class="muted">不看 AI 关键词，只看<b>发展快不快、质量好不好、市场是否认可</b>，用来发现 AI 以外的高成长科技股。范围：全部美国上市股票（含 ADR，来自 Nasdaq 股票筛选器）中，${esc(d.sectors_always.join("、"))} 板块全部纳入；${esc(d.sectors_if_rnd.join("、"))} 板块只纳入研发投入 ≥ 收入 ${pct(th.min_rnd_intensity, 0)} 的公司（如亚马逊、优步、特斯拉），另外 ${esc(d.industries_always.join("、"))} 行业直接纳入。门槛：市值 ≥ ${capFmt(th.min_market_cap)} 美元、近 3 个月日均成交额 ≥ ${num(th.min_dollar_volume / 1e6, 0)} 百万美元。财务数据来自 SEC（首次披露口径）${d.stats.yahoo_fallback ? `，${d.stats.yahoo_fallback} 只 SEC 没有近期数据的改用 Yahoo 年报` : ""}。</p>
+    ${manualTodoHtml(d.manual_todo)}
     <details class="howto"><summary>六项指标怎么算、可信度如何</summary>
       <div class="table-wrap"><table class="cand-method"><thead><tr><th style="width:12%">指标</th><th>怎么算</th><th style="width:7%">可信度</th><th style="width:40%">已知问题</th></tr></thead><tbody>
       ${GROWTH_METHOD.map(([k, how, rel, issue]) => `<tr><td><span class="cand-dot g-${k}"></span><b>${GROWTH_COMP[k]}</b></td><td>${esc(how.replace("{RS}", d.rs_months))}</td><td><b>${esc(rel)}</b></td><td class="muted">${esc(issue)}</td></tr>`).join("")}</tbody></table></div>

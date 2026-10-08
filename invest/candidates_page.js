@@ -31,6 +31,13 @@ const CAND_METHOD = [
 function readablePattern(p) {
   return p.replace("(?i)", "").replace("_?", "").replace(/\(\?=.*\)$/, "").replace(/\(([^)]*)\)(\w+)/, (m, a, b) => `${a.split("|").join(" / ")} ${b}`);
 }
+// 加入选股池后需要人工补充的配置（两个候选池共用）：列出仍缺的股票，全部补齐时显示 ✓
+function manualTodoHtml(todo) {
+  const list = (todo || []).map((x) => `<b>${esc(x.ticker)}</b>（${esc(x.name_zh)}）缺 ${esc(x.missing.join("、"))}`).join("；");
+  return `<div class="cand-todo ${list ? "warn" : ""}"><b>提示：</b>“加入选股池”只会自动修改主题与中文名，并在产业链图谱加一个空节点。
+    <b>产业链关系</b>（供应商 / 客户 / 竞争对手，见产业链页）与<b>业务 / 地区分部映射</b>（个股页的收入拆分，各公司财报科目名称不同）需要人工补充——加入后告诉 Claude“补产业链关系和业务分部映射”即可。
+    ${list ? `<br>目前待补充：${list}。` : "<br>✓ 选股池全部股票均已补齐。"}</div>`;
+}
 function candWeights(def) {
   try { const w = JSON.parse(localStorage.getItem(CAND_W_KEY) || "null"); if (w && Object.keys(CAND_COMP).every((k) => isNum(w[k]))) return w; } catch { /* 忽略 */ }
   return { ...def };
@@ -54,6 +61,7 @@ async function drawCandidates() {
   const seg = [["pending", "待审核"], ["watch", "已关注"], ["add", "已加入"], ["ignore", "已忽略"], ["all", "全部"]];
   host.innerHTML = `<h3>AI 相关股票候选池 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 扫描于 ${esc(d.generated)} · ${d.candidates.length} 只候选通过门槛</span></h3>
     <p class="muted">${rich(`从公开数据中找出选股池以外、与 AI 相关的美国上市公司（含 ADR），每周日更新；只列证据，不判断投资价值，加入关注 / 选股池由你审核。来源：${d.sources.etfs.map((e) => `${e.ticker}（${e.name}，${e.holdings} 只）`).join("、")} 的持仓，以及 SEC 全文检索（近 15 个月年报、季报与 8-K 中提到 ${Object.keys(d.sources.sec_queries).map((q) => `“${q}”`).join("、")} 的公司）。门槛：市值 ≥ ${capFmt(d.thresholds.min_market_cap)} 美元、近 3 个月日均成交额 ≥ ${num(d.thresholds.min_dollar_volume / 1e6, 0)} 百万美元。`)}</p>
+    ${manualTodoHtml(d.manual_todo)}
     <details class="howto" open><summary>六类得分怎么算、可信度如何</summary>
       <div class="table-wrap"><table class="cand-method"><thead><tr><th style="width:14%">证据</th><th>怎么算</th><th style="width:7%">可信度</th><th style="width:38%">已知问题</th></tr></thead><tbody>
       ${CAND_METHOD.map(([k, how, rel, issue]) => `<tr><td><span class="cand-dot seg-${k}"></span><b>${CAND_COMP[k]}</b></td><td>${esc(how.replace("{TERMS}", (d.ai_terms || []).map((x) => `“${x}”`).join("、"))
