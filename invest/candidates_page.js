@@ -98,7 +98,8 @@ async function drawCandidates() {
         ${isUni ? "" : r.in_universe ? '<p class="pos">已在选股池中。</p>' : `<div class="row cand-act" data-t="${esc(r.ticker)}">
           <button type="button" class="ghost" data-act="watch">关注</button><button type="button" class="ghost" data-act="ignore">忽略</button>
           ${st !== "pending" ? '<button type="button" class="ghost" data-act="reset">撤销</button>' : ""}
-          <span class="muted">加入选股池：</span><select class="cand-theme">${themes}</select><input class="cand-name" placeholder="中文名（如 博通）" style="width:130px" maxlength="30">
+          <span class="muted">加入选股池：</span><select class="cand-theme">${META.themes.map((t) => `<option value="${t.key}" ${t.key === r.suggested_theme ? "selected" : ""}>${esc(t.name)}${t.key === r.suggested_theme ? "（建议）" : ""}</option>`).join("")}</select>
+          <input class="cand-name" value="${esc(r.suggested_name_zh || "")}" placeholder="中文名（可不填，用英文名）" style="width:170px" maxlength="30" data-en="${esc((r.name || r.sec_name || r.ticker).replace(/,? (Inc|Corp|Corporation|Ltd|Holdings?|Group|plc|N\.V|S\.A)\.?$/i, "").slice(0, 30))}">
           <button type="button" class="primary" data-act="add">加入选股池</button></div>`}
       </details></td></tr>`;
   };
@@ -142,8 +143,8 @@ async function candReview(b) {
   const say = (msg, c = "muted") => { box.innerHTML = `<span class="${c}">${esc(msg)}</span>`; };
   let token = ""; try { token = localStorage.getItem(TOKEN_KEY) || ""; } catch { /* 忽略 */ }
   if (!token) { alert("请先在“我的持仓 → 持仓 → 同步设置”中保存 GitHub token（只需 Actions 写权限）"); return; }
-  const theme = box.querySelector(".cand-theme")?.value || "", name = (box.querySelector(".cand-name")?.value || "").trim();
-  if (act === "add" && !name) { alert("加入选股池需要填写中文名"); return; }
+  const nameEl = box.querySelector(".cand-name");
+  const theme = box.querySelector(".cand-theme")?.value || "", name = (nameEl?.value || "").trim() || nameEl?.dataset.en || t;
   const what = { watch: "关注", ignore: "忽略", reset: "撤销审核", add: `加入选股池（主题：${themeName(theme)}，中文名：${name}）` }[act];
   if (!confirm(`确认对 ${t} ${what}？${act === "add" ? "\n加入后会修改配置，从下次运行起参与系统模型的选股、训练与回测。" : ""}`)) return;
   box.querySelectorAll("button, select, input").forEach((x) => { x.disabled = true; });
