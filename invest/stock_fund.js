@@ -297,6 +297,7 @@ function valuationCard(s) {
       ${kpi("PEG", num(v.peg, 2), "市盈率 ÷ 盈利增速；约 1 为合理")}
     </div>
     ${hints.length ? `<div class="warn-box">${hints.map((h) => `<p>💡 ${esc(h)}</p>`).join("")}</div>` : ""}
+    ${v.lag_note ? `<p class="muted">⏳ ${esc(v.lag_note)}。</p>` : ""}
     <div class="grid three">${charts.join("")}</div>
     <div class="val-guide"><b>三个指标怎么看（各有适用场景）</b><ul>${VAL_GUIDE.map(([n, t]) => `<li><b>${n}</b>：${esc(t)}</li>`).join("")}</ul>
       <p class="muted">另外：公司业务转型后（如英伟达从游戏显卡转向数据中心、西部数据分拆闪迪后），过去几年的估值区间可比性会变差。三张图的时间范围跟随上方“价格走势”的区间按钮与缩放；灰色带 = 自身近 5 年 20%–80% 区间，虚线 = 近 5 年中位数（不随显示范围变化）。</p></div>
