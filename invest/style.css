@@ -288,3 +288,5 @@ button.sm { padding: 2px 8px; font-size: 12px; }
 .cand-dot.seg-etf { background: #5b8def; } .cand-dot.seg-filings { background: #2fa37a; } .cand-dot.seg-text { background: #e0a43a; } .cand-dot.seg-relations { background: #c564b5; }
 .cand-method td { white-space: normal; vertical-align: top; font-size: 13px; line-height: 1.5; }
 .cand-table tr.uni-row td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.cand-bar .seg-segment, .cand-dot.seg-segment { background: #d9534f; }
+.cand-bar .seg-accel, .cand-dot.seg-accel { background: #17a2b8; }
