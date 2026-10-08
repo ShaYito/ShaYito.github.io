@@ -1200,7 +1200,7 @@ PAGES.stock = async (r) => {
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
-    ${relCard()}${valuationCard(s)}
+    ${relCard()}${valuationCard(s)}${phaseCard(s)}
     ${metricsCard(s)}${earningsCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
     ${insiderCard(s, t)}
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
@@ -1260,6 +1260,7 @@ PAGES.stock = async (r) => {
   });
   bindKPeriod(k, nK);
   drawValuation(s, k); // 估值历史图的显示范围跟随 K 线
+  drawPhase(s, k); // FCF 收益率上升期图同样跟随 K 线
   // 显示范围较长（> 约 1.2 年）时财报竖线不显示文字，避免挤在一起
   const earnLabels = () => { const [a, b] = zoomRange(k, nK); k?.setOption({ series: [{ markLine: { label: { show: b - a <= 300 } } }] }); };
   if (k) { earnLabels(); k.on("datazoom", earnLabels); }

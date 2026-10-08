@@ -631,3 +631,65 @@ function metricDocTable(keys, defOf = (k) => METRIC_DEFS[k]) {
       <td>${d.value ? `<b>${esc(d.value[0])}</b><br><span class="muted">${esc(d.value[1])}</span>` : "–"}</td></tr>`; }).join("")}</tbody></table></div>
     <p class="muted">指标名颜色：<b class="pos">绿</b> = 通常越高越好；<b class="neg">红</b> = 通常越低越好；<b class="dir-neutral">蓝</b> = 没有通用的好坏方向（要结合情况判断）。这里的“好坏”只是一般规律，不同行业与情形下可能相反，也不代表买卖建议。</p>`;
 }
+
+// ---------------- FCF 收益率“自身上升期”（只和自己的历史比；A / B / C 类型 + 阶段）----------------
+const PHASE_COLOR = { 上升早期: "rgba(47,163,122,0.10)", 上升中段: "rgba(47,163,122,0.22)", 接近高点: "rgba(224,164,58,0.35)", 见顶回落: "rgba(208,59,59,0.18)" };
+const PHASE_KIND = { A: "A 基本面领先", B: "B 价格驱动", C: "C 双降" };
+const PHASE_KIND_TIP = { A: "每股 FCF 增长快于股价：现金流改善，股价还没完全反映", B: "每股 FCF 基本不变、股价下跌：变便宜了，需看下方检查判断是不是价值陷阱", C: "每股 FCF 下降、股价跌得更多：收益率虽升，基本面在恶化" };
+function phaseCard(s) {
+  const p = s.fcf_phase;
+  if (!p) return "";
+  const head = `<h3>FCF 收益率上升期（只和自身历史比）${badge("derived")}<span class="chip" title="尚未回测验证">观察中</span></h3>`;
+  if (p.status !== "ok") return `<section class="card" id="phase-card">${head}${empty(`不适用：${p.reason}`)}</section>`;
+  const stageCls = p.stage === "接近高点" ? "warnchip" : p.stage === "见顶回落" ? "neg" : p.stage.startsWith("上升") ? "on" : "";
+  return `<section class="card" id="phase-card">${head}
+    <p class="muted">${rich("FCF 收益率 = 每股自由现金流 ÷ 股价。这里不看收益率高低、也不和别的公司比，只看它在自己的历史里是否处于“上升期”、上升到了哪个阶段，并把上升拆成“每股 FCF 变化”（基本面）与“股价变化”两部分。收益率的高点 ≈ 股价相对现金流最便宜的时候。")}</p>
+    <div class="kpis">
+      <div class="kpi"><span class="muted">阶段</span><b><span class="chip ${stageCls}">${esc(p.stage)}</span></b><span class="muted">已持续 ${p.weeks_in_stage} 周</span></div>
+      <div class="kpi"><span class="muted">${p.stage.startsWith("上升") || p.stage === "接近高点" ? "类型" : `近 ${p.window} 周收益率上升的来源`}</span><b>${p.kind ? esc(PHASE_KIND[p.kind]) : "–"}</b><span class="muted">${p.kind ? esc(PHASE_KIND_TIP[p.kind]) : "近 26 周收益率未上升"}</span></div>
+      <div class="kpi"><span class="muted">近 ${p.window} 周收益率变化</span><b class="${cls(p.change)}">${pct(p.change, 0, true)}</b><span class="muted">每股 FCF ${pct(p.fcf_part, 0, true)} · 股价 ${pct(p.price_part, 0, true)}</span></div>
+      <div class="kpi"><span class="muted">上升强度</span><b>${num(p.z, 1)}</b><span class="muted">相对自身波动；≥ 0.5 才算上升期</span></div>
+      <div class="kpi"><span class="muted">当前 FCF 收益率</span><b>${pct(p.now, 2)}</b><span class="muted">自身近 5 年第 ${Math.round(p.pct * 100)} 百分位 · 距近 ${p.window} 周高点 ${pct(-p.off_high, 0)}</span></div>
+    </div>
+    ${p.checks?.length ? `<p><b>辅助检查</b>（不进主信号，用于判断 B 类是否价值陷阱、A 类的现金流增长是否可靠）：${p.checks.map((c) => `<span class="chip ${c.ok === false ? "warnchip" : ""}" title="${esc(c.text)}">${c.ok === false ? "⚠ " : c.ok ? "✓ " : ""}${esc(c.name)}</span>`).join(" ")}</p>
+      <ul class="muted">${p.checks.map((c) => `<li>${esc(c.name)}：${esc(c.text)}</li>`).join("")}</ul>` : ""}
+    ${chartDiv("c-phase")}
+    <p class="muted">${rich(`图：蓝线 = FCF 收益率（左轴），灰线 = 股价（右轴）；底色 = 当时判定的阶段（浅绿 上升早期、绿 上升中段、橙 接近高点、红 见顶回落），每周按当时已有的数据判定、不使用之后的数据。时间范围跟随上方“价格走势”。判定规则：近 ${p.window} 周收益率上升且强度 ≥ 0.5 为上升期；自身百分位 < 70% 为早期；≥ 70% 且近 ${p.short} 周明显减速、离近 ${p.window} 周最高点 ≤ 5% 为接近高点；从上升期高点回落 ≥ 10% 为见顶回落。`)}</p>
+    <p class="muted">${rich("局限：① 每股 FCF 只在交 10-Q / 10-K 后更新，两次财报之间收益率的变化全部来自股价；② “接近高点”只能事后确认，这里是按当时数据的估计，可能高点之后继续上升；③ 强周期股的收益率高点常出现在景气顶部；④ 还没有用历史数据验证它对未来涨跌的预测力（计划观察后用约 2,300 家公司回测）。")}</p></section>`;
+}
+function drawPhase(s, k) {
+  const p = s.fcf_phase;
+  if (!p || p.status !== "ok" || !byId("c-phase")) return;
+  const idx = Object.fromEntries(s.dates.map((d, i) => [d, i]));
+  const near = (d) => { // 周五日期 → 价格走势中当天或之前最近的交易日
+    if (d in idx) return d;
+    for (let i = s.dates.length - 1; i >= 0; i--) if (s.dates[i] <= d) return s.dates[i];
+    return null;
+  };
+  const at = {};
+  p.history.forEach((h) => { const d = near(h.date); if (d) at[d] = h.y; });
+  // 连续同一阶段的周 → 一段底色
+  const areas = [];
+  let cur = null;
+  p.history.forEach((h, i) => {
+    const st = PHASE_COLOR[h.stage] ? h.stage : null;
+    if (cur && cur.stage !== st) { areas.push(cur); cur = null; }
+    if (st && !cur) cur = { stage: st, from: h.date, to: h.date };
+    if (cur) cur.to = (p.history[i + 1] || h).date;
+  });
+  if (cur) areas.push(cur);
+  const n = s.dates.length;
+  const c = mkChart(byId("c-phase"), {
+    tooltip: { trigger: "axis" }, legend: { top: 0 }, grid: { left: 52, right: 60, top: 30, bottom: 24 },
+    xAxis: { type: "category", data: s.dates, boundaryGap: false },
+    yAxis: [{ type: "value", scale: true, axisLabel: { formatter: (x) => pct(x, 1) } }, { type: "value", scale: true, splitLine: { show: false } }],
+    dataZoom: [{ type: "inside", zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
+    series: [
+      { name: "FCF 收益率", type: "line", showSymbol: false, connectNulls: true, color: palette()[0], lineStyle: { width: 2 }, data: s.dates.map((d) => at[d] ?? null),
+        tooltip: { valueFormatter: (x) => pct(x, 2) },
+        markArea: { silent: true, data: areas.map((a) => [{ xAxis: near(a.from), itemStyle: { color: PHASE_COLOR[a.stage] } }, { xAxis: near(a.to) }]).filter((x) => x[0].xAxis && x[1].xAxis) } },
+      { name: "股价", type: "line", yAxisIndex: 1, showSymbol: false, color: css("--muted"), lineStyle: { width: 1.2 }, data: s.ohlc.map((x) => x[1]), tooltip: { valueFormatter: (x) => num(x, 2) } },
+    ],
+  });
+  followKZoom(k, n, c);
+}

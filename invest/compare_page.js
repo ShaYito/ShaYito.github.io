@@ -166,7 +166,21 @@ PAGES.compare = async (r) => {
 };
 
 // ---------------- 全部股票指标对比（compare_metrics.json；ETF / 黄金等不适用的不列）----------------
+const FCF_STAGE_ZH = ["非上升期", "上升早期", "上升中段", "接近高点", "见顶回落"];
+const FCF_KIND_ZH = { 1: "A 基本面领先", 2: "B 价格驱动", 3: "C 双降" };
+const FCF_PHASE_VALUE = ["低–中", "尚未回测验证；先观察，之后用约 2,300 家公司的数据回测再定"];
 const CMP_EXTRA_DEFS = {
+  fcf_stage_code: { name: "上升期阶段", fmt: "fcfstage", def: "FCF 收益率在自身历史中的阶段：非上升期 / 上升早期 / 上升中段 / 接近高点 / 见顶回落（只和自己比，不看绝对水平）。",
+    read: "“接近高点”= 已在自身高位、上升减速、离近半年最高点很近；“见顶回落”= 刚从上升期的高点回落 ≥ 10%。只能事后确认，这里是按当时数据的估计。",
+    use: "收益率高点 ≈ 股价相对现金流最便宜的时候；结合类型（A / B / C）看是基本面改善还是股价下跌造成的。", value: FCF_PHASE_VALUE },
+  fcf_kind_code: { name: "上升类型", fmt: "fcfkind", def: "近 26 周收益率上升的来源：A = 每股 FCF 增长 ≥ 5%（基本面领先）；B = 每股 FCF 基本不变、股价下跌（价格驱动）；C = 每股 FCF 下降、股价跌得更多（双降）。",
+    read: "A 最理想；B 需要看业务是否在恶化（价值陷阱）；C 应警惕。只要近 26 周收益率净上升就会给出来源（不一定达到“上升期”的强度）；净下降时为空。", use: "排序时 A < B < C。", value: FCF_PHASE_VALUE },
+  fcf_z: { name: "上升强度", fmt: "num1", better: "high", def: "近 26 周收益率的对数变化 ÷ 这只股票历史上 26 周变化的标准差。",
+    read: "≥ 0.5 才算上升期；同样上升 20%，对平稳的股票是更强的信号。", use: "只和自己比的强弱。", value: FCF_PHASE_VALUE },
+  fcf_y_chg: { name: "收益率 26 周变化", fmt: "pp", better: null, def: "FCF 收益率近 26 周的变化（相对变化）。", read: "≈（1 + 每股 FCF 变化）÷（1 + 股价变化）− 1。", use: "看后两列拆分来源。", value: FCF_PHASE_VALUE },
+  fcf_ps_chg: { name: "每股 FCF 变化", fmt: "pp", better: null, def: "近 26 周每股 FCF（近 4 季合计）的变化；只在交 10-Q / 10-K 后更新。", read: "正 = 现金流在改善。", use: "收益率上升的基本面部分。", value: FCF_PHASE_VALUE },
+  fcf_px_chg: { name: "股价变化", fmt: "pp", better: null, def: "近 26 周股价变化。", read: "收益率 = 每股 FCF ÷ 股价，股价下跌会抬高收益率。", use: "收益率上升的价格部分。", value: FCF_PHASE_VALUE },
+  fcf_y_pct: { name: "自身历史分位", fmt: "pct0", better: null, def: "当前 FCF 收益率在自身近 5 年中的百分位。", read: "越高 = 相对自己的历史越便宜。", use: "≥ 70% 视为高位（判断“接近高点”的条件之一）。", value: FCF_PHASE_VALUE },
   market_cap: { name: "市值", fmt: "cap", def: "总市值（美元）= 股价 × 总股数。", read: "衡量公司规模；超大市值公司流动性好、波动通常较小。",
     use: "同样的新闻，对小公司的股价影响往往更大；比较估值时注意规模差异。", value: ["低", "规模本身对收益的预测力在大盘股中很弱，主要用于理解波动与流动性。"] },
   price: { name: "现价", fmt: "num2", def: "最新收盘价（拆股调整）。", read: "单独看没有意义，需与目标价、成本价、历史区间比较。", use: "与加权目标价、你的平均成本对照。", value: ["—", "描述性数据。"] },
@@ -193,6 +207,7 @@ const CMP_EXTRA_DEFS = {
 const CMP_GROUPS = [
   ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
   ["traits", "经营特征", ["op_leverage", "share_change", "cash_conversion", "capex_intensity"]],
+  ["fcf_phase", "FCF 收益率上升期", ["fcf_stage_code", "fcf_kind_code", "fcf_z", "fcf_y_chg", "fcf_ps_chg", "fcf_px_chg", "fcf_y_pct"]],
   ["growth", "增长与盈利", ["revenue_growth", "earnings_growth", "eps_fwd_growth", "gross_margin", "op_margin", "net_margin", "roe", "roa"]],
   ["health", "财务健康", ["net_cash_pct", "debt_to_equity", "current_ratio", "payout"]],
   ["price", "价格与风险", ["price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
@@ -224,6 +239,8 @@ function cmpFmt(v, f) {
   if (f === "cap") return isNum(v) ? (v >= 1e12 ? `${(v / 1e12).toFixed(2)}T` : `${(v / 1e9).toFixed(0)}B`) : "–";
   if (f === "int") return isNum(v) ? String(v) : "–";
   if (f === "date") return v ? esc(v.slice(5)) : "–";
+  if (f === "fcfstage") return isNum(v) ? FCF_STAGE_ZH[v] : "–";
+  if (f === "fcfkind") return isNum(v) ? FCF_KIND_ZH[v] : "–";
   return fmtMetric(v, f);
 }
 async function cmpAllTable(sel) {
