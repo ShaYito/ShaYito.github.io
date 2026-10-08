@@ -290,3 +290,10 @@ button.sm { padding: 2px 8px; font-size: 12px; }
 .cand-table tr.uni-row td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .cand-bar .seg-segment, .cand-dot.seg-segment { background: #d9534f; }
 .cand-bar .seg-accel, .cand-dot.seg-accel { background: #17a2b8; }
+
+/* 高成长科技股候选池：六项指标颜色 */
+.cand-bar .g-growth, .cand-dot.g-growth { background: #d9534f; } .cand-bar .g-accel, .cand-dot.g-accel { background: #17a2b8; }
+.cand-bar .g-gross_margin, .cand-dot.g-gross_margin { background: #5b8def; } .cand-bar .g-op_leverage, .cand-dot.g-op_leverage { background: #2fa37a; }
+.cand-bar .g-rule40, .cand-dot.g-rule40 { background: #c564b5; } .cand-bar .g-rs, .cand-dot.g-rs { background: #e0a43a; }
+.g-add { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.g-add[hidden], .cand-quick[hidden] { display: none; }
