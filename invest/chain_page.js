@@ -88,8 +88,11 @@ PAGES.chain = async (r) => {
       <p class="muted">${rich("连线只表示存在供应关系（经你审核的产业链关系，属[[model|人工判断]]），粗细不代表交易额：公开数据里没有公司之间的交易金额（财报只披露“大客户占收入 x%”且多不具名）。虚线 = 该关系只确认到公司层面、还没细化到具体业务（挂在该公司收入最大的业务上）。悬停圆点可只看它的上下游。")}</p>
     </section>`;
   bindRelations();
-  drawCandidates().catch((e) => console.error(e));
-  drawGrowth().catch((e) => console.error(e));
+  // 两个候选池异步加载；链接带 ?sec=cand-card / growth-card（如 Discord 推送）时，等两块都画完再直接跳转（不做平滑滚动）
+  Promise.allSettled([drawCandidates(), drawGrowth()]).then((res) => {
+    res.filter((x) => x.status === "rejected").forEach((x) => console.error(x.reason));
+    if (r.query.sec) byId(r.query.sec)?.scrollIntoView({ block: "start" });
+  });
   drawFlow(flow, "growth", false);
   document.querySelectorAll("#fl-color button").forEach((b) => (b.onclick = () => {
     b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
