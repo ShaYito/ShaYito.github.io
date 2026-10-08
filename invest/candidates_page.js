@@ -5,13 +5,13 @@
    审核按钮触发 review-candidate workflow（复用“同步到后台”的 GitHub token）：关注 / 加入选股池 / 忽略 / 撤销。 */
 
 // 顺序 = 页面显示顺序（收入类证据最直接，排在前面）
-const CAND_COMP = { segment: "AI 业务收入占比", accel: "AI 周期收入加速", etf: "ETF 持有", relations: "点名 AI 生态公司", filings: "申报文件检索", text: "年报 AI 文本强度" };
+const CAND_COMP = { segment: "AI 业务收入占比", accel: "AI 周期收入加速", etf: "ETF 持有", relations: "点名 AI 生态公司", market: "市场证据", trend: "AI 文本升温", filings: "申报文件检索", text: "年报 AI 文本强度" };
 const CAND_REVIEW_ZH = { watch: "已关注", add: "已加入选股池", ignore: "已忽略" };
 const CAND_W_KEY = "invest.cand.weights";
 let CAND_STATE = { filter: "pending", all: false, uni: true };
 const capFmt = (v) => (!isNum(v) ? "–" : v >= 1e12 ? `${num(v / 1e12, 2)} 万亿` : `${Math.round(v / 1e8).toLocaleString()} 亿`);
 
-// 四类证据的计算方式与可信度（页面常驻说明）
+// 八类证据的计算方式与可信度（页面常驻说明；顺序与 CAND_COMP 无关，按此表显示）
 const CAND_METHOD = [
   ["segment", "最新年报（10-K / 20-F / 40-F）的 XBRL 财务数据中，找名称符合 AI 相关特征的分部或产品线（{PATTERNS}；排除 {EXCLUDE}），计算其收入占总收入的比例：≥ {FULL} 满分，按比例给分；同时给出同比增速。没有可识别的 AI 分部按 0 分。",
     "高（有披露时）", "最直接的证据——真实收入；但很多公司不单独披露 AI / 数据中心收入（如 Credo、Vertiv、Super Micro 收入几乎都与数据中心有关却没有这样的分部），会记 0 分；用缩写命名的分部识别不到（如美光 CMBU / CDBU）；“云”分部含非 AI 业务（如 Microsoft Cloud 含商用 Office 365、甲骨文含软件许可）会偏高；页面会列出识别到的分部名称，请核对。"],
@@ -19,6 +19,10 @@ const CAND_METHOD = [
     "中", "基于真实收入，能看出业务是否随 AI 投资潮明显加速；但收购、疫情后复苏、行业周期反弹（如存储芯片涨价）也会带来加速；高基数的大公司很难大幅加速；外国公司没有美元口径季度收入，按 0 分。"],
   ["etf", "被几只 AI / 半导体主题 ETF 持有：持有 0 / 1 / 2 / 3 只及以上 = 0 / 33% / 67% / 100%。",
     "中", "ETF 发行商按各自指数规则选股，“AI 主题”定义较宽（会包含特斯拉、百度、互联网与数据中心 REIT）；目前只取到 4 只免费公开持仓的 ETF（iShares、VanEck 等需要浏览器会话），大公司更容易被多只持有；被持有不代表收入来自 AI。"],
+  ["market", "近 {MW} 周的周收益先剔除大盘（对 SPY 回归取残差），再与 AI 龙头篮子（{BASKET} 等权；计算篮子成员自己时去掉自己）的残差求相关系数：≥ {MFULL} 满分，≤ 0 记 0。衡量市场是否把它当作 AI 股交易。",
+    "中", "反映的是市场的看法而不是业务事实：概念炒作也会带来高相关；篮子以 AI 硬件为主，AI 软件公司（如 Palantir）与硬件走势不同、得分偏低；一年的周数据只有 52 个样本，相关系数有 ±0.15 左右的误差。"],
+  ["trend", "最新一份季报（10-Q）与一年前同期季报相比，AI 关键词（同下方“年报 AI 文本强度”的词表）每万词出现次数的变化：按 log2 计算，翻倍记满分（比值 ≥ {TFULL} 倍），持平或下降记 0；最新报告每万词少于 {TMIN} 次的记 0；只交年报的外国公司比较最新两份年报。",
+    "中–低", "能较早发现“正在转向 AI”的公司（如比特币矿商转型 AI 数据中心），但讲得多不等于做得多；同一公司不同季度的季报长度与内容不同，会有噪音；发文量很大的公司（如大银行）SEC 最近文件列表里可能找不到一年前的季报，记 0。"],
   ["filings", "SEC 全文检索近 15 个月的年报、季报与 8-K：命中几个 AI 检索短语（占 50%），以及命中文件总数（取对数，20 份及以上满分，占 50%）。",
     "中–低", "实测 EDGAR 全文检索没有收录部分大公司的年报 / 季报（如 Dell 只命中 8-K 与委托书），会系统性低估这些公司；季报多的公司命中更多；外国公司只交年报（20-F），命中偏少；检索短语偏硬件与基础设施（“NVIDIA”“hyperscale”“AI infrastructure”“accelerated computing”“AI data center”），文件中出现也可能只是风险因素或竞争描述。"],
   ["text", "直接下载最新年报（10-K / 20-F / 40-F）全文，统计下列 AI 关键词（整词匹配、不区分大小写）每万词合计出现次数，在本页全部股票（候选 + 选股池）中按排名换算成 0–100%；没有年报按 0 分。关键词：{TERMS}。",
@@ -62,12 +66,14 @@ async function drawCandidates() {
   host.innerHTML = `<h3>AI 相关股票候选池 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 扫描于 ${esc(d.generated)} · ${d.candidates.length} 只候选通过门槛</span></h3>
     <p class="muted">${rich(`从公开数据中找出选股池以外、与 AI 相关的美国上市公司（含 ADR），每周日更新；只列证据，不判断投资价值，加入关注 / 选股池由你审核。来源：${d.sources.etfs.map((e) => `${e.ticker}（${e.name}，${e.holdings} 只）`).join("、")} 的持仓，以及 SEC 全文检索（近 15 个月年报、季报与 8-K 中提到 ${Object.keys(d.sources.sec_queries).map((q) => `“${q}”`).join("、")} 的公司）。门槛：市值 ≥ ${capFmt(d.thresholds.min_market_cap)} 美元、近 3 个月日均成交额 ≥ ${num(d.thresholds.min_dollar_volume / 1e6, 0)} 百万美元。`)}</p>
     ${manualTodoHtml(d.manual_todo)}
-    <details class="howto" open><summary>六类得分怎么算、可信度如何</summary>
+    <details class="howto" open><summary>八类得分怎么算、可信度如何</summary>
       <div class="table-wrap"><table class="cand-method"><thead><tr><th style="width:14%">证据</th><th>怎么算</th><th style="width:7%">可信度</th><th style="width:38%">已知问题</th></tr></thead><tbody>
       ${CAND_METHOD.map(([k, how, rel, issue]) => `<tr><td><span class="cand-dot seg-${k}"></span><b>${CAND_COMP[k]}</b></td><td>${esc(how.replace("{TERMS}", (d.ai_terms || []).map((x) => `“${x}”`).join("、"))
         .replace("{PATTERNS}", (d.segment_patterns || []).map(readablePattern).join("、")).replace("{EXCLUDE}", (d.segment_exclude || []).map(readablePattern).join("、"))
+        .replace("{MW}", d.market_weeks ?? 52).replace("{BASKET}", (d.ai_basket || []).join("、")).replace("{MFULL}", num(d.market_full ?? 0.5, 1))
+        .replace("{TFULL}", num(2 ** (d.trend_full ?? 1), 1)).replace("{TMIN}", num(d.trend_min_density ?? 1, 0))
         .replace("{FULL}", pct(d.segment_full_share ?? 0.5, 0)).replace("{ERA}", d.ai_era_start || "2022-12-31").replace("{PRE}", d.pre_years ?? 4).replace("{AFULL}", Math.round((d.accel_full ?? 0.3) * 100)))}</td><td><b>${esc(rel)}</b></td><td class="muted">${esc(issue)}</td></tr>`).join("")}</tbody></table></div>
-      <p class="muted">总分 = 六项按权重加权平均 × 100（缺数据的项按 0 分）。默认权重：收入类证据（AI 业务收入占比、AI 周期收入加速）更直接，权重较高；可信度“中–低”的申报文件检索与年报 AI 文本强度调低。页面只保留得分前 ${d.max_candidates || 100} 只候选（已审核过的始终保留）。这个得分衡量的是“公开文件中与 AI 相关的证据有多少”，用于缩小研究范围，<b>不是质量、估值或未来收益的预测，也没有做过回测验证</b>；以软件为主的 AI 公司（如 Palantir）信号较弱、得分偏低；比特币矿商转型 AI 数据中心的也会出现。勾选“同时显示选股池”可以看到现有股票在同一尺子下的得分，用来校准：选股池里一些明显与 AI 相关的公司（如 Dell）得分也不高，正是上表“已知问题”造成的。加入选股池后会参与系统模型的训练与回测，但它“被挑中”本身带有事后选择偏差，建议先关注观察一段时间。</p></details>
+      <p class="muted">总分 = 八项按权重加权平均 × 100（缺数据的项按 0 分）。默认权重：收入类证据（AI 业务收入占比、AI 周期收入加速）更直接，权重较高；ETF、点名、市场证据次之；可信度“中–低”的文本类证据（AI 文本升温、申报文件检索、年报 AI 文本强度）权重较低。页面只保留得分前 ${d.max_candidates || 100} 只候选（已审核过的始终保留）。这个得分衡量的是“公开文件中与 AI 相关的证据有多少”，用于缩小研究范围，<b>不是质量、估值或未来收益的预测，也没有做过回测验证</b>；以软件为主的 AI 公司（如 Palantir）信号较弱、得分偏低；比特币矿商转型 AI 数据中心的也会出现。勾选“同时显示选股池”可以看到现有股票在同一尺子下的得分，用来校准：选股池里一些明显与 AI 相关的公司（如 Dell）得分也不高，正是上表“已知问题”造成的。加入选股池后会参与系统模型的训练与回测，但它“被挑中”本身带有事后选择偏差，建议先关注观察一段时间。</p></details>
     <div class="cand-weights"><b>权重</b> <span class="muted">（拖动即时重算得分与排名；只影响本页显示，记在这台设备）</span>
       ${Object.keys(CAND_COMP).map((k) => `<label class="cand-w"><span class="cand-dot seg-${k}"></span>${CAND_COMP[k]} <input type="range" min="0" max="50" step="5" data-w="${k}"><b data-wv="${k}"></b></label>`).join("")}
       <button type="button" class="ghost sm" id="cand-w-reset">恢复默认（${Object.keys(CAND_COMP).map((k) => d.weights[k] ?? 0).join(" / ")}）</button></div>
@@ -91,7 +97,8 @@ async function drawCandidates() {
       <td class="num">${capFmt(r.market_cap)}</td><td class="num"><b>${num(r._score, 0)}</b>${bar(r)}</td>
       <td class="wrap">${Object.keys(r.etfs).map((e) => `<span class="chip" title="权重 ${pct(r.etfs[e], 2)}">${esc(e)}</span>`).join("")} ${Object.keys(r.queries).length ? `<span class="muted">检索命中 ${Object.keys(r.queries).length} 词 / ${Object.values(r.queries).reduce((x, y) => x + y, 0)} 份文件</span>` : ""}
         ${a ? `<br><span class="muted">年报 AI 词密度 ${num(a.ai_density, 1)}/万词 · 点名</span> ${named(a) || '<span class="muted">无</span>'}` : '<br><span class="muted">未取到年报</span>'}
-        <br><span class="muted">${r.ai_segment ? `AI 相关分部 <b>${pct(r.ai_segment.share, 0)}</b>（${esc(r.ai_segment.members.join(" + "))}${isNum(r.ai_segment.growth) ? `，同比 ${pct(r.ai_segment.growth, 0, true)}` : ""}）` : "AI 相关分部：未披露 / 未识别"} · ${r.accel ? `收入年化增速 ${pct(r.accel.pre, 0)} → ${pct(r.accel.post, 0)}（<span class="${cls(r.accel.accel)}">${pct(r.accel.accel, 0, true)}</span>）` : "收入加速：数据不足"}</span></td>
+        <br><span class="muted">${r.ai_segment ? `AI 相关分部 <b>${pct(r.ai_segment.share, 0)}</b>（${esc(r.ai_segment.members.join(" + "))}${isNum(r.ai_segment.growth) ? `，同比 ${pct(r.ai_segment.growth, 0, true)}` : ""}）` : "AI 相关分部：未披露 / 未识别"} · ${r.accel ? `收入年化增速 ${pct(r.accel.pre, 0)} → ${pct(r.accel.post, 0)}（<span class="${cls(r.accel.accel)}">${pct(r.accel.accel, 0, true)}</span>）` : "收入加速：数据不足"}</span>
+        <br><span class="muted">${r.trend ? `AI 词密度 ${num(r.trend.prev, 1)} → ${num(r.trend.now, 1)}/万词（${esc(r.trend.form)} 同比，<span class="${cls(r.trend.change)}">${r.trend.change >= 0 ? "+" : ""}${num((2 ** r.trend.change - 1) * 100, 0)}%</span>）` : "AI 文本升温：无可比报告"} · ${r.market ? `剔除大盘后与 AI 龙头相关 <span class="${cls(r.market.corr)}">${num(r.market.corr, 2)}</span>` : "市场证据：无数据"}</span></td>
       <td>${!isUni && st !== "pending" ? `<span class="chip ${st === "add" ? "on" : ""}">${CAND_REVIEW_ZH[st] || st}</span>` : ""}
         ${isUni || r.in_universe ? "" : `<div class="cand-act cand-quick" data-t="${esc(r.ticker)}">
           ${st !== "watch" ? '<button type="button" class="ghost sm" data-act="watch">关注</button>' : ""}

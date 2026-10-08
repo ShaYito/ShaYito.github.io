@@ -299,3 +299,4 @@ button.sm { padding: 2px 8px; font-size: 12px; }
 .g-add[hidden], .cand-quick[hidden] { display: none; }
 .cand-todo { margin: 8px 0 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.6; background: var(--chip); color: var(--ink-2); }
 .cand-todo.warn { background: color-mix(in srgb, #e0a43a 16%, transparent); }
+.cand-bar .seg-market, .cand-dot.seg-market { background: #6f42c1; } .cand-bar .seg-trend, .cand-dot.seg-trend { background: #20c997; }
