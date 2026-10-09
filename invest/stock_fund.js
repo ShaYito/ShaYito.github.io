@@ -657,7 +657,7 @@ function phaseCard(s) {
   const p = s.fcf_phase;
   const head = `<h3>FCF 收益率上升期（只和自身历史比）${badge("derived")}<span class="chip" title="尚未用历史数据验证预测力">观察中</span></h3>`;
   if (!p) return `<section class="card" id="phase-card">${head}${empty("暂无数据：缺少 FCF 收益率历史（外国公司只有年报且涉及外币 / ADR 口径；银行、保险不适用；或 SEC 数据不足）")}</section>`;
-  if (p.status !== "ok") return `<section class="card" id="phase-card">${head}${empty(`不适用：${p.reason}`)}</section>`;
+  if (p.status !== "ok") return `<section class="card" id="phase-card">${head}${empty(`${p.status}：${p.reason}`)}</section>`;
   const cur = PHASE_STAGES.findIndex(([n]) => n === p.stage);
   const track = PHASE_STAGES.map(([n, d], i) => `<div class="ph-step ${i === cur ? "on" : ""} ${i === 3 ? "ph-hi" : i === 4 ? "ph-down" : ""}" title="${esc(d)}"><b>${esc(n)}</b><span>${esc(d)}</span></div>`).join('<div class="ph-arrow">→</div>');
   const kinds = Object.values(PHASE_KINDS).map(([k, n, c, ic, d]) => `<div class="ph-kind ${p.kind === k ? "on" : ""}"><b class="${c}">${ic} ${k} 类：${n}</b><span>${esc(d)}</span></div>`).join("");
