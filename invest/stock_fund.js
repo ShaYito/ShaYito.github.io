@@ -323,6 +323,8 @@ function valuationCard(s) {
     ${hints.length ? `<div class="warn-box">${hints.map((h) => `<p>💡 ${esc(h)}</p>`).join("")}</div>` : ""}
     ${v.lag_note ? `<p class="muted">⏳ ${esc(v.lag_note)}。</p>` : ""}
     <div class="grid three">${charts.join("")}</div>
+    ${v.pe || v.ps_hist ? `<p class="muted val-marks">${VAL_MARKS_LEGEND(v)}</p>` : ""}
+    ${decompSection(v)}
     <div class="val-guide"><b>三个指标怎么看（各有适用场景）</b>
       <p>${esc(VAL_COMMON)}</p>
       <ul>${VAL_GUIDE.map(([n, t, curve]) => `<li><b>${n}</b>：${esc(t)}<br><span class="muted">曲线怎么看：</span><ul>${curve.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></li>`).join("")}</ul>
@@ -333,6 +335,124 @@ function valuationCard(s) {
       <ul>${MARGIN_GUIDE.items.map(([n, t]) => `<li><b>${n}</b>：${esc(t)}</li>`).join("")}</ul></div>
     <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && peCap(v.pe) ? `；市盈率图纵轴截断在 ${num(peCap(v.pe), 0)}（历史最高 ${num(v.pe.max, 0)}，出现在盈利接近 0 的时期；悬停可看真实值）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率来自 SEC 财报（公司合计）。</p></section>`;
 }
+// ---------------- 估值曲线标记（A 高位 / 低位区间、C 财报台阶、D 估值驱动 / 盈利驱动、E P/S 与利润率背离、F 强周期股低 P/E）----------------
+const VM = { run: 4, step: Math.log(1.1), win: 13, move: Math.log(1.15), share: 0.7, psUp: Math.log(1.15), marginDrop: 0.02, marginLagDays: 45, maxPts: 6, maxAreas: 2 };
+const VAL_MARKS_LEGEND = (v) => `标记：<span style="background:rgba(208,59,59,.16);padding:0 4px">淡红底</span> / <span style="background:rgba(27,175,122,.16);padding:0 4px">淡绿底</span> = 连续 ${VM.run} 周以上高于自身 80% 分位（偏贵）/ 低于 20% 分位（偏便宜），只标最近 ${VM.maxAreas} 段；`
+  + `● 财报台阶（新一季数据计入使倍数跳变 ≥ 10%：<span class="pos">绿</span> = 分母增长、倍数下台阶，<span class="neg">红</span> = 分母下滑、倍数上台阶）；`
+  + `📍“估” / “利”“收” = 近 ${VM.win} 周股价涨跌 ≥ 15% 主要来自估值变化 / 盈利（收入）变化；`
+  + `<span class="neg">▲</span> = P/S 上升但营业利润率下降（估值抬高、盈利能力变差）`
+  + `${v.cyclicality?.tier === "strong" ? "；⚠ + <span style=\"background:rgba(237,161,0,.2);padding:0 4px\">琥珀底</span> = 强周期股 P/E 处于低位（往往对应盈利高峰，不代表便宜）" : ""}。每张图最多 ${VM.maxPts} 个点状标记（优先最近），悬停看说明。`;
+
+// 周五日期 → K 线日期中当天或之前最近的交易日
+function nearDate(dates, d) {
+  let lo = 0, hi = dates.length - 1, ans = null;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (dates[m] <= d) { ans = dates[m]; lo = m + 1; } else hi = m - 1; }
+  return ans;
+}
+// kind = "pe" | "ps"；返回 { areas: markArea 数据, points: markPoint 数据 }
+function valMarks(kind, h, v, dates) {
+  const n = h.values.length, val = h.values, base = h.base || [], px = h.px || [];
+  const ok = (x) => isNum(x) && x > 0;
+  const strongCyc = kind === "pe" && v.cyclicality?.tier === "strong";
+  const den = kind === "pe" ? "每股盈利" : "每股收入", mult = kind === "pe" ? "P/E" : "P/S";
+  const at = (i) => nearDate(dates, h.dates[i]);
+  // A / F：连续 ≥ run 周高于 p80 / 低于 p20 的区间（取最近 maxAreas 段）
+  const runs = [];
+  for (let i = 0; i < n;) {
+    const side = !ok(val[i]) ? null : val[i] > h.p80 ? "high" : val[i] < h.p20 ? "low" : null;
+    if (!side) { i++; continue; }
+    let j = i;
+    while (j + 1 < n && ok(val[j + 1]) && (side === "high" ? val[j + 1] > h.p80 : val[j + 1] < h.p20)) j++;
+    if (j - i + 1 >= VM.run) runs.push({ side, i, j });
+    i = j + 1;
+  }
+  const areas = runs.slice(-VM.maxAreas).filter((r) => at(r.i) && at(r.j)).map((r) => {
+    const cyc = strongCyc && r.side === "low";
+    const color = cyc ? "rgba(237,161,0,0.20)" : r.side === "high" ? "rgba(208,59,59,0.13)" : "rgba(27,175,122,0.13)";
+    return [{ xAxis: at(r.i), itemStyle: { color, opacity: 1 }, label: { show: true, position: "insideTop", fontSize: 10, color: css("--muted"), formatter: cyc ? "低位（周期顶？）" : r.side === "high" ? "偏贵" : "偏便宜" } }, { xAxis: at(r.j) }];
+  });
+  const pts = [];
+  // C：财报台阶（分母变化 ≥ 10%）
+  for (let i = 1; i < n; i++) {
+    if (!ok(base[i]) || !ok(base[i - 1]) || !ok(val[i])) continue;
+    const db = Math.log(base[i] / base[i - 1]);
+    if (Math.abs(db) < VM.step) continue;
+    pts.push({ i, kind: "C", symbol: "circle", symbolSize: 8, color: db > 0 ? css("--good") : css("--bad"),
+      tip: `${h.dates[i]} 新一季财报计入：${den}（近 4 季）${pct(Math.expm1(db), 0, true)}，${mult} 因此${db > 0 ? "下" : "上"}台阶 ${pct(Math.abs(Math.expm1(-db)), 0)}` });
+  }
+  // D：近 win 周股价涨跌 ≥ 15%，≥ 70% 来自估值或分母（从最近往前扫，命中后跳过一个窗口）
+  for (let j = n - 1; j - VM.win >= 0;) {
+    const i0 = j - VM.win;
+    if (![px[j], px[i0], val[j], val[i0], base[j], base[i0]].every(ok)) { j--; continue; }
+    const dp = Math.log(px[j] / px[i0]), dm = Math.log(val[j] / val[i0]), db = Math.log(base[j] / base[i0]);
+    const by = Math.abs(dp) < VM.move ? null : dm / dp >= VM.share ? "m" : db / dp >= VM.share ? "b" : null;
+    if (!by) { j--; continue; }
+    const lab = by === "m" ? "估" : kind === "pe" ? "利" : "收";
+    pts.push({ i: j, kind: "D", symbol: "pin", symbolSize: 24, color: by === "m" ? "#eda100" : "#1baf7a", label: lab,
+      tip: `${h.dates[i0]} → ${h.dates[j]}（${VM.win} 周）股价 ${pct(Math.expm1(dp), 0, true)} = ${den} ${pct(Math.expm1(db), 0, true)} × ${mult} ${pct(Math.expm1(dm), 0, true)}：主要${by === "m" ? `来自估值${dm > 0 ? "抬升（靠预期推动，对失望更敏感）" : "收缩"}` : `来自${den}${db > 0 ? "增长（上涨有业绩支撑）" : "下滑"}`}` });
+    j -= VM.win;
+  }
+  // E：P/S 近 win 周上升 ≥ 15%，营业利润率较两个季度前下降 ≥ 2 个百分点（季度数据按季末 + 45 天视为可用）
+  const m = v.margins;
+  if (kind === "ps" && m?.frequency === "quarterly" && m.op_margin?.some(isNum)) {
+    const eff = m.periods.map((d) => { const x = new Date(d); x.setDate(x.getDate() + VM.marginLagDays); return x.toISOString().slice(0, 10); });
+    let last = -Infinity;
+    for (let j = VM.win; j < n; j++) {
+      if (j - last < VM.win || !ok(val[j]) || !ok(val[j - VM.win]) || Math.log(val[j] / val[j - VM.win]) < VM.psUp) continue;
+      let q = -1;
+      for (let t = 0; t < eff.length; t++) if (eff[t] <= h.dates[j]) q = t;
+      if (q < 2 || !isNum(m.op_margin[q]) || !isNum(m.op_margin[q - 2])) continue;
+      const dmg = m.op_margin[q] - m.op_margin[q - 2];
+      if (dmg > -VM.marginDrop) continue;
+      last = j;
+      pts.push({ i: j, kind: "E", symbol: "triangle", symbolSize: 11, color: css("--bad"),
+        tip: `${h.dates[j]}：近 ${VM.win} 周 P/S ${pct(val[j] / val[j - VM.win] - 1, 0, true)}，但营业利润率（${m.periods[q]} 季）较两个季度前 ${num(dmg * 100, 1, true)} 个百分点：估值在抬高、盈利能力在变差` });
+    }
+  }
+  // F：强周期股 P/E 低位区间的起点
+  if (strongCyc) runs.filter((r) => r.side === "low").forEach((r) => pts.push({ i: r.i, kind: "F", symbol: "path://M12 2 L22 20 L2 20 Z", symbolSize: 13, color: "#eda100",
+    tip: `${h.dates[r.i]} 起连续 ${r.j - r.i + 1} 周 P/E 低于自身 20% 分位：强周期股的低 P/E 往往出现在盈利高峰（景气顶部），并不代表便宜，优先看 P/S` }));
+  const points = pts.sort((a, b) => a.i - b.i).slice(-VM.maxPts).filter((p) => at(p.i)).map((p) => ({
+    coord: [at(p.i), val[p.i]], symbol: p.symbol, symbolSize: p.symbolSize, itemStyle: { color: p.color, borderColor: css("--surface"), borderWidth: 1 },
+    label: p.label ? { show: true, formatter: p.label, color: "#fff", fontSize: 10 } : { show: false }, tip: p.tip, symbolOffset: p.kind === "F" ? [0, 12] : [0, 0] }));
+  return { areas, points };
+}
+
+// ---------------- 涨幅拆分：股价 = 每股盈利 × P/E（或 每股收入 × P/S），三条线在起点 = 100，对数纵轴上相加 ----------------
+function decompSection(v) {
+  if (!(v.pe?.base || v.ps_hist?.base)) return "";
+  const def = !v.pe?.base || v.cyclicality?.tier === "strong" ? "ps" : "pe";
+  return `<div class="decomp" data-def="${def}"><div class="row"><b>涨幅拆分：股价变动来自业绩还是估值</b>
+      <div class="seg" id="decomp-mode">${[["pe", "按盈利（P/E）"], ["ps", "按收入（P/S）"]].filter(([m]) => (m === "pe" ? v.pe?.base : v.ps_hist?.base)).map(([m, l]) => `<button type="button" data-m="${m}" class="${m === def ? "on" : ""}">${l}</button>`).join("")}</div></div>
+    <p id="decomp-sum" class="ph-verdict"></p>${chartDiv("c-decomp", "short")}
+    <p class="muted">${rich("股价 = 每股盈利（近 4 季）× P/E，所以在对数纵轴上“股价涨多少”恰好等于“盈利涨多少”加上“估值涨多少”。三条线都从显示区间的第一周 = 100 出发，区间跟随上方价格走势的按钮与缩放。靠业绩上涨（盈利线跟着股价走）通常更健康；靠估值上涨（估值线跟着股价走）说明市场预期在升温，对“不及预期”更敏感。亏损期间 P/E 无意义，盈利口径会中断，这时改看“按收入”。股价为实际价格（不含分红）。")}</p></div>`;
+}
+function drawDecomp(s, k, mode) {
+  const v = s.valuation, h = mode === "ps" ? v?.ps_hist : v?.pe;
+  const el = byId("c-decomp");
+  if (!h?.base || !el) return;
+  const n = s.dates.length;
+  const [a, b] = k ? zoomRange(k, n) : [0, n - 1];
+  const d0 = s.dates[a], d1 = s.dates[b];
+  const idx = h.dates.map((d, i) => i).filter((i) => h.dates[i] >= d0 && h.dates[i] <= d1);
+  const ok = (i) => [h.px[i], h.base[i], h.values[i]].every((x) => isNum(x) && x > 0);
+  const i0 = idx.find(ok), i1 = [...idx].reverse().find(ok);
+  const den = mode === "ps" ? "每股收入" : "每股盈利", mult = mode === "ps" ? "P/S" : "P/E";
+  if (i0 == null || i1 == null || i0 === i1) { byId("decomp-sum").textContent = "显示区间内数据不足（或处于亏损期），无法拆分。"; return; }
+  const gap = idx.some((i) => i > i0 && i < i1 && !ok(i));
+  const rb = (arr, i) => (isNum(arr[i]) && arr[i] > 0 ? (100 * arr[i]) / arr[i0] : null);
+  const xs = idx.filter((i) => i >= i0).map((i) => h.dates[i]);
+  const ser = (name, arr, color, w) => ({ name, type: "line", showSymbol: false, color, lineStyle: { width: w }, data: idx.filter((i) => i >= i0).map((i) => rb(arr, i)) });
+  mkChart(el, { tooltip: { trigger: "axis", valueFormatter: (x) => (isNum(x) ? `${num(x, 0)}（${pct(x / 100 - 1, 0, true)}）` : "–") }, legend: { top: 0 },
+    grid: { left: 48, right: 16, top: 30, bottom: 24 }, xAxis: { type: "category", data: xs, boundaryGap: false },
+    yAxis: { type: "log", logBase: 2, scale: true, axisLabel: { formatter: (x) => num(x, 0) } },
+    series: [ser("股价", h.px, css("--ink"), 2.2), ser(den, h.base, "#1baf7a", 1.8), ser(mult, h.values, "#eda100", 1.8)] });
+  const dp = Math.log(h.px[i1] / h.px[i0]), db = Math.log(h.base[i1] / h.base[i0]), dm = Math.log(h.values[i1] / h.values[i0]);
+  const share = Math.abs(dp) > 0.02 ? db / dp : null;
+  const verdict = share == null ? "股价基本持平" : share >= 0.7 ? `主要来自${den}${db >= 0 ? "增长" : "下滑"}` : share <= 0.3 ? `主要来自估值${dm >= 0 ? "抬升" : "收缩"}` : "业绩与估值共同作用";
+  byId("decomp-sum").innerHTML = `${esc(h.dates[i0])} → ${esc(h.dates[i1])}：股价 <b class="${cls(dp)}">${pct(Math.expm1(dp), 0, true)}</b> = ${den} <b class="${cls(db)}">${pct(Math.expm1(db), 0, true)}</b> × ${mult} <b class="${cls(dm)}">${pct(Math.expm1(dm), 0, true)}</b>，<b>${verdict}</b>${gap ? "（区间内有亏损或数据缺口，盈利口径不连续）" : ""}。`;
+}
+
 // 市盈率纵轴上限：盈利接近 0 时 P/E 会出现极端尖峰，压扁其余走势；上限取“5 年中位数 × 3”与“近 52 周第 95 百分位 × 1.1”中较大者，
 // 保证近一年的曲线完整显示；没有超出时返回 null（不截断）
 function peCap(h) {
@@ -346,9 +466,10 @@ function drawValuation(s, k) {
   if (!v) return;
   const n = s.dates.length;
   // 横轴 = 价格走势的日期（s.dates）：显示范围跟随 K 线的区间按钮 / 缩放；中位数与 20%–80% 区间仍按近 5 年计算
-  const hist = (id, h, title, fmt, color, cap) => {
+  const hist = (id, h, title, fmt, color, cap, kind) => {
     if (!h || !byId(id)) return;
     const at = Object.fromEntries(h.dates.map((d, i) => [d, h.values[i]]));
+    const mk = kind ? valMarks(kind, h, v, s.dates) : { areas: [], points: [] };
     const top = cap ? peCap(h) : null; // 只截断盈利接近 0 时的极端尖峰，近一年的曲线始终完整显示
     const c = mkChart(byId(id), { title: { text: title, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
       tooltip: { trigger: "axis", valueFormatter: fmt }, legend: { show: false }, grid: { left: 48, right: 70, top: 30, bottom: 24 },
@@ -356,13 +477,27 @@ function drawValuation(s, k) {
       yAxis: { type: "value", scale: true, max: top, axisLabel: { formatter: fmt } },
       dataZoom: [{ type: "inside", zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
       series: [{ name: title, type: "line", showSymbol: false, connectNulls: true, color, lineStyle: { width: 1.8 }, data: s.dates.map((d) => at[d] ?? null),
-        markArea: isNum(h.p20) ? { silent: true, itemStyle: { color: css("--chip"), opacity: 0.6 }, data: [[{ yAxis: h.p20 }, { yAxis: h.p80 }]] } : undefined,
+        markArea: isNum(h.p20) ? { silent: true, itemStyle: { color: css("--chip"), opacity: 0.6 }, data: [[{ yAxis: h.p20 }, { yAxis: h.p80 }], ...mk.areas] } : undefined,
+        markPoint: mk.points.length ? { data: mk.points, tooltip: { trigger: "item", formatter: (p) => esc(p.data.tip) } } : undefined,
         markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { color: css("--muted"), fontSize: 10, position: "end" },
           data: [{ yAxis: h.median, label: { formatter: `5 年中位 ${fmt(h.median)}` } }] } }] });
     followKZoom(k, n, c);
   };
-  hist("c-val-pe", v.pe, "市盈率 P/E", (x) => num(x, 1), palette()[0], true);
-  hist("c-val-ps", v.ps_hist, "市销率 P/S", (x) => num(x, 1), palette()[1], false); // 收入不会接近 0，不截断
+  hist("c-val-pe", v.pe, "市盈率 P/E", (x) => num(x, 1), palette()[0], true, "pe");
+  hist("c-val-ps", v.ps_hist, "市销率 P/S", (x) => num(x, 1), palette()[1], false, "ps"); // 收入不会接近 0，不截断
+  // 涨幅拆分：按钮切换口径，区间跟随 K 线
+  const dsec = document.querySelector(".decomp");
+  if (dsec) {
+    let mode = dsec.dataset.def;
+    const redraw = () => drawDecomp(s, k, mode);
+    dsec.querySelectorAll("#decomp-mode button").forEach((btn) => (btn.onclick = () => {
+      mode = btn.dataset.m;
+      dsec.querySelectorAll("#decomp-mode button").forEach((x) => x.classList.toggle("on", x === btn));
+      redraw();
+    }));
+    k?.on("datazoom", redraw);
+    redraw();
+  }
   hist("c-val-fcf", v.fcf_hist, "FCF 收益率", (x) => pct(x, 1), palette()[2], false);
   const m = v.margins;
   if (m?.periods?.length && byId("c-val-margin")) {
