@@ -331,7 +331,15 @@ function valuationCard(s) {
     <div class="val-guide"><b>利润率怎么看（和估值是什么关系）</b>
       <p>${esc(MARGIN_GUIDE.role)}</p>
       <ul>${MARGIN_GUIDE.items.map(([n, t]) => `<li><b>${n}</b>：${esc(t)}</li>`).join("")}</ul></div>
-    <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && v.pe.max > v.pe.median * 3 ? `；图表纵轴截断在中位数的 3 倍（历史最高 ${num(v.pe.max, 0)}，出现在盈利很低的时期）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率来自 SEC 财报（公司合计）。</p></section>`;
+    <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && peCap(v.pe) ? `；市盈率图纵轴截断在 ${num(peCap(v.pe), 0)}（历史最高 ${num(v.pe.max, 0)}，出现在盈利接近 0 的时期；悬停可看真实值）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率来自 SEC 财报（公司合计）。</p></section>`;
+}
+// 市盈率纵轴上限：盈利接近 0 时 P/E 会出现极端尖峰，压扁其余走势；上限取“5 年中位数 × 3”与“近 52 周第 95 百分位 × 1.1”中较大者，
+// 保证近一年的曲线完整显示；没有超出时返回 null（不截断）
+function peCap(h) {
+  const rec = h.values.slice(-52).filter(isNum).sort((a, b) => a - b);
+  const q95 = rec.length ? rec[Math.min(rec.length - 1, Math.floor(rec.length * 0.95))] : 0;
+  const c = Math.max(h.median * 3, q95 * 1.1);
+  return h.values.some((x) => isNum(x) && x > c) ? Math.ceil(c) : null;
 }
 function drawValuation(s, k) {
   const v = s.valuation;
@@ -341,7 +349,7 @@ function drawValuation(s, k) {
   const hist = (id, h, title, fmt, color, cap) => {
     if (!h || !byId(id)) return;
     const at = Object.fromEntries(h.dates.map((d, i) => [d, h.values[i]]));
-    const top = cap && h.max > h.median * 3 ? Math.ceil(h.median * 3) : null; // 早期极端值（盈利很低时）截断，避免压扁近期走势
+    const top = cap ? peCap(h) : null; // 只截断盈利接近 0 时的极端尖峰，近一年的曲线始终完整显示
     const c = mkChart(byId(id), { title: { text: title, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
       tooltip: { trigger: "axis", valueFormatter: fmt }, legend: { show: false }, grid: { left: 48, right: 70, top: 30, bottom: 24 },
       xAxis: { type: "category", data: s.dates, boundaryGap: false },
@@ -354,7 +362,7 @@ function drawValuation(s, k) {
     followKZoom(k, n, c);
   };
   hist("c-val-pe", v.pe, "市盈率 P/E", (x) => num(x, 1), palette()[0], true);
-  hist("c-val-ps", v.ps_hist, "市销率 P/S", (x) => num(x, 1), palette()[1], true);
+  hist("c-val-ps", v.ps_hist, "市销率 P/S", (x) => num(x, 1), palette()[1], false); // 收入不会接近 0，不截断
   hist("c-val-fcf", v.fcf_hist, "FCF 收益率", (x) => pct(x, 1), palette()[2], false);
   const m = v.margins;
   if (m?.periods?.length && byId("c-val-margin")) {
