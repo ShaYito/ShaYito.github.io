@@ -433,7 +433,8 @@ function drawDecomp(s, k, mode) {
   if (!h?.base || !el) return;
   const n = s.dates.length;
   const [a, b] = k ? zoomRange(k, n) : [0, n - 1];
-  const d0 = s.dates[a], d1 = s.dates[b];
+  // 周数据以周五为标签：显示到最后一天时，包含最新那一周（标签可能晚于最后交易日几天）
+  const d0 = s.dates[a], d1 = b === n - 1 ? "9999-12-31" : s.dates[b];
   const idx = h.dates.map((d, i) => i).filter((i) => h.dates[i] >= d0 && h.dates[i] <= d1);
   const ok = (i) => [h.px[i], h.base[i], h.values[i]].every((x) => isNum(x) && x > 0);
   const i0 = idx.find(ok), i1 = [...idx].reverse().find(ok);
