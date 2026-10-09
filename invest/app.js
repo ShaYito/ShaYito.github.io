@@ -1098,11 +1098,45 @@ function sidebarOrder(list) {
   const rank = (t) => (isHeld(t) ? 0 : isPlanned(t) ? 1 : 2);
   return [...list].sort((a, b) => rank(a.ticker) - rank(b.ticker) || a.ticker.localeCompare(b.ticker));
 }
+// ---------------- 个股业务标签（config.tags：一个字 + 大类颜色；侧边栏可按标签筛选）----------------
+const TAG_FILTER_KEY = "invest.side_tag";
+let SIDE_CUR = null;
+function sideTag() { try { return sessionStorage.getItem(TAG_FILTER_KEY) || ""; } catch { return ""; } }
+const tagsOf = (t) => META.universe.find((u) => u.ticker === t)?.tags || [];
+function tagChips(t, max = 3) {
+  return tagsOf(t).slice(0, max).map((k) => { const d = META.tags?.[k]; return d ? `<span class="tg" style="background:${d.color}" title="${esc(d.name)}">${esc(d.short)}</span>` : ""; }).join("");
+}
+// 个股页标题旁：完整标签名，点击 = 在侧边栏筛选同标签的股票
+function tagNames(t) {
+  return tagsOf(t).map((k) => { const d = META.tags?.[k]; return d ? `<a href="#" class="tg-full" data-tag="${esc(k)}" style="border-color:${d.color};color:${d.color}" title="在左侧只看“${esc(d.name)}”">${esc(d.short)} ${esc(d.name)}</a>` : ""; }).join("");
+}
+function tagFilterBar() {
+  const used = [...new Set(META.universe.flatMap((u) => u.tags || []))].filter((k) => META.tags?.[k]);
+  if (!used.length) return "";
+  const on = sideTag();
+  return `<div class="tag-filter" title="点一个标签只看该业务的股票，再点一次取消">${used.map((k) => { const d = META.tags[k];
+    return `<button type="button" data-tag="${esc(k)}" class="${on === k ? "on" : ""}" style="--tc:${d.color}" title="${esc(d.name)}">${esc(d.short)}</button>`; }).join("")}
+    ${on && META.tags[on] ? `<div class="muted tag-on">只看：${esc(META.tags[on].name)} · <a href="#" data-tag="">全部</a></div>` : ""}</div>`;
+}
+function setSideTag(k) {
+  try { if (k && k !== sideTag()) sessionStorage.setItem(TAG_FILTER_KEY, k); else sessionStorage.removeItem(TAG_FILTER_KEY); } catch { /* 隐私模式 */ }
+  const side = document.querySelector("aside.stock-side");
+  if (side) side.outerHTML = stockSidebar(SIDE_CUR);
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".tag-filter [data-tag], a.tg-full[data-tag]");
+  if (!b) return;
+  e.preventDefault();
+  setSideTag(b.dataset.tag);
+});
 function stockSidebar(cur) {
+  SIDE_CUR = cur;
+  const ft = sideTag();
+  const pass = (t) => !ft || tagsOf(t).includes(ft);
   const groups = META.themes.map((th) => {
-    const items = sidebarOrder(META.universe.filter((u) => u.theme === th.key)).map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}`)}">
-      <span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</a>`).join("");
-    return `<h4>${esc(th.name)}</h4>${items}`;
+    const items = sidebarOrder(META.universe.filter((u) => u.theme === th.key && pass(u.ticker))).map((u) => `<a href="#/stock/${u.ticker}" class="side-item ${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}${(u.tags || []).length ? ` · ${u.tags.map((k) => META.tags?.[k]?.name).filter(Boolean).join(" / ")}` : ""}`)}">
+      <span class="nm"><span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</span><span class="tgs">${tagChips(u.ticker)}</span></a>`).join("");
+    return items ? `<h4>${esc(th.name)}</h4>${items}` : "";
   }).join("");
   // 按实际持仓时：顶部加“你的持仓”一组
   let mine = "";
@@ -1116,7 +1150,7 @@ function stockSidebar(cur) {
   const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
   const cmp = `<a href="#/compare${cur ? `?t=${cur}` : ""}" class="cmp-entry" title="勾选多只股票 / ETF，对比走势与相关性">📊 多股对比</a>`;
-  return `<aside class="stock-side" aria-label="选择股票">${cmp}${mine}${etfs ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
+  return `<aside class="stock-side" aria-label="选择股票">${cmp}${tagFilterBar()}${ft ? "" : mine}${etfs && !ft ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
 }
 // K 线价格口径：复权价（默认，含分红再投资，用于各项计算）/ 实际价格（除权不除息，与券商 K 线及你的成本同口径）
 const PRICE_MODE_KEY = "invest.price_mode";
@@ -1212,7 +1246,7 @@ PAGES.stock = async (r) => {
   const dimChips = m ? Object.entries(m.scores).map(([k, v]) => `<span class="chip">${esc({ composite: "综合", momentum: "动量", trend: "趋势", relative: "相对强弱", low_vol: "低波动", valuation: "估值", sentiment: "情绪", event_risk: "事件风险低" }[k] || k)} ${num(v, 0)}</span>`).join("") : "";
   app().innerHTML = `
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
-    <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""} · <a href="#/holdings?tab=buyplan&t=${t}">加入买入计划</a></span></h2>
+    <h2>${esc(t)} ${esc(nameZh)} <span class="tg-row">${tagNames(t)}</span> <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""} · <a href="#/holdings?tab=buyplan&t=${t}">加入买入计划</a></span></h2>
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>

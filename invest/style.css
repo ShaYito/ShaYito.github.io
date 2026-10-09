@@ -192,6 +192,16 @@ a.chain-chip:hover { border-color: var(--ink-2); }
 .stock-side a b { color: var(--ink); font-weight: 600; margin-right: 4px; }
 .stock-side a:hover { background: var(--chip); }
 .stock-side a.on { background: var(--chip); box-shadow: inset 3px 0 0 #2a78d6; }
+.stock-side a.side-item { display: flex; align-items: center; gap: 4px; }
+.stock-side a.side-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.stock-side .tgs { flex: none; display: inline-flex; gap: 2px; }
+.tg { display: inline-block; min-width: 16px; height: 16px; line-height: 16px; padding: 0 2px; border-radius: 4px; color: #fff; font-size: 10.5px; font-weight: 600; text-align: center; }
+.tag-filter { display: flex; flex-wrap: wrap; gap: 3px; margin: 6px 4px 8px; }
+.tag-filter button { min-width: 22px; height: 22px; padding: 0 3px; border-radius: 5px; border: 1px solid var(--tc); background: transparent; color: var(--tc); font-size: 12px; font-weight: 600; cursor: pointer; }
+.tag-filter button.on, .tag-filter button:hover { background: var(--tc); color: #fff; }
+.tag-filter .tag-on { flex-basis: 100%; font-size: 12px; margin-top: 2px; }
+.tg-row { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: middle; }
+a.tg-full { font-size: 12px; font-weight: 500; padding: 1px 6px; border: 1px solid; border-radius: 10px; text-decoration: none; }
 .stock-side .dot, .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 .chip .cmp-x { margin-left: 4px; text-decoration: none; color: var(--muted); }
 .stock-side label.cmp-item { display: flex; align-items: center; gap: 2px; padding: 3px 6px; border-radius: 6px; color: var(--ink-2); font-size: 13px; white-space: nowrap; overflow: hidden; cursor: pointer; }
