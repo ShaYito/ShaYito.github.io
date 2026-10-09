@@ -379,6 +379,9 @@ function tradeTooltip(p) {
 // ---------------- 关键指标（估值 / 增长 / 盈利能力 / 财务健康 / 价格位置与风险 / 市场预期）----------------
 // fmt：x = 倍数，pct = 百分比，pp = 百分比（带正负号），num = 数值；better：low / high / null（无好坏方向）
 const METRIC_DEFS = {
+  market_cap: { name: "市值", value: ["低", "规模本身对收益的预测力在大盘股中很弱，主要用于理解波动与流动性。"], fmt: "cap", better: null, def: "总市值（美元）= 股价 × 总股数（yfinance，随最新股价更新）。",
+    read: "衡量公司规模；超大市值公司流动性好、波动通常较小。没有好坏之分。",
+    use: "同样的新闻，对小公司的股价影响往往更大；比较估值时注意规模差异，与市值相差很大的同行比较估值要谨慎。" },
   pe_ttm: { name: "市盈率 P/E", value: ["中", "最常用的估值尺度。长期看，低估值股票整体略占优（价值效应），但对未来几个月涨跌几乎没有预测力；高成长公司长期“看起来贵”，单看会错过好公司。"], fmt: "x", better: "low", def: "股价 ÷ 过去 12 个月（TTM）每股收益（EPS）。买入 1 元的年利润要付多少元。",
     read: "越高说明市场对未来增长预期越高（或利润暂时偏低）；和同行、和自己历史比才有意义，单看绝对值意义不大。",
     use: "与预期 P/E 一起看：预期 P/E 明显低于 P/E，说明分析师预计利润会大幅增长。高市盈率股票对“不及预期”更敏感，财报前后波动更大。",
@@ -472,6 +475,7 @@ function fmtMetric(v, f) {
   if (f === "pct0") return pct(v, 0);
   if (f === "pp") return pct(v, 1, true);
   if (f === "num1") return num(v, 1);
+  if (f === "cap") return v >= 1e12 ? `${num(v / 1e12, 2)} 万亿美元` : `${Math.round(v / 1e8).toLocaleString()} 亿美元`;
   return num(v, 2);
 }
 // 相对同行中位数的一句话（只描述事实：高于 / 低于多少）
@@ -479,6 +483,10 @@ function metricCompare(it, d) {
   const ref = isNum(it.theme_median) ? it.theme_median : it.universe_median;
   if (!isNum(it.value) || !isNum(ref)) return "";
   const who = isNum(it.theme_median) ? "同行" : "选股池";
+  if (d.fmt === "cap") { // 规模：用倍数描述，不分好坏
+    const r = it.value / ref;
+    return r > 0.9 && r < 1.1 ? `<span class="muted">与${who}接近</span>` : `<span class="dir-neutral">${who}中位数的 ${r >= 1 ? `${num(r, r >= 10 ? 0 : 1)} 倍` : pct(r, r < 0.1 ? 1 : 0)}</span>`;
+  }
   const pctOrX = d.fmt === "x" || d.fmt === "num2" || d.fmt === "num1";
   const diff = pctOrX ? (ref !== 0 ? it.value / ref - 1 : NaN) : it.value - ref;
   // 接近：倍数类相差 < 10%；百分比类绝对差 < 2 个百分点且相对差 < 25%（避免 1.8% vs 0.2% 这种相差数倍的被算作接近）

@@ -184,8 +184,6 @@ const CMP_EXTRA_DEFS = {
   fcf_ps_chg: { name: "每股 FCF 变化", fmt: "pp", better: null, def: "近 13 周每股 FCF（近 4 季合计）的变化；只在交 10-Q / 10-K 后更新。", read: "正 = 现金流在改善。", use: "收益率上升的基本面部分。", value: FCF_PS_VALUE },
   fcf_px_chg: { name: "股价变化", fmt: "pp", better: null, def: "近 13 周股价变化。", read: "收益率 = 每股 FCF ÷ 股价，股价下跌会抬高收益率。", use: "收益率上升的价格部分。", value: FCF_PHASE_VALUE },
   fcf_y_pct: { name: "自身历史分位", fmt: "pct0", better: null, def: "当前 FCF 收益率在自身近 5 年中的百分位。", read: "越高 = 相对自己的历史越便宜。", use: "≥ 70% 视为高位（判断“接近高点”的条件之一）。", value: FCF_PHASE_VALUE },
-  market_cap: { name: "市值", fmt: "cap", def: "总市值（美元）= 股价 × 总股数。", read: "衡量公司规模；超大市值公司流动性好、波动通常较小。",
-    use: "同样的新闻，对小公司的股价影响往往更大；比较估值时注意规模差异。", value: ["低", "规模本身对收益的预测力在大盘股中很弱，主要用于理解波动与流动性。"] },
   price: { name: "现价", fmt: "num2", def: "最新收盘价（拆股调整）。", read: "单独看没有意义，需与目标价、成本价、历史区间比较。", use: "与加权目标价、你的平均成本对照。", value: ["—", "描述性数据。"] },
   median_target: { name: "目标价中位数", fmt: "num2", def: "各机构近 12 个月最新目标价的中位数（相同目标价的重申只算一次）。",
     read: "代表机构共识；比平均值更不受极端目标价影响。", use: "与现价比较得到共识空间；更有用的是它随时间的变化方向（见“本周上调 / 下调”）。",
