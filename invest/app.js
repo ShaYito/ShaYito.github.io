@@ -1157,11 +1157,27 @@ function costMarkLine(cost, t) {
   return { yAxis: cost, lineStyle: { color: palette()[6], type: "solid", width: 1.6 },
     label: { show: true, position: "insideEndTop", formatter: `你的平均成本 ${costEst(t) ? "≈" : ""}${num(cost, 2)}`, color: css("--ink"), fontSize: 11 } };
 }
-// y 轴范围包含成本线（否则成本远离近期价格时看不到）
-const yWithCost = (cost) => (cost
-  ? { type: "value", scale: true, min: (v) => Math.floor(Math.min(v.min, cost) * 0.98), max: (v) => Math.ceil(Math.max(v.max, cost) * 1.02),
-      axisLabel: { showMinLabel: false, showMaxLabel: false } }
-  : { type: "value", scale: true });
+// 分析师目标价横线（当前的 12 个月目标价：中位数与按准确度加权，见“分析师目标价”卡片）；两者接近时标签一上一下错开
+function targetMarkLines(s) {
+  const a = s.analyst_targets;
+  if (!a || !isNum(a.median_target)) return [];
+  const both = isNum(a.weighted_target);
+  const near = both && Math.abs(a.weighted_target / a.median_target - 1) < 0.04;
+  const medHigher = !both || a.median_target >= a.weighted_target;
+  const ln = (v, name, color, type, top) => ({ yAxis: v, lineStyle: { color, type, width: 1.5 },
+    label: { show: true, position: top ? "insideStartTop" : "insideStartBottom", formatter: `${name} ${num(v, 2)}`, color, fontSize: 11 } });
+  return [ln(a.median_target, "目标价中位数", palette()[4], "dashed", !near || medHigher),
+    ...(both ? [ln(a.weighted_target, "按准确度加权", palette()[3], "dotted", !near || !medHigher)] : [])];
+}
+// y 轴范围包含成本线 / 目标价线（否则远离近期价格时看不到）
+const yWithLines = (vals) => {
+  const xs = vals.filter(isNum);
+  return xs.length
+    ? { type: "value", scale: true, min: (v) => Math.floor(Math.min(v.min, ...xs) * 0.98), max: (v) => Math.ceil(Math.max(v.max, ...xs) * 1.02),
+        axisLabel: { showMinLabel: false, showMaxLabel: false } }
+    : { type: "value", scale: true };
+};
+const yWithCost = (cost) => yWithLines([cost]);
 const pxLabel = (d) => (d.div_factor && priceMode() === "raw" ? "实际价格，除权不除息" : "复权价格");
 // 个股页：你在这只股票上的持仓（本机账本或个人版），以及它与你持仓的产业链关系
 function myPositionLine(t, s) {
@@ -1199,7 +1215,7 @@ PAGES.stock = async (r) => {
     <h2>${esc(t)} ${esc(nameZh)} <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${m?.weight ? ` · 当前权重 ${pct(m.weight, 1)}` : ""}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""} · <a href="#/holdings?tab=buyplan&t=${t}">加入买入计划</a></span></h2>
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
     ${relCard()}${valuationCard(s)}${phaseCard(s)}
     ${metricsCard(s)}${earningsCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
     ${insiderCard(s, t)}
@@ -1232,7 +1248,8 @@ PAGES.stock = async (r) => {
   const k = mkChart(byId("c-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     grid: { ...K_GRID_X, top: 36, bottom: 60 },
-    xAxis: { type: "category", data: s.dates, boundaryGap: true }, yAxis: yWithCost(cost),
+    xAxis: { type: "category", data: s.dates, boundaryGap: true },
+    yAxis: yWithLines([cost, s.analyst_targets?.median_target, s.analyst_targets?.weighted_target]),
     dataZoom: [{ type: "inside", startValue: kPeriodStart(nK, kPeriod()), endValue: nK - 1 },
       { type: "slider", startValue: kPeriodStart(nK, kPeriod()), endValue: nK - 1, height: 18, bottom: 10 }],
     series: [
@@ -1253,7 +1270,7 @@ PAGES.stock = async (r) => {
             : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
           data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d), ...(earningsLineStyle(s, d) || {}) })),
-            ...(cost ? [costMarkLine(cost, t)] : [])] } },
+            ...(cost ? [costMarkLine(cost, t)] : []), ...targetMarkLines(s)] } },
       { name: "MA50", type: "line", showSymbol: false, data: s.ma50, color: palette()[0], lineStyle: { width: 1.4 } },
       { name: "MA200", type: "line", showSymbol: false, data: s.ma200, color: palette()[1], lineStyle: { width: 1.4 } },
     ],
