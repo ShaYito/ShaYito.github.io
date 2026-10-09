@@ -634,10 +634,10 @@ function metricDocTable(keys, defOf = (k) => METRIC_DEFS[k]) {
 
 // ---------------- FCF 收益率“自身上升期”（只和自己的历史比；A / B / C 类型 + 阶段）----------------
 const PHASE_STAGES = [
-  ["非上升期", "收益率近半年没有明显上升", ""],
+  ["非上升期", "收益率近期没有明显上升", ""],
   ["上升早期", "开始上升，仍在自身历史的中低位", "rgba(47,163,122,0.12)"],
   ["上升中段", "已升到自身高位，仍在加速", "rgba(47,163,122,0.26)"],
-  ["接近高点", "高位 + 明显减速 + 贴近半年最高点", "rgba(224,164,58,0.38)"],
+  ["接近高点", "高位 + 明显减速 + 贴近近期最高点", "rgba(224,164,58,0.38)"],
   ["见顶回落", "刚从上升期的高点回落 ≥ 10%", "rgba(208,59,59,0.20)"],
 ];
 const PHASE_COLOR = Object.fromEntries(PHASE_STAGES.map(([n, , c]) => [n, c]));
@@ -650,12 +650,24 @@ function phaseVerdict(p, t) {
   const k = PHASE_KINDS[p.kind];
   const why = `近 ${p.window} 周每股 FCF ${pct(p.fcf_part, 0, true)}、股价 ${pct(p.price_part, 0, true)}，FCF 收益率因此${p.change >= 0 ? "上升" : "下降"} ${pct(Math.abs(p.change), 0)}`;
   if (p.stage === "非上升期") return `${esc(t)} 的 FCF 收益率<b>不在上升期</b>（${why}）。`;
-  if (p.stage === "见顶回落") return `${esc(t)} 的 FCF 收益率<b>刚从上升期的高点回落</b>（已比近半年最高点低 ${pct(p.off_high, 0)}），${k ? `此前的上升属于 <b>${k[0]} 类（${k[1]}）</b>` : "此前处于上升期"}。${why}。`;
+  if (p.stage === "见顶回落") return `${esc(t)} 的 FCF 收益率<b>刚从上升期的高点回落</b>（已比近 ${p.window} 周最高点低 ${pct(p.off_high, 0)}），${k ? `此前的上升属于 <b>${k[0]} 类（${k[1]}）</b>` : "此前处于上升期"}。${why}。`;
   return `${esc(t)} 的 FCF 收益率处于<b>${esc(p.stage)}</b>，属于 <b>${k[0]} 类（${k[1]}）</b>：${why}。`;
+}
+// 回测结论（web_data/fcf_phase_backtest_themes.json 中与当前窗口相同的一组，建站时附在 p.backtest）
+function phaseBacktest(p) {
+  const b = p.backtest;
+  if (!b) return `<p class="muted">历史回测：当前窗口（${p.window} / ${p.short} 周）尚无回测结果。</p>`;
+  const f = (x) => (!x ? "–" : Math.abs(x.mean) < 0.0005 ? `≈ 0（t ${num(x.t, 1)}）` : `${pct(x.mean, 1, true)}（t ${num(x.t, 1)}）`);
+  const yr = (d) => String(d || "").slice(0, 4);
+  return `<div class="ph-bt"><b>历史回测怎么说</b> <span class="muted">（${yr(b.period?.[0])}–${yr(b.period?.[1])} 年，选股池及同行业 ${b.tested} 只，每周只用当时的数据判定；收益为相对同期全部股票平均的超额）</span><ul>
+    <li><b>阶段只作描述参考</b>：之后 3 个月，上升期比非上升期 ${f(b.h13.rising)}，“接近高点”比“上升中段” ${f(b.h13.near)}，“见顶回落”比非上升期 ${f(b.h13.off)}，都没有稳定差异。</li>
+    <li><b>类型对 1–3 个月有参考价值</b>：上升期内 A 类之后 3 个月比 B 类 ${f(b.h13.ab)}${b.ab_halves?.length === 2 ? `，前后两段时间分别 ${b.ab_halves.map(f).join("、")}` : ""}；B 类本身之后 3 个月 ${f(b.h13.b)}，偏向“价值陷阱”。</li>
+    <li><b>不能预测一周涨跌</b>：之后 1 周，上升期比非上升期 ${f(b.h1.rising)}，A 类比 B 类 ${f(b.h1.ab)}；“上升中段”的股票下一周跑赢平均的比例约 ${pct(b.h1.hit, 0)}，接近抛硬币。</li></ul>
+    <p class="muted">t 的绝对值 ≥ 2 才算统计上比较可靠。股票池来自现在仍上市的公司（结果偏乐观）；同时比较了多种窗口与分组，单个显著结果也可能是偶然。</p></div>`;
 }
 function phaseCard(s) {
   const p = s.fcf_phase;
-  const head = `<h3>FCF 收益率上升期（只和自身历史比）${badge("derived")}<span class="chip" title="尚未用历史数据验证预测力">观察中</span></h3>`;
+  const head = `<h3>FCF 收益率上升期（只和自身历史比）${badge("derived")}<span class="chip" title="已用选股池及同行业股票的历史数据回测：阶段只作描述，类型（A / B）对 1–3 个月有参考价值">已回测</span></h3>`;
   if (!p) return `<section class="card" id="phase-card">${head}${empty("暂无数据：缺少 FCF 收益率历史（外国公司只有年报且涉及外币 / ADR 口径；银行、保险不适用；或 SEC 数据不足）")}</section>`;
   if (p.status !== "ok") return `<section class="card" id="phase-card">${head}${empty(`${p.status}：${p.reason}`)}</section>`;
   const cur = PHASE_STAGES.findIndex(([n]) => n === p.stage);
@@ -666,15 +678,16 @@ function phaseCard(s) {
   const bar = (v, label, val) => `<div class="ph-bar"><span class="ph-lbl">${label}</span><span class="ph-track"><span class="ph-fill ${v >= 0 ? "up" : "dn"}" style="${v >= 0 ? "left:50%" : `right:50%`};width:${(Math.abs(v) / m) * 50}%"></span></span><b class="${cls(v)}">${val}</b></div>`;
   return `<section class="card" id="phase-card">${head}
     <p class="ph-verdict">${phaseVerdict(p, s.ticker)}</p>
+    ${phaseBacktest(p)}
     <div class="ph-track-row">${track}</div>
-    <p class="muted">已在“${esc(p.stage)}”持续 ${p.weeks_in_stage} 周 · 当前 FCF 收益率 ${pct(p.now, 2)}（自身近 5 年第 ${Math.round(p.pct * 100)} 百分位）· 上升强度 ${num(p.z, 1)}（近半年变化 ÷ 自身历史波动；≥ 0.5 才算上升期）</p>
+    <p class="muted">已在“${esc(p.stage)}”持续 ${p.weeks_in_stage} 周 · 当前 FCF 收益率 ${pct(p.now, 2)}（自身近 5 年第 ${Math.round(p.pct * 100)} 百分位）· 上升强度 ${num(p.z, 1)}（近 ${p.window} 周变化 ÷ 自身历史波动；≥ 0.5 才算上升期）</p>
     <div class="grid two">
       <div><b>收益率变化从哪来</b>（近 ${p.window} 周）
         ${bar(lf, "每股 FCF", pct(p.fcf_part, 0, true))}
         ${bar(lp, "股价（反向）", pct(p.price_part, 0, true))}
         ${bar(lf + lp, "= FCF 收益率", pct(p.change, 0, true))}
         <p class="muted">FCF 收益率 = 每股 FCF ÷ 股价：每股 FCF 上升、或股价下跌，都会让收益率上升（股价一行按“对收益率的影响”画，股价下跌画在右边）。</p></div>
-      <div><b>上升类型</b>${p.kind ? "" : "（近半年收益率净下降，无类型）"}<div class="ph-kinds">${kinds}</div></div>
+      <div><b>上升类型</b>${p.kind ? "" : `（近 ${p.window} 周收益率净下降，无类型）`}<div class="ph-kinds">${kinds}</div></div>
     </div>
     ${p.checks?.length ? `<p><b>辅助检查</b> <span class="muted">（不进主信号；用于判断 B 类是不是价值陷阱、A 类的现金流增长是否可靠）</span></p>
       <ul class="ph-checks">${p.checks.map((c) => `<li><span class="${c.ok === false ? "neg" : c.ok ? "pos" : "muted"}">${c.ok === false ? "⚠" : c.ok ? "✓" : "…"}</span> <b>${esc(c.name)}</b>：${esc(c.text)}</li>`).join("")}</ul>` : ""}
@@ -683,10 +696,10 @@ function phaseCard(s) {
     <details class="howto"><summary>怎么判定、怎么用、有哪些局限</summary><ul>
       <li><b>只和自己比</b>：不看收益率高低，也不和别的公司比；“高位”指在这只股票自己近 5 年历史中的百分位 ≥ 70%。</li>
       <li><b>上升期</b>：近 ${p.window} 周收益率上升，且上升强度 ≥ 0.5（同样上升 20%，对平时很平稳的股票是更强的信号）。</li>
-      <li><b>阶段</b>：自身百分位 &lt; 70% 为早期；≥ 70% 为中段；≥ 70% 且近 ${p.short} 周的上升速度不到前半年平均的一半、离近半年最高点 ≤ 5% 为“接近高点”；从上升期的高点回落 ≥ 10% 为“见顶回落”。</li>
-      <li><b>怎么用</b>：收益率的高点 ≈ 股价相对现金流最便宜的时候。A 类接近高点 / 刚回落，往往是股价开始追赶现金流；B 类见顶只说明股价不再继续下跌，不代表一定反弹。</li>
+      <li><b>阶段</b>：自身百分位 &lt; 70% 为早期；≥ 70% 为中段；≥ 70% 且近 ${p.short} 周的上升速度不到近 ${p.window} 周平均的一半、离近 ${p.window} 周最高点 ≤ 5% 为“接近高点”；从上升期的高点回落 ≥ 10% 为“见顶回落”。</li>
+      <li><b>怎么用</b>：重点看类型而不是阶段。A 类（现金流在增长）之后 1–3 个月平均好于 B 类；B 类（只是股价跌）要先用辅助检查排除价值陷阱。阶段只说明收益率走到了哪里，回测中对之后的涨跌没有稳定的预测力。</li>
       <li><b>无前视</b>：图中每一周的底色都只用当时已披露的财报与当时的价格判定，可以直接对照判定之后股价怎么走。</li>
-      <li><b>局限</b>：① 每股 FCF 只在交 10-Q / 10-K 后更新，两次财报之间收益率的变化全部来自股价，所以它不适合预测一周内的涨跌，更适合 1–3 个月；② “接近高点”只能事后确认，这里是估计，可能减速后再加速；③ 强周期股的收益率高点常出现在景气顶部；④ 尚未用历史数据验证预测力（计划观察后用约 2,300 家公司回测）。</li></ul></details></section>`;
+      <li><b>局限</b>：① 每股 FCF 只在交 10-Q / 10-K 后更新，两次财报之间收益率的变化全部来自股价，所以它不适合预测一周内的涨跌，更适合 1–3 个月；② “接近高点”只能事后确认，这里是估计，可能减速后再加速；③ 强周期股的收益率高点常出现在景气顶部；④ 回测见上方“历史回测怎么说”，判定窗口 ${p.window} / ${p.short} 周是据此选定的（同时比较过 26 / 8、52 / 13 周）。</li></ul></details></section>`;
 }
 function drawPhase(s, k) {
   const p = s.fcf_phase;
