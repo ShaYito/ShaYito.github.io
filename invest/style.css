@@ -339,3 +339,10 @@ button.sm { padding: 2px 8px; font-size: 12px; }
 .ph-bt p { margin: 2px 0; }
 .ph-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; margin: 10px 0 4px; }
 .ph-legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--border); }
+.cand-tags { display: inline-flex; flex-wrap: wrap; gap: 2px; vertical-align: middle; max-width: 260px; }
+.cand-tags .ctg { cursor: pointer; }
+.cand-tags .ctg input { display: none; }
+.cand-tags .ctg .tg { opacity: 0.25; }
+.cand-tags .ctg input:checked + .tg { opacity: 1; box-shadow: 0 0 0 1.5px var(--ink); }
+.stock-side label.cmp-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cmp-tagp { padding: 2px 8px; }

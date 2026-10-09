@@ -115,6 +115,7 @@ async function drawCandidates() {
           ${st !== "pending" ? '<button type="button" class="ghost" data-act="reset">撤销</button>' : ""}
           <span class="muted">加入选股池：</span><select class="cand-theme">${META.themes.map((t) => `<option value="${t.key}" ${t.key === r.suggested_theme ? "selected" : ""}>${esc(t.name)}${t.key === r.suggested_theme ? "（建议）" : ""}</option>`).join("")}</select>
           <input class="cand-name" value="${esc(r.suggested_name_zh || "")}" placeholder="中文名（可不填，用英文名）" style="width:170px" maxlength="30" data-en="${esc((r.name || r.sec_name || r.ticker).replace(/,? (Inc|Corp|Corporation|Ltd|Holdings?|Group|plc|N\.V|S\.A)\.?$/i, "").slice(0, 30))}">
+          ${candTagPicker(r)}
           <button type="button" class="primary" data-act="add">加入选股池</button></div>`}
       </details></td></tr>`;
   };
@@ -153,6 +154,17 @@ async function drawCandidates() {
   sync(); renderTable();
 }
 
+// 加入选股池时的业务标签选择（建议的预先勾选；最多 3 个，主要业务先勾）
+function candTagPicker(r) {
+  const sug = r.suggested_tags || [];
+  const order = [...sug, ...Object.keys(META.tags || {}).filter((k) => !sug.includes(k))];
+  return `<span class="cand-tags" title="业务标签：建议的已勾选，可改（最多 3 个，先勾的为主要业务）">${order.map((k) => { const d = META.tags[k];
+    return `<label class="ctg"><input type="checkbox" value="${esc(k)}" ${sug.includes(k) ? "checked" : ""}><span class="tg" style="background:${d.color}" title="${esc(d.name)}${sug.includes(k) ? "（建议）" : ""}">${esc(d.short)}</span></label>`; }).join("")}</span>`;
+}
+document.addEventListener("change", (e) => { // 最多勾 3 个
+  const box = e.target.closest?.(".cand-tags");
+  if (box && box.querySelectorAll("input:checked").length > 3) { e.target.checked = false; alert("最多选 3 个业务标签"); }
+});
 async function candReview(b) {
   const box = b.closest(".cand-act"), t = box.dataset.t, act = b.dataset.act;
   const say = (msg, c = "muted") => { box.innerHTML = `<span class="${c}">${esc(msg)}</span>`; };
@@ -160,14 +172,16 @@ async function candReview(b) {
   if (!token) { alert("请先在“我的持仓 → 持仓 → 同步设置”中保存 GitHub token（只需 Actions 写权限）"); return; }
   const nameEl = box.querySelector(".cand-name");
   const theme = box.querySelector(".cand-theme")?.value || "", name = (nameEl?.value || "").trim() || nameEl?.dataset.en || t;
-  const what = { watch: "关注", ignore: "忽略", reset: "撤销审核", add: `加入选股池（主题：${themeName(theme)}，中文名：${name}）` }[act];
+  const tags = [...box.querySelectorAll(".cand-tags input:checked")].map((x) => x.value);
+  const tagTxt = tags.length ? tags.map((k) => META.tags?.[k]?.name || k).join("、") : "未选（之后需人工补）";
+  const what = { watch: "关注", ignore: "忽略", reset: "撤销审核", add: `加入选股池（主题：${themeName(theme)}，中文名：${name}，业务标签：${tagTxt}）` }[act];
   if (!confirm(`确认对 ${t} ${what}？${act === "add" ? "\n加入后会修改配置，从下次运行起参与系统模型的选股、训练与回测。" : ""}`)) return;
   box.querySelectorAll("button, select, input").forEach((x) => { x.disabled = true; });
   try {
     const resp = await fetch(`https://api.github.com/repos/${META.github_repo}/actions/workflows/review-candidate.yml/dispatches`, {
       method: "POST",
       headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
-      body: JSON.stringify({ ref: "main", inputs: { ticker: t, action: act, theme: act === "add" ? theme : "", name_zh: act === "add" ? name : "" } }),
+      body: JSON.stringify({ ref: "main", inputs: { ticker: t, action: act, theme: act === "add" ? theme : "", name_zh: act === "add" ? name : "", tags: act === "add" ? tags.join(",") : "" } }),
     });
     if (resp.status === 204) say(`✓ 已提交${what}；约 2–3 分钟后网页更新（刷新页面查看）`, "pos");
     else say(`提交失败：HTTP ${resp.status}${resp.status === 401 || resp.status === 403 ? "（token 无效或缺少 Actions 写权限）" : resp.status === 404 ? "（token 没有该仓库权限）" : ""}`, "neg");

@@ -115,6 +115,7 @@ async function drawGrowth() {
           <div class="cand-act g-add" data-t="${esc(r.ticker)}" hidden>
             <select class="cand-theme">${META.themes.map((t) => `<option value="${t.key}" ${t.key === r.suggested_theme ? "selected" : ""}>${esc(t.name)}${t.key === r.suggested_theme ? "（建议）" : ""}</option>`).join("")}</select>
             <input class="cand-name" value="${esc(r.suggested_name_zh || "")}" placeholder="中文名（可不填）" maxlength="30" style="width:120px" data-en="${esc((r.name || r.ticker).replace(/,? (Inc|Corp|Corporation|Ltd|Holdings?|Group|plc|N\.V|S\.A)\.?$/i, "").slice(0, 30))}">
+            ${candTagPicker(r)}
             <button type="button" class="primary sm" data-act="add">加入</button></div>
           <a class="muted" href="https://finance.yahoo.com/quote/${esc(r.ticker)}" target="_blank" rel="noopener">Yahoo</a>`}</td></tr>`;
   };

@@ -103,7 +103,7 @@ function cmpMyWeights(raw) {
 function compareSidebar(sel) {
   const on = new Set(sel);
   const item = (t, name, color) => `<label class="cmp-item ${on.has(t) ? "on" : ""}"><input type="checkbox" data-t="${t}" ${on.has(t) ? "checked" : ""} ${!on.has(t) && sel.length >= CMP_MAX ? "disabled" : ""}>
-    <span class="dot" style="background:${color}"></span>${isHeld(t) ? "● " : isPlanned(t) ? "◇ " : ""}<b>${esc(t)}</b>${esc(name || "")}</label>`;
+    <span class="nm"><span class="dot" style="background:${color}"></span>${isHeld(t) ? "● " : isPlanned(t) ? "◇ " : ""}<b>${esc(t)}</b>${esc(name || "")}</span><span class="tgs">${tagChips(t)}</span></label>`;
   const etfs = (META.etfs || []).map((x) => item(x.ticker, x.name_zh, BENCH_GRAY())).join("");
   const groups = META.themes.map((th) => `<h4>${esc(th.name)}</h4>${sidebarOrder(META.universe.filter((u) => u.theme === th.key)).map((u) => item(u.ticker, u.name_zh, themeColor(th.key))).join("")}`).join("");
   return `<aside class="stock-side" aria-label="选择对比的股票"><a href="#/stock">← 返回个股</a><h4>ETF / 大类资产</h4>${etfs}${groups}</aside>`;
@@ -136,6 +136,8 @@ PAGES.compare = async (r) => {
     <h2>多股对比 <span class="muted">已选 ${sel.length} 只 · 价格截至 ${esc(dates[end])}</span></h2>
     <section class="card"><div class="row"><span class="muted">快捷选择</span>${presets.map(([n, ts], i) => `<button type="button" class="ghost cmp-preset" data-i="${i}" title="${esc(ts.join("、"))}">${esc(n)}${ts.length > CMP_MAX ? `（前 ${CMP_MAX}）` : ""}</button>`).join("")}
       ${sel.length ? `<button type="button" class="ghost" id="cmp-clear">清空</button>` : ""}</div>
+      <div class="row"><span class="muted">按业务</span>${usedTags().map((k) => { const d = META.tags[k], ts = META.universe.filter((u) => (u.tags || []).includes(k)).map((u) => u.ticker);
+        return `<button type="button" class="ghost cmp-tagp" data-k="${k}" title="${esc(`${d.name}：${ts.join("、")}`)}"><span class="tg" style="background:${d.color}">${esc(d.short)}</span> ${esc(d.name.replace(/（.*）/, ""))}</button>`; }).join("")}</div>
       ${sel.length ? `<p>${sel.map((t) => `<span class="chip" style="border-color:${color[t]}"><span class="dot" style="background:${color[t]}"></span>${esc(t)} ${esc(META.names_zh?.[t] || "")} <a href="#" class="cmp-x" data-t="${t}" title="移除">×</a></span>`).join("")}</p>` : ""}</section>
     ${howto(CMP_HOWTO)}
     ${parts ? parts.ins : ""}
@@ -153,6 +155,10 @@ PAGES.compare = async (r) => {
     apply({ t: el.checked ? [...sel, t].slice(0, CMP_MAX) : sel.filter((x) => x !== t), pair: [] });
   }));
   document.querySelectorAll(".cmp-preset").forEach((b) => (b.onclick = () => apply({ t: presets[+b.dataset.i][1].filter((t) => raw.close[t]).slice(0, CMP_MAX), pair: [] })));
+  document.querySelectorAll(".cmp-tagp").forEach((b) => (b.onclick = () => {
+    CMP_ALL.tag = b.dataset.k; // 下方“全部股票指标”同步筛选到该业务
+    apply({ t: META.universe.filter((u) => (u.tags || []).includes(b.dataset.k)).map((u) => u.ticker).filter((t) => raw.close[t]).slice(0, CMP_MAX), pair: [] });
+  }));
   document.querySelectorAll(".cmp-x").forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); apply({ t: sel.filter((x) => x !== a.dataset.t), pair: [] }); }));
   byId("cmp-clear")?.addEventListener("click", () => apply({ t: [], pair: [] }));
   document.querySelectorAll("#cmp-p button").forEach((b) => (b.onclick = () => apply({ p: b.dataset.v })));
@@ -214,7 +220,7 @@ const CMP_GROUPS = [
   ["price", "价格与风险", ["price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
   ["expect", "市场预期", ["median_target", "median_upside", "moves_up", "moves_down", "weighted_target", "weighted_upside", "analysts", "rec_mean", "short_pct_float", "short_change", "days_to_cover", "insiders_pct", "institutions_pct", "next_earnings"]],
 ];
-const CMP_ALL = { group: null, sort: null, dir: 1, theme: "" };
+const CMP_ALL = { group: null, sort: null, dir: 1, theme: "", tag: "" };
 function cmpDef(k) { return CMP_EXTRA_DEFS[k] || METRIC_DEFS[k] || { name: k, fmt: "num2" }; }
 // 参考价值评级 → 分数（取评级文字开头，如“中–高”“高（风险）”“低（科技）/ 中（银行）”取“低”）
 const VALUE_SCORE = { "高": 5, "中–高": 4, "中": 3, "低–中": 2, "低": 1 };
@@ -251,7 +257,7 @@ async function cmpAllTable(sel) {
   if (!data) { host.innerHTML = empty("暂无数据"); return; }
   const draw = () => {
     const keys = cmpGroups().find(([g]) => g === CMP_ALL.group)[2];
-    const rows = data.rows.filter((r) => !CMP_ALL.theme || r.theme === CMP_ALL.theme);
+    const rows = data.rows.filter((r) => (!CMP_ALL.theme || r.theme === CMP_ALL.theme) && (!CMP_ALL.tag || tagsOf(r.ticker).includes(CMP_ALL.tag)));
     const k = CMP_ALL.sort;
     const val = (r) => (k === "next_earnings" ? (r[k] ? Date.parse(r[k]) : null) : r[k]);
     rows.sort((a, b) => {
@@ -267,6 +273,7 @@ async function cmpAllTable(sel) {
     const th = (key) => { const d = cmpDef(key); return `<th class="num sortable ${key === k ? "on" : ""}" data-k="${key}" title="${esc(`${d.name}：${d.def || ""}${d.read ? ` 如何理解：${d.read}` : ""}`)}">${esc(d.name)}${key === k ? (CMP_ALL.dir > 0 ? " ▲" : " ▼") : ""}</th>`; };
     host.innerHTML = `<div class="row"><div class="seg" id="ca-g">${cmpGroups().map(([g, n]) => `<button type="button" data-g="${g}" class="${g === CMP_ALL.group ? "on" : ""}">${n}</button>`).join("")}</div>
       <select id="ca-theme"><option value="">全部主题</option>${META.themes.map((t) => `<option value="${t.key}" ${t.key === CMP_ALL.theme ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>
+      <select id="ca-tag"><option value="">全部业务</option>${usedTags().map((k) => `<option value="${k}" ${k === CMP_ALL.tag ? "selected" : ""}>${esc(META.tags[k].short)} ${esc(META.tags[k].name)}</option>`).join("")}</select>
       <span class="muted">点表头排序；悬停表头看指标说明；已选股票（${sel.length}）高亮并排在最前</span></div>
       <div class="table-wrap"><table class="cmp-all"><thead><tr><th>股票</th>${keys.map(th).join("")}</tr></thead><tbody>
       ${rows.map((r) => `<tr class="${sel.includes(r.ticker) ? "sel" : ""}"><td class="nowrap"><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a>${r.cyc_tier === "strong" ? ' <span class="chip warnchip" title="强周期：P/E 高低主要反映处于周期的哪个阶段">强周期</span>' : r.cyc_tier === "medium" ? ' <span class="chip" title="中等周期性">中周期</span>' : ""}${r.fin_currency && r.fin_currency !== "USD" ? `<sup title="财报以 ${esc(r.fin_currency)} 计">†</sup>` : ""} <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span></td>
@@ -276,6 +283,7 @@ async function cmpAllTable(sel) {
       <p class="muted">公司数据来自 yfinance（${esc(data.asof)}），价格类按最新收盘计算；“–”表示该公司不适用或暂无数据（如银行没有毛利率、EV/EBITDA）。ETF 与黄金没有这些公司指标，不列入。† = 财报以外币计（如台积电 TWD、ASML EUR）：总额类比率已按汇率换算，P/B 与 EV/EBITDA 不显示，P/E 可能有约一成的汇率口径偏差。每个指标的含义与用法见个股页“关键指标”。</p>`;
     host.querySelectorAll("#ca-g button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = cmpGroups().find(([g]) => g === CMP_ALL.group)[2]; if (!ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
     byId("ca-theme").onchange = (e) => { CMP_ALL.theme = e.target.value; draw(); };
+    byId("ca-tag").onchange = (e) => { CMP_ALL.tag = e.target.value; draw(); };
     host.querySelectorAll("th.sortable").forEach((h) => (h.onclick = () => { if (CMP_ALL.sort === h.dataset.k) CMP_ALL.dir *= -1; else { CMP_ALL.sort = h.dataset.k; CMP_ALL.dir = cmpDef(h.dataset.k).better === "high" ? -1 : 1; } draw(); }));
   };
   draw();

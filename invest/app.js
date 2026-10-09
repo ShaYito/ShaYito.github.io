@@ -1103,6 +1103,8 @@ const TAG_FILTER_KEY = "invest.side_tag";
 let SIDE_CUR = null;
 function sideTag() { try { return sessionStorage.getItem(TAG_FILTER_KEY) || ""; } catch { return ""; } }
 const tagsOf = (t) => META.universe.find((u) => u.ticker === t)?.tags || [];
+// 选股池中实际用到的标签（按定义顺序）
+const usedTags = () => Object.keys(META.tags || {}).filter((k) => META.universe.some((u) => (u.tags || []).includes(k)));
 function tagChips(t, max = 3) {
   return tagsOf(t).slice(0, max).map((k) => { const d = META.tags?.[k]; return d ? `<span class="tg" style="background:${d.color}" title="${esc(d.name)}">${esc(d.short)}</span>` : ""; }).join("");
 }
@@ -1111,7 +1113,7 @@ function tagNames(t) {
   return tagsOf(t).map((k) => { const d = META.tags?.[k]; return d ? `<a href="#" class="tg-full" data-tag="${esc(k)}" style="border-color:${d.color};color:${d.color}" title="在左侧只看“${esc(d.name)}”">${esc(d.short)} ${esc(d.name)}</a>` : ""; }).join("");
 }
 function tagFilterBar() {
-  const used = [...new Set(META.universe.flatMap((u) => u.tags || []))].filter((k) => META.tags?.[k]);
+  const used = usedTags();
   if (!used.length) return "";
   const on = sideTag();
   return `<div class="tag-filter" title="点一个标签只看该业务的股票，再点一次取消">${used.map((k) => { const d = META.tags[k];
