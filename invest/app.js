@@ -179,7 +179,7 @@ const NAV_GROUPS = {
   overview: [],
   holdings: [],
   stock: [],
-  market: [["performance", "相对表现"], ["risk", "风险与集中度"]],
+  market: [["performance", "相对表现"], ["risk", "风险与集中度"], ["macro", "宏观与异动"]],
   news: [],
   chain: [],
   lab: [["advice", "配置建议"], ["matrix", "评分矩阵"], ["signal-news", "信号 × 新闻"], ["backtest", "回测与实盘"], ["model", "系统模型说明"], ["sim", "模拟经营"]],
@@ -600,7 +600,7 @@ function matrixInsights(m, h, rows, date) {
 }
 
 // ---------------- 3. 新闻与产业链 ----------------
-const NEWS_SRC_ZH = { google_news: "Google News", finnhub: "Finnhub", alpha_vantage: "Alpha Vantage", yahoo: "Yahoo Finance", sec_edgar: "SEC 公告（8-K / 6-K）" };
+const NEWS_SRC_ZH = { google_news: "Google News", finnhub: "Finnhub", alpha_vantage: "Alpha Vantage", yahoo: "Yahoo Finance", sec_edgar: "SEC 公告（8-K / 6-K）", fed: "美联储", federal_register: "Federal Register" };
 /* 所选范围内各新闻源的抓取条数（每日存档 stats.sources 合计）与筛选漏斗；某来源合计为 0 时标出 */
 function newsSourceLine(recs) {
   const live = recs.filter((r) => r.stats?.sources);
@@ -657,6 +657,7 @@ PAGES.news = async (r) => {
       <p class="muted">历史回补的新闻：情绪由 FinBERT 判断；每周仅对最重要的 2–3 个事件做 LLM 深度分析。</p></section>
     ${howto(NEWS_HOWTO)}${insightBox(newsInsights(events))}
     ${personalNewsCard(personalNews(pickDays.map((d) => d.date)).filter((n) => !ticker || (n.lines || []).some((l) => l.startsWith(ticker))))}
+    ${macroNewsCard(recs, ticker)}
     ${digestHtml}
     <div class="grid" style="grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start;">
       <section class="card"><h3>深度分析（点击事件，在右侧产业链图中查看传导）${badge("fact")}${badge("model")}</h3>
@@ -668,10 +669,10 @@ PAGES.news = async (r) => {
   byId("n-ticker").onchange = (e) => { location.hash = `#/news?${week ? `week=${week}` : `date=${r.query.date}`}${e.target.value ? `&ticker=${e.target.value}` : ""}`; };
   const selected = events.find((e) => e.event_id === r.query.event) || events[0] || null;
   const chart = await drawGraph(idx.graph, selected);
-  document.querySelectorAll(".event").forEach((el) => {
+  document.querySelectorAll(".event:not(.nosel)").forEach((el) => {
     if (selected && el.dataset.id === selected.event_id) el.classList.add("selected");
     el.addEventListener("click", () => {
-      document.querySelectorAll(".event").forEach((x) => x.classList.remove("selected"));
+      document.querySelectorAll(".event:not(.nosel)").forEach((x) => x.classList.remove("selected"));
       el.classList.add("selected");
       const ev = events.find((e) => e.event_id === el.dataset.id);
       if (chart) chart.showEvent(ev);
