@@ -75,6 +75,9 @@ PAGES.chain = async (r) => {
         ${isNum(s.avg_ret_1m) ? `<p class="chain-avg">近 1 月平均 <span class="${cls(s.avg_ret_1m)}">${pct(s.avg_ret_1m, 1, true)}</span></p>` : ""}
         <div class="chain-chips">${s.members.map((m) => chainChip(m, c, mode, hl)).join("")}</div></div>`).join("")}</div>
     </section>
+    <section class="card" id="graph-card" data-nav="公司关系全图"><h3>公司关系全图（选股池 + 主要上下游）${badge("model")}</h3>
+      <p class="muted">实线箭头 = 供应（上游 → 下游），虚线 = 竞争，绿线 = 合作；颜色 = 看板主题，灰色 = 未纳入看板。可拖动、滚轮缩放；悬停公司只看它的直接关系，点击进入个股页。某条新闻影响到哪些公司，在新闻页展开该条即可看到。</p>
+      ${chartDiv("c-graph", "tall")}</section>
     ${relationsCard(rels)}
     <section class="card" id="cand-card" data-nav="AI 候选池"><h3>AI 相关股票候选池</h3>${empty("加载中…")}</section>
     <section class="card" id="growth-card" data-nav="成长候选池"><h3>高成长科技股候选池</h3>${empty("加载中…")}</section>
@@ -94,6 +97,7 @@ PAGES.chain = async (r) => {
     if (r.query.sec) byId(r.query.sec)?.scrollIntoView({ block: "start" });
   });
   drawFlow(flow, "growth", false);
+  load("news/index.json").then((idx) => idx?.graph && drawGraph(idx.graph, null)).catch((e) => console.error(e));
   document.querySelectorAll("#fl-color button").forEach((b) => (b.onclick = () => {
     b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
     drawFlow(flow, b.dataset.c, byId("fl-partner").checked);

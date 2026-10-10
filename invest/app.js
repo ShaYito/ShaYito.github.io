@@ -179,8 +179,8 @@ const NAV_GROUPS = {
   overview: [],
   holdings: [],
   stock: [],
-  market: [["performance", "相对表现"], ["risk", "风险与集中度"], ["macro", "宏观与异动"], ["retail", "散户热度"]],
-  news: [],
+  market: [["performance", "相对表现"], ["risk", "风险与集中度"]],
+  news: [["news", "新闻"], ["macro", "宏观与异动"], ["retail", "散户热度"]],
   chain: [],
   lab: [["advice", "配置建议"], ["matrix", "评分矩阵"], ["signal-news", "信号 × 新闻"], ["backtest", "回测与实盘"], ["model", "系统模型说明"], ["sim", "模拟经营"]],
 };
@@ -614,79 +614,8 @@ function newsSourceLine(recs) {
     .map(([k, v]) => `${esc(NEWS_SRC_ZH[k] || k)} ${v.toLocaleString()}${v === 0 ? ' <span class="warn" title="这段时间没有抓到新闻：接口可能已失效或被限流">⚠</span>' : ""}`);
   return `<p class="muted">新闻源（抓取条数${live.length > 1 ? `，${live.length} 天合计` : ""}）：${parts.join(" · ")}。去重后 ${funnel.unique.toLocaleString()} → 与选股池相关 ${funnel.relevant.toLocaleString()} → 进入分析 ${funnel.analyzed.toLocaleString()}（每只股票 / 每个主题取相关度最高、最新的若干条）。</p>`;
 }
-PAGES.news = async (r) => {
-  const idx = await load("news/index.json");
-  const days = idx.days;
-  const weeks = idx.weeks || [];
-  if (!days.length && !weeks.length) { app().innerHTML = card("新闻与产业链", empty("尚无新闻存档。")) + graphCard(); await drawGraph(idx.graph, null); return; }
-  const latest = days.length ? days[days.length - 1].date : weeks[weeks.length - 1].week_end;
-  const weekOf = (d) => { const x = new Date(`${d}T12:00:00Z`); const wd = (x.getUTCDay() + 6) % 7; x.setUTCDate(x.getUTCDate() - wd); return x.toISOString().slice(0, 10); };
-  const plusDays = (d, n) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
-  const curWeek = weekOf(latest);
-  // 选择：date=具体某天；week=某一周（默认本周）
-  const week = r.query.date ? null : (r.query.week || curWeek);
-  const pickDays = week ? days.filter((d) => d.date >= week && d.date <= plusDays(week, 6)) : days.filter((d) => d.date === r.query.date);
-  const [recs, digest] = await Promise.all([
-    Promise.all(pickDays.map((d) => load(`news/${d.date}.json`))),
-    week && weeks.some((w) => w.week_start === week) ? load(`news/weeks/${week}.json`) : Promise.resolve(null),
-  ]);
-  const ticker = r.query.ticker || "";
-  let events = [...(digest?.events || []).map((e) => ({ ...e, date: (e.sources?.[0]?.date) || week })),
-    ...recs.flatMap((rec) => (rec.events || []).map((e) => ({ ...e, date: rec.date })))];
-  let briefs = recs.flatMap((rec) => (rec.briefs || []).map((b) => ({ ...b, date: rec.date })));
-  let articles = recs.flatMap((rec) => rec.articles || []);
-  if (ticker) {
-    const hit = (e) => (e.tickers || []).includes(ticker) || (e.propagation || []).some((p) => p.node === ticker) || (e.direct_impacts || []).some((p) => p.node === ticker);
-    events = events.filter(hit); briefs = briefs.filter((b) => (b.tickers || []).includes(ticker)); articles = articles.filter((a) => (a.tickers || []).includes(ticker));
-  }
-  events.sort((a, b) => (b.date.localeCompare(a.date)) || ((b.importance || 0) - (a.importance || 0)));
-  briefs.sort((a, b) => b.date.localeCompare(a.date));
-  const allWeeks = [...new Set([curWeek, ...weeks.map((w) => w.week_start), ...days.map((d) => weekOf(d.date))])].sort().reverse();
-  const weekOpts = allWeeks.map((w) => `<option value="w:${w}" ${week === w ? "selected" : ""}>${w === curWeek ? "本周" : "周"} ${w} – ${plusDays(w, 6).slice(5)}${weeks.some((x) => x.week_start === w) ? " · 有周摘要" : ""}</option>`).join("");
-  const dayOpts = [...days].reverse().slice(0, 21).map((d) => `<option value="d:${d.date}" ${r.query.date === d.date ? "selected" : ""}>${d.date}${d.mode === "weekend" ? "（周末汇总）" : d.mode === "backfill" ? "（回补）" : ""}</option>`).join("");
-  const tickOpts = `<option value="">全部股票</option>` + META.universe.map((u) => `<option ${u.ticker === ticker ? "selected" : ""}>${u.ticker}</option>`).join("");
-  const digestHtml = digest?.digest ? card(`本周摘要（${digest.week_start} – ${digest.week_end}${digest.holdings_source === "backtest_simulated" ? "；组合含义基于回测模拟配置" : ""}）`,
-    `<p>${esc(digest.digest.summary)}</p><ul>${digest.digest.highlights.map((h) => `<li>${esc(h.text)} <span class="src">${srcLinks(h.sources, 2)}</span></li>`).join("")}</ul>`) : "";
-  app().innerHTML = `
-    <h2>新闻与产业链</h2>
-    <section class="card"><div class="row">
-      <label>范围 <select id="n-range"><optgroup label="按周">${weekOpts}</optgroup><optgroup label="按天（最近 21 天）">${dayOpts}</optgroup></select></label>
-      <label>股票 <select id="n-ticker">${tickOpts}</select></label>
-      <span class="muted">深度事件 ${events.length} · 其他要闻 ${briefs.length} · 相关报道 ${articles.length}</span></div>
-      ${newsSourceLine(recs)}
-      <p class="muted">历史回补的新闻：情绪由 FinBERT 判断；每周仅对最重要的 2–3 个事件做 LLM 深度分析。</p></section>
-    ${howto(NEWS_HOWTO)}${insightBox(newsInsights(events))}
-    ${personalNewsCard(personalNews(pickDays.map((d) => d.date)).filter((n) => !ticker || (n.lines || []).some((l) => l.startsWith(ticker))))}
-    ${macroNewsCard(recs, ticker)}
-    ${digestHtml}
-    <div class="grid" style="grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start;">
-      <section class="card"><h3>深度分析（点击事件，在右侧产业链图中查看传导）${badge("fact")}${badge("model")}</h3>
-      <p class="muted">每个事件中“关键事实”来自新闻原文（附链接）；“直接影响”“产业链传导”“对组合的含义”是 AI 推断。</p>${events.map(eventCard).join("") || empty("该范围内没有深度分析事件")}</section>
-      <div>${graphCard()}${card("其他要闻", briefs.slice(0, 40).map((b) => `<p>• <span class="chip">${esc(b.date.slice(5))}</span>${esc((b.tickers || []).join("/") || "行业")}：${esc(b.text)} <span class="src">${srcLinks(b.sources, 1)}</span></p>`).join("") || empty("无"))}
-      ${card(`相关报道（${Math.min(articles.length, 80)} / ${articles.length}）`, `<div class="table-wrap"><table><tbody>${articles.slice(0, 80).map((a) => `<tr><td class="num ${cls(a.sentiment)}">${num(a.sentiment, 2, true)}</td><td class="wrap"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a> <span class="muted">${esc(a.publisher || "")}${a.source ? ` · 经 ${esc(NEWS_SRC_ZH[a.source] || a.source)}` : ""} · ${esc((a.published || "").slice(5, 16).replace("T", " "))}</span></td></tr>`).join("")}</tbody></table></div>`)}</div>
-    </div>`;
-  byId("n-range").onchange = (e) => { const [k, v] = e.target.value.split(":"); location.hash = `#/news?${k === "w" ? "week" : "date"}=${v}${ticker ? `&ticker=${ticker}` : ""}`; };
-  byId("n-ticker").onchange = (e) => { location.hash = `#/news?${week ? `week=${week}` : `date=${r.query.date}`}${e.target.value ? `&ticker=${e.target.value}` : ""}`; };
-  const selected = events.find((e) => e.event_id === r.query.event) || events[0] || null;
-  const chart = await drawGraph(idx.graph, selected);
-  document.querySelectorAll(".event:not(.nosel)").forEach((el) => {
-    if (selected && el.dataset.id === selected.event_id) el.classList.add("selected");
-    el.addEventListener("click", () => {
-      document.querySelectorAll(".event:not(.nosel)").forEach((x) => x.classList.remove("selected"));
-      el.classList.add("selected");
-      const ev = events.find((e) => e.event_id === el.dataset.id);
-      if (chart) chart.showEvent(ev);
-    });
-  });
-  if (r.query.event) document.querySelector(`.event[data-id="${CSS.escape(r.query.event)}"]`)?.scrollIntoView({ block: "center" });
-};
+// 新闻页见 news_page.js（M42 重构）
 
-
-const NEWS_HOWTO = [
-  "上方选择查看的周或某一天。左侧是 AI 挑出的重要事件：先看“关键事实”（每条都附新闻原文链接，是[[fact|事实]]），再看 AI 的推断——“直接影响”“[[supply_chain|产业链传导]]”“对组合的含义”（[[model|模型 / AI]]，注意[[confidence|置信度]]）。",
-  "右侧产业链图：点一个事件，受影响的公司会变色（绿 = 利好，红 = 利空，黄 = 影响不一），灰色是未受影响的公司。",
-  "历史回补的周只有新闻标题，情绪由 [[finbert|FinBERT]] 判断、每周仅分析 2–3 个最重要的事件，准确度低于每日推送。",
-];
 function newsInsights(events) {
   const out = [];
   const held = new Set(heldTickers());
@@ -706,27 +635,6 @@ function newsInsights(events) {
 function overallDirection(e) {
   const ds = [...new Set((e.direct_impacts || []).map((d) => d.direction))];
   return ds.length === 1 ? ds[0] : ds.length ? "mixed" : "neutral";
-}
-function eventCard(e) {
-  const facts = (e.facts || []).map((f) => `<li>${esc(f.text)} <span class="src">${srcLinks(f.sources, 2)}</span></li>`).join("");
-  const direct = (e.direct_impacts || []).map((d) => `<li><b>${esc(d.node)}</b> <span class="${d.direction === "positive" ? "pos" : d.direction === "negative" ? "neg" : ""}">${DIR_ZH[d.direction]}</span> · 程度${LEVEL_ZH[d.magnitude]} · ${HORIZON_ZH[d.horizon]}：${esc(d.rationale)}</li>`).join("");
-  const prop = (e.propagation || []).map((p) => `<li>${esc(REL_ZH[p.relation] || p.relation)} <b>${esc(p.node)}</b> <span class="${p.direction === "positive" ? "pos" : p.direction === "negative" ? "neg" : ""}">${DIR_ZH[p.direction]}</span>（置信度${LEVEL_ZH[p.confidence]}）：${esc(p.rationale)}</li>`).join("");
-  return `<article class="event ${overallDirection(e)}" data-id="${esc(e.event_id)}">
-    <div><span class="chip">${esc(e.date)}</span><span class="chip ${{ holding: "holding", planned: "plan" }[eventPriority(e)] || ""}">${esc(PRIORITY_ZH[eventPriority(e)] || "")}</span>
-      <span class="chip">${esc((e.tickers || []).join("/") || "行业")}</span><span class="chip">${esc(EVENT_ZH[e.event_type] || e.event_type)}</span>
-      <span class="chip">${esc(TIER_ZH[e.tier] || e.tier)}</span></div>
-    <h4>${esc(e.headline)}</h4><p>${esc(e.summary)}</p>
-    ${facts ? `<b>关键事实</b><ul>${facts}</ul>` : ""}
-    ${direct ? `<b>直接影响</b><ul>${direct}</ul>` : ""}
-    ${prop ? `<b>产业链传导（推断）</b><ul>${prop}</ul>` : ""}
-    <p><b>对组合的含义${holdingsMode() === "mine" ? "（按系统建议配置；按你持仓的解读见上方“与你持仓相关”）" : ""}：</b>${esc(e.portfolio_implication)}</p>
-    <p><b>需跟踪的信号：</b>${(e.watch_items || []).map(esc).join("；")}</p>
-    <p><b>与量化信号：</b>${esc(e.signal_consistency)}</p>
-    <p class="src">来源：${srcLinks(e.sources, 5)}</p></article>`;
-}
-function graphCard() {
-  return card("产业链图谱（选中事件的影响：绿 = 利好，红 = 利空，黄 = 不一）",
-    `<p class="muted">实线箭头 = 供应（上游 → 下游），虚线 = 竞争，绿线 = 合作；点击公司查看个股页（含业务构成与业务关联图）。</p>${chartDiv("c-graph", "tall")}`);
 }
 function eventImpact(ev) {
   const impact = {};
