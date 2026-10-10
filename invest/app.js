@@ -821,7 +821,9 @@ PAGES["signal-news"] = async (r) => {
     ${card("明细", `<div class="table-wrap"><table><thead><tr><th>股票</th><th>主题</th><th class="num">量化分位</th><th class="num">情绪分位</th><th class="num">7 日情绪</th><th class="num">新闻数</th><th class="num">权重</th><th>判断</th></tr></thead><tbody>${
       [...points].sort((a, b) => (b.quant_pct ?? -1) - (a.quant_pct ?? -1)).map((p) => `<tr><td><a href="#/news?ticker=${p.ticker}">${esc(tickerLabel(p.ticker))}</a></td><td>${esc(themeName(p.theme))}</td>
       <td class="num">${num(p.quant_pct, 0)}</td><td class="num">${num(p.sent_pct, 0)}</td><td class="num ${cls(p.sentiment)}">${num(p.sentiment, 2, true)}</td><td class="num">${p.news_count}</td><td class="num">${p.weight ? pct(p.weight, 1) : ""}</td>
-      <td>${p.label === "冲突" ? '<b class="neg">冲突</b>' : p.label === "一致" ? '<b class="pos">一致</b>' : esc(p.label)}</td></tr>`).join("")}</tbody></table></div>`)}`;
+      <td>${p.label === "冲突" ? '<b class="neg">冲突</b>' : p.label === "一致" ? '<b class="pos">一致</b>' : esc(p.label)}</td></tr>`).join("")}</tbody></table></div>`)}
+    <div id="sp-table"></div>`;
+  fillSentimentTable(r.query.sp);
   byId("sn-week").onchange = (e) => { location.hash = `#/signal-news${e.target.value ? `?week=${e.target.value}` : ""}`; };
   if (!pts.length) return;
   const byTheme = {};
@@ -1256,6 +1258,7 @@ PAGES.stock = async (r) => {
     ${relCard()}${valuationCard(s)}${phaseCard(s)}
     ${metricsCard(s)}${earningsCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
     ${insiderCard(s, t)}
+    <section class="card" id="sp-card" data-nav="情绪维度" hidden></section>
     <section class="card" id="retail-card" data-nav="散户热度" hidden></section>
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid" data-nav-skip>
@@ -1284,6 +1287,7 @@ PAGES.stock = async (r) => {
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];
   const nK = s.dates.length;
   fillRetailCard(t); // 散户热度（retail_page.js，异步加载，失败不影响个股页）
+  fillSentimentProfile(t); // 新闻情绪更多维度（sentiment_page.js）
   const k = mkChart(byId("c-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     grid: { ...K_GRID_X, top: 36, bottom: 60 },

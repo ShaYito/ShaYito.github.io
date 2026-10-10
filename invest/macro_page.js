@@ -42,10 +42,26 @@ function macroNewsCard(recs, ticker) {
 }
 
 const MACRO_HOWTO = [
+  "经济政策不确定性指数（EPU）：统计美国主要报纸中同时出现“经济 + 政策 + 不确定”类词语的文章比例（1985–2009 年平均 = 100）。升高时市场波动通常更大，但它描述的是当下气氛，不预测方向。",
+  "预测市场：Polymarket 上用真钱交易的“某事件会不会发生”合约，价格 ≈ 市场给出的概率；看的是概率怎么变（例如降息概率一周内从 30% 升到 60%），说明市场预期在快速调整。成交额小的事件不显示。",
   "上半部分：近期 SPY 涨跌超过日常波动 2 倍的“市场异动日”，以及当天记录到的宏观 / 政策新闻——用来回答“那天大盘为什么大涨 / 大跌”。",
   "“几倍日常波动” = 当天涨跌 ÷ 过去 60 个交易日的日收益标准差；2 倍以上大约每 20 个交易日出现一次。",
   "下半部分：最近的宏观与政策事件，以及事后市场是否真的有反应。AI 判断“影响大”但市场没动，说明市场早已预期或并不在意。",
 ];
+
+function epuCard(e) {
+  if (!e) return "";
+  const level = e.pct >= 0.9 ? "处于历史高位" : e.pct >= 0.7 ? "偏高" : e.pct <= 0.3 ? "偏低" : "处于常见范围";
+  return card(`经济政策不确定性指数（${e.smooth} 日均值，FRED ${e.series}）`, `<p>最新 <b>${num(e.latest, 0)}</b>（${esc(e.latest_date)}），${level}：高于 ${e.since.slice(0, 4)} 年以来 ${pct(e.pct, 0)} 的日子；历史中位数 ${num(e.median, 0)}。</p>${chartDiv("c-epu", "short")}`, "", ["fact"]);
+}
+function polyCard(evs) {
+  if (!evs.length) return "";
+  const chg = (v) => (isNum(v) && Math.abs(v) >= 0.005 ? ` <span class="${v > 0 ? "pos" : "neg"}">${v > 0 ? "+" : ""}${(v * 100).toFixed(0)}</span>` : "");
+  return card("预测市场：政策与宏观事件概率（Polymarket）", `<p class="muted">概率后的数字为一天 / 一周的变化（百分点）。概率来自交易价格，事件临近或成交清淡时可能大幅跳动。</p>
+    <div class="grid two">${evs.map((e) => `<div><b><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a></b> <span class="muted">截止 ${esc(e.end)} · 成交 $${Math.round((e.volume || 0) / 1e6 * 10) / 10}M</span>
+      <table><tbody>${e.markets.map((x) => `<tr><td class="wrap">${esc(x.label === e.title ? "发生概率" : x.label)}</td><td class="num"><b>${pct(x.prob, x.prob < 0.1 ? 1 : 0)}</b></td><td class="num muted">${chg(x.d1) || "–"} / ${chg(x.w1) || "–"}</td></tr>`).join("")}</tbody></table>
+      ${e.more ? `<p class="muted">另有 ${e.more} 个低概率选项</p>` : ""}</div>`).join("")}</div>`, "", ["fact"]);
+}
 
 PAGES.macro = async () => {
   const m = await load("macro.json");
@@ -60,9 +76,19 @@ PAGES.macro = async () => {
   app().innerHTML = `
     <h2>宏观与异动 <span class="muted">截至 ${esc(m.asof || "–")}</span></h2>
     ${howto(MACRO_HOWTO)}
+    ${epuCard(m.epu)}
+    ${polyCard(m.polymarket || [])}
     ${card(`市场异动日（近 ${m.lookback_days} 个交易日，SPY 涨跌 ≥ ${m.abnormal_z} 倍日常波动）`, big.length ? `<div class="table-wrap"><table>
       <thead><tr><th>日期</th><th class="num">SPY</th><th class="num">倍数</th>${(m.instruments || []).slice(1).map((t) => `<th class="num">${esc(t)}</th>`).join("")}<th>当天的宏观 / 政策新闻</th></tr></thead>
       <tbody>${rows}</tbody></table></div>${m.first_recorded ? `<p class="muted">宏观新闻自 ${esc(m.first_recorded)} 起记录。</p>` : ""}` : empty("近期没有异常波动日"), "", ["fact"])}
     ${card(`近期宏观与政策事件（已有市场反应 ${st.measured || 0} 个，其中引起异常波动 ${st.abnormal || 0} 个）`, ev.length ? `<div class="table-wrap"><table>
       <thead><tr><th>日期</th><th>事件</th><th>类型</th><th>AI 判断（大盘）</th><th>市场反应</th></tr></thead><tbody>${evRows}</tbody></table></div>` : empty("尚无宏观新闻记录（每日推送开始记录后显示）"), "", ["fact", "model"])}`;
+  if (m.epu && byId("c-epu")) {
+    mkChart(byId("c-epu"), {
+      tooltip: { trigger: "axis" }, legend: { show: false }, grid: { left: 44, right: 16, top: 16, bottom: 24 },
+      xAxis: { type: "category", data: m.epu.dates }, yAxis: { type: "value", scale: true },
+      series: [{ name: "EPU", type: "line", showSymbol: false, data: m.epu.values, itemStyle: { color: css("--accent") },
+        markLine: { silent: true, symbol: "none", data: [{ yAxis: m.epu.median, name: "历史中位数" }], label: { formatter: "历史中位数", position: "insideEndTop" }, lineStyle: { type: "dashed", color: css("--muted") } } }],
+    });
+  }
 };
