@@ -179,7 +179,7 @@ const NAV_GROUPS = {
   overview: [],
   holdings: [],
   stock: [],
-  market: [["performance", "相对表现"], ["risk", "风险与集中度"], ["macro", "宏观与异动"]],
+  market: [["performance", "相对表现"], ["risk", "风险与集中度"], ["macro", "宏观与异动"], ["retail", "散户热度"]],
   news: [],
   chain: [],
   lab: [["advice", "配置建议"], ["matrix", "评分矩阵"], ["signal-news", "信号 × 新闻"], ["backtest", "回测与实盘"], ["model", "系统模型说明"], ["sim", "模拟经营"]],
@@ -1256,6 +1256,7 @@ PAGES.stock = async (r) => {
     ${relCard()}${valuationCard(s)}${phaseCard(s)}
     ${metricsCard(s)}${earningsCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
     ${insiderCard(s, t)}
+    <section class="card" id="retail-card" data-nav="散户热度" hidden></section>
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid" data-nav-skip>
       ${card("相关事件", s.events.length ? `<ul>${[...s.events].reverse().map((e) => `<li><span class="chip">${esc(e.date)}</span><a href="#/news?date=${e.date}&event=${e.id}">${esc(e.headline)}</a> <span class="${e.direction === "positive" ? "pos" : e.direction === "negative" ? "neg" : "muted"}">${esc(DIR_ZH[e.direction] || "")}</span>${e.more?.length ? ` <span class="muted">· 后续 ${e.more.length} 条：${e.more.map((m) => `<a class="muted" href="#/news?date=${m.date}&event=${m.id}" title="${esc(m.headline)}">${esc(m.date.slice(5))}</a>`).join(" ")}</span>` : ""}</li>`).join("")}</ul>` : empty("近期没有深度分析事件"))}
@@ -1282,6 +1283,7 @@ PAGES.stock = async (r) => {
   const cost = myCost(t);
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];
   const nK = s.dates.length;
+  fillRetailCard(t); // 散户热度（retail_page.js，异步加载，失败不影响个股页）
   const k = mkChart(byId("c-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     grid: { ...K_GRID_X, top: 36, bottom: 60 },
