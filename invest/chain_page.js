@@ -45,7 +45,7 @@ function chainInsights(c) {
   if (neg.length) out.push({ level: neg.some(([t]) => isHeld(t)) ? "high" : "medium", kind: "model",
     text: `近 7 日[[sentiment|新闻情绪]]偏负面：${neg.slice(0, 3).map(([t, m]) => `${t} ${m.name_zh}（${num(m.sentiment, 2, true)}，${m.news_count} 篇）`).join("、")}。` });
   const held = Object.keys(c.metrics).filter((t) => isHeld(t));
-  if (held.length) out.push({ level: "info", kind: "model", text: `${holdingsMode() === "mine" ? "你的持仓" : "当前建议持仓"}中位于这条产业链上的：${held.join("、")}。` });
+  if (held.length) out.push({ level: "info", kind: "model", text: `你的持仓中位于这条产业链上的：${held.join("、")}。` });
   return out;
 }
 
@@ -65,7 +65,7 @@ PAGES.chain = async (r) => {
     <h2>产业链 <span class="muted">价格截至 ${esc(c.asof_price)} · 环节划分 ${esc(c.as_of)}${c.status === "draft" ? "（草稿）" : ""}</span></h2>
     ${howto(CHAIN_HOWTO)}${insightBox(chainInsights(c))}
     <section class="card"><div class="row"><span class="muted">着色</span><div class="seg" id="ch-mode">${[["theme", "主题"], ["ret", "近 1 月涨跌"], ["sent", "近 7 日新闻情绪"]].map(([k, n]) => `<button type="button" data-m="${k}" class="${k === mode ? "on" : ""}">${n}</button>`).join("")}</div>
-      <span class="muted">${mode === "ret" ? "绿 = 上涨，红 = 下跌，颜色越深幅度越大（±20% 封顶）" : mode === "sent" ? "绿 = 偏正面，红 = 偏负面；无底色 = 近 7 日无新闻" : "颜色 = 看板主题"}；● = ${holdingsMode() === "mine" ? "你的持仓" : "当前建议持仓"}；灰色 = 未纳入看板</span></div>
+      <span class="muted">${mode === "ret" ? "绿 = 上涨，红 = 下跌，颜色越深幅度越大（±20% 封顶）" : mode === "sent" ? "绿 = 偏正面，红 = 偏负面；无底色 = 近 7 日无新闻" : "颜色 = 看板主题"}；● = 你的持仓；灰色 = 未纳入看板</span></div>
       <h3>主链：从芯片设计到 AI 应用 ${badge("model")}${badge("derived")}</h3>
       <div class="chain-flow">${c.stages.map((s, i) => stageCard(s, i)).join('<div class="chain-arrow" aria-hidden="true">→</div>')}</div>
       <h3 style="margin-top:18px">供给环节 ${badge("model")}${badge("derived")}</h3>

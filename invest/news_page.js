@@ -1,6 +1,8 @@
 /* 新闻页（M42 重构）：宏观与政策 / 深度事件 / 简讯 统一成一个列表，按日期分组、默认折叠为一行；
    顶部按标签筛选；点击展开：左边详情，右边相关公司（直接影响、产业链传导）+ 只含这些公司的小关系图。
-   右侧栏：本页重点、与你持仓相关、本周摘要。全节点产业链图在“产业链”页。 */
+   右侧栏：本页重点、与你持仓相关、本周摘要。全节点产业链图在“产业链”页。
+   M43：未读标记（只存本机浏览器）；跨天合并同一件事（展开看来龙去脉）；宏观事件落到你的持仓（受影响部分占账户多少）；
+   个股页“相关事件”复用同样的折叠行（展开时再加载当天存档）。 */
 const NKIND_ZH = { macro: "宏观与政策", deep: "深度分析", brief: "简讯" };
 const WD_ZH = "日一二三四五六";
 const dirDot = (d) => `<span class="ndot ${d || "neutral"}" title="${esc(DIR_ZH[d] || "中性")}"></span>`;
@@ -12,6 +14,116 @@ const NEWS_FILTERS = [
   ["scope", "范围", SCOPE_ZH],
   ["dir", "方向", { positive: "利好", negative: "利空", mixed: "影响不一" }],
 ];
+
+// ---------------- 未读标记（M43）：本机记住已看过的条目；首次打开时全部视为已读 ----------------
+const SEEN_KEY = "invest.news.seen";
+let NEWS_SEEN = undefined; // 本次打开网页时读到的“已看过”集合（筛选 / 翻周时不变，下次打开网页才清掉“新”标记）
+function seenBase() {
+  if (NEWS_SEEN !== undefined) return NEWS_SEEN;
+  try { const v = JSON.parse(localStorage.getItem(SEEN_KEY) || "null"); NEWS_SEEN = v && Array.isArray(v.ids) ? new Set(v.ids) : null; } catch { NEWS_SEEN = null; }
+  return NEWS_SEEN;
+}
+function markSeen(keys) {
+  try {
+    const v = JSON.parse(localStorage.getItem(SEEN_KEY) || "null");
+    const ids = [...new Set([...(v?.ids || []), ...keys])].slice(-5000);
+    localStorage.setItem(SEEN_KEY, JSON.stringify({ ids, at: new Date().toISOString() }));
+  } catch { /* 浏览器不允许存储时不标未读 */ }
+}
+const itemKey = (it) => `${it.kind}:${it.id}`;
+function isUnread(it) { const b = seenBase(); return !!b && !b.has(itemKey(it)); }
+
+// ---------------- 跨天合并（M43）：同一件事连续几天都有报道 → 合成一条“事件线” ----------------
+const THREAD_DAYS = 4; // 相隔不超过 4 天
+// 财经标题里的高频词（金额、涨跌、财报等）不算“相似”的证据
+const STOP_BIGRAMS = new Set(["亿美", "美元", "万美", "股价", "公司", "上涨", "下跌", "市场", "增长", "财报", "收入", "营收", "季度", "宣布", "达成", "预期", "利好", "利空", "构成", "推动", "投资", "分析", "分析师"]);
+function bigrams(t) {
+  const x = (t || "").toLowerCase().replace(/[\s\p{P}\p{S}\p{N}]/gu, "");
+  const out = new Set();
+  for (let i = 0; i < x.length - 1; i++) { const b = x.slice(i, i + 2); if (!STOP_BIGRAMS.has(b)) out.add(b); }
+  return out;
+}
+function jaccard(a, b) {
+  if (!a.size || !b.size) return 0;
+  let n = 0;
+  for (const x of a) if (b.has(x)) n++;
+  return n / (a.size + b.size - n);
+}
+const dayGap = (a, b) => Math.abs(new Date(`${a}T12:00:00Z`) - new Date(`${b}T12:00:00Z`)) / 864e5;
+function sameStory(a, b) {
+  if (a.date === b.date || dayGap(a.date, b.date) > THREAD_DAYS) return false;
+  const sim = jaccard(a._bg, b._bg);
+  if (a.kind === "macro" || b.kind === "macro") return a.kind === b.kind && ((a.policy && a.policy === b.policy && sim >= 0.2) || sim >= 0.4);
+  const ca = a.companies[0]?.t, cb = b.companies[0]?.t;
+  if (ca && ca === cb && a.type === b.type && sim >= 0.2) return true;
+  const overlap = a.companies.some((c) => b.companies.some((d) => d.t === c.t));
+  return overlap && sim >= 0.35;
+}
+// 输入按日期倒序的条目；输出每条事件线的最新一条（附 thread = 按时间正序的全部成员）
+function mergeThreads(items) {
+  for (const it of items) it._bg = bigrams(it.title);
+  const parent = items.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    if (find(i) !== find(j) && sameStory(items[i], items[j])) parent[find(j)] = find(i);
+  }
+  const groups = {};
+  items.forEach((it, i) => (groups[find(i)] ||= []).push(it));
+  const out = [];
+  for (const it of items) {
+    const g = groups[find(items.indexOf(it))];
+    if (g[0] !== it) continue; // 每组只保留最新的一条作为“线头”
+    out.push(g.length > 1 ? { ...it, thread: [...g].reverse() } : it);
+  }
+  return out;
+}
+
+// ---------------- 宏观事件落到持仓（M43）----------------
+let NEWS_CTX = { w: null, seg: null }; // w = 你的持仓占账户比例（本机账本 / 个人数据包），seg = segments.json
+async function myWeights() {
+  const h = loadHoldings();
+  if (!h || !Object.keys(h.positions || {}).length) return null;
+  let prices = {};
+  try { prices = (await latestPrices()).prices; } catch { /* 无价格时按成本估 */ }
+  const val = {};
+  for (const [t, n] of Object.entries(h.positions)) val[t] = n * (prices[t] || h.prices?.[t] || h.cost?.[t] || 0);
+  const total = Object.values(val).reduce((a, b) => a + b, 0) + (h.cash || 0);
+  return total > 0 ? Object.fromEntries(Object.entries(val).map(([t, v]) => [t, v / total])) : null;
+}
+function targetTickers(target) {
+  if (target === "gold") return ["GLD"];
+  if (META.themes.some((th) => th.key === target)) return META.universe.filter((u) => u.theme === target).map((u) => u.ticker);
+  return [target];
+}
+const EXPO_POLICIES = new Set(["trade", "export_control", "geopolitics"]);
+// 返回 {total, lines: [{name, dir, held: [[t, w]], sum}], market, china} 或 null（没有持仓数据）
+function macroExposure(it, ctx = NEWS_CTX) {
+  const w = ctx.w;
+  if (!w || it.kind !== "macro") return null;
+  const lines = [];
+  const all = new Set();
+  for (const a of it.raw.affected || []) {
+    const held = targetTickers(a.target).filter((t) => (w[t] || 0) >= 0.0005).map((t) => [t, w[t]]);
+    held.forEach(([t]) => all.add(t));
+    lines.push({ name: a.name, dir: a.direction, held, sum: held.reduce((x, [, v]) => x + v, 0) });
+  }
+  const stocks = Object.entries(w).filter(([t]) => t !== "CASH" && t !== "SPAXX");
+  const market = it.scope === "market" ? stocks.reduce((x, [, v]) => x + v, 0) : null;
+  let china = null;
+  if (EXPO_POLICIES.has(it.policy) && ctx.seg?.available) {
+    const sh = Object.fromEntries((ctx.seg.exposure || []).filter((x) => isNum(x.shares?.china)).map((x) => [x.ticker, x.shares.china]));
+    const cov = stocks.filter(([t]) => t in sh);
+    if (cov.length) china = { value: cov.reduce((x, [t, v]) => x + v * sh[t], 0), covered: cov.reduce((x, [, v]) => x + v, 0), top: cov.map(([t, v]) => [t, v * sh[t], sh[t]]).sort((a, b) => b[1] - a[1]).slice(0, 4) };
+  }
+  return { total: [...all].reduce((x, t) => x + w[t], 0), lines, market, china };
+}
+function exposureHtml(x) {
+  if (!x) return `<p class="muted small">在“我的持仓”填写交易记录（或解锁个人版）后，这里显示这条宏观消息涉及你账户的哪些部分、各占多少。</p>`;
+  const rows = x.lines.map((l) => `<li><b class="${dirCls(l.dir)}">${esc(l.name)}</b> <span class="${dirCls(l.dir)}">${esc(DIR_ZH[l.dir] || "")}</span>：${l.held.length ? `你持有 ${l.held.map(([t, v]) => `${esc(t)} ${pct(v, 1)}`).join("、")}，合计 <b>${pct(l.sum, 1)}</b>` : `<span class="muted">你没有持有</span>`}</li>`).join("");
+  const mk = x.market != null ? `<li>影响整个市场：你的股票与 ETF 合计占账户 <b>${pct(x.market, 1)}</b>（其余为现金）</li>` : "";
+  const cn = x.china ? `<li>${rich("中国收入暴露（按[[geo_revenue|分地区收入]]加权）")}：约占账户 <b>${pct(x.china.value, 1)}</b>${x.china.top.length ? `，主要来自 ${x.china.top.map(([t, , s]) => `${esc(t)}（中国收入 ${pct(s, 0)}）`).join("、")}` : ""}<span class="muted">；有地区数据的持仓占账户 ${pct(x.china.covered, 0)}</span></li>` : "";
+  return `<b>落到你的持仓</b><ul class="rel">${rows}${mk}${cn}</ul><p class="muted small">比例 = 持仓市值 ÷ 账户总值（本机计算，不上传）；只说明受影响的部分有多大，方向是 AI 判断。</p>`;
+}
 
 // 某天存档里文章的政策类型 / 影响范围（按链接查），给深度事件与简讯补上政策标签
 function articleIndex(rec) {
@@ -81,9 +193,13 @@ function newsRow(it, held, open) {
   const comps = it.companies.slice(0, 5).map((c) => companyChip(c, held)).join("") + (it.companies.length > 5 ? `<span class="muted">+${it.companies.length - 5}</span>` : "")
     + (it.themes || []).slice(0, 2).map((a) => `<span class="ctag theme ${a.direction || ""}">${esc(a.name)}</span>`).join("");
   const react = it.kind === "macro" && it.raw.reaction?.status === "abnormal" ? `<span class="chip warnchip" title="事件后首个收盘日 SPY 或 QQQ 涨跌超过日常波动 2 倍">⚠ 市场异动</span>` : "";
+  const ex = macroExposure(it);
+  const expo = ex && ex.total >= 0.005 ? `<span class="chip expo" title="这条消息直接涉及的你的持仓占账户比例">持仓 ${pct(ex.total, 0)}</span>` : "";
+  const th = it.thread ? `<span class="chip thread" title="同一件事 ${it.thread.length} 条报道，展开看来龙去脉">🧵 ${it.thread[0].date.slice(5)} 起 · ${it.thread.length} 条</span>` : "";
+  const unread = (it.thread || [it]).some(isUnread) ? `<span class="nnew" title="上次打开网页之后新增">新</span>` : "";
   return `<article class="nrow ${it.kind} ${open ? "open" : ""}" data-key="${esc(it.kind)}:${esc(it.id)}">
-    <div class="nhead">${dirDot(it.dir)}<span class="nkind k-${it.kind}">${NKIND_ZH[it.kind]}</span><span class="ntitle">${esc(it.title)}</span>
-      <span class="ntags">${tags.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}${react}${comps}</span></div>
+    <div class="nhead">${dirDot(it.dir)}${unread}<span class="nkind k-${it.kind}">${NKIND_ZH[it.kind]}</span><span class="ntitle">${esc(it.title)}</span>
+      <span class="ntags">${th}${expo}${tags.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}${react}${comps}</span></div>
     <div class="ndetail">${open ? newsDetail(it) : ""}</div></article>`;
 }
 
@@ -111,14 +227,21 @@ function newsDetail(it) {
   } else if (it.kind === "deep") {
     const facts = (e.facts || []).map((f) => `<li>${esc(f.text)} <span class="src">${srcLinks(f.sources, 2)}</span></li>`).join("");
     left = `<p>${esc(e.summary)}</p>${facts ? `<b>关键事实</b><ul>${facts}</ul>` : ""}
-      ${e.portfolio_implication ? `<p><b>对组合的含义：</b>${esc(e.portfolio_implication)}</p>` : ""}
       ${(e.watch_items || []).length ? `<p><b>需跟踪：</b>${e.watch_items.map(esc).join("；")}</p>` : ""}
       <p class="muted small">${esc(TIER_ZH[e.tier] || e.tier || "")} · 重要性 ${num(e.importance, 1)}</p>`;
   } else {
     left = `<p class="muted small">简讯（一句话摘要，未做深度分析）${isNum(e.sentiment) ? ` · 情绪 ${num(e.sentiment, 2, true)}` : ""}</p>`;
   }
   left += `<p class="src">来源：${srcLinks(e.sources, 5)}</p>`;
-  return `<div class="ndgrid"><div>${left}</div><div class="nside-rel">${relatedPanel(it)}</div></div>`;
+  const right = (it.kind === "macro" ? exposureHtml(macroExposure(it)) : "") + relatedPanel(it);
+  return `<div class="ndgrid"><div>${threadHtml(it)}${left}</div><div class="nside-rel">${right}</div></div>`;
+}
+
+// 事件线：按时间列出同一件事的每条报道（最新一条的详情在下方）
+function threadHtml(it) {
+  if (!it.thread) return "";
+  const li = (m) => `<li>${dirDot(m.dir)} <span class="muted">${esc(m.date.slice(5))} · ${esc(NKIND_ZH[m.kind])}</span> ${esc(m.title)}${m.raw.summary && m.kind !== "brief" && m !== it.thread[it.thread.length - 1] ? `<div class="muted small">${esc(m.raw.summary)}</div>` : ""} <span class="src">${srcLinks(m.raw.sources, 1)}</span></li>`;
+  return `<div class="nthread"><b>来龙去脉（${it.thread.length} 条，${esc(it.thread[0].date.slice(5))} → ${esc(it.thread[it.thread.length - 1].date.slice(5))}）</b><ol>${it.thread.map(li).join("")}</ol><b>最新：</b></div>`;
 }
 
 // 只含本事件相关公司的小关系图：节点 = 直接影响 + 传导 + 涉及公司，连线 = 图谱中它们之间的关系
@@ -151,7 +274,8 @@ function drawMiniGraph(it, g) {
 const NEWS_HOWTO2 = [
   "每行是一条新闻：● 圆点颜色 = 方向（绿利好 / 红利空 / 黄不一 / 灰中性），之后是类别（宏观与政策 / 深度分析 / 简讯）、标题、分类标签和相关公司（● = 持仓）。点击一行展开详情，再点收起。",
   "上方标签用来筛选：同一行内单选，再点一次取消。“政策”标签来自 AI 对每篇报道的政策类型判断；“范围”只对宏观事件有意义。",
-  "展开后右边是相关公司：直接影响、[[supply_chain|产业链传导]]（AI 推断，看置信度），下方小图只画出这些公司之间的供应 / 竞争 / 合作关系；完整的公司关系图在“产业链”页。",
+  "展开后右边是相关公司：直接影响、[[supply_chain|产业链传导]]（AI 推断，看置信度），下方小图只画出这些公司之间的供应 / 竞争 / 合作关系；完整的公司关系图在“产业链”页。宏观消息还会列出它落到你持仓的哪些部分、各占账户多少。",
+  "“新”= 上次打开网页之后新增（只记在这台设备的浏览器里）。🧵 = 同一件事连续几天都有报道，已合成一条，展开后按时间看来龙去脉；不想合并可关掉上方的“合并同一件事”。",
 ];
 
 PAGES.news = async (r) => {
@@ -171,8 +295,12 @@ PAGES.news = async (r) => {
   ]);
   const ticker = r.query.ticker || "";
   const held = new Set(heldTickers());
+  const [w, seg] = await Promise.all([myWeights().catch(() => null), load("segments.json").catch(() => null)]);
+  NEWS_CTX = { w, seg };
   const all = newsItems(recs, digest, week);
-  const items = all.filter((it) => itemMatches(it, r.query, ticker, held));
+  const merged = r.query.nomerge ? all.filter((it) => itemMatches(it, r.query, ticker, held)) : mergeThreads(all.filter((it) => itemMatches(it, r.query, ticker, held)));
+  const items = r.query.unread ? merged.filter((it) => (it.thread || [it]).some(isUnread)) : merged;
+  const unreadN = merged.filter((it) => (it.thread || [it]).some(isUnread)).length;
   // 每个筛选标签的条数（在其他筛选条件下）
   const countFor = (key, val) => all.filter((it) => itemMatches(it, { ...r.query, [key]: val }, ticker, held)).length;
   const q = (o) => { const p = new URLSearchParams({ ...r.query, ...o }); for (const [k, v] of [...p]) if (!v) p.delete(k); return `#/news?${p}`; };
@@ -186,7 +314,7 @@ PAGES.news = async (r) => {
   const dayOpts = [...days].reverse().slice(0, 21).map((d) => `<option value="d:${d.date}" ${r.query.date === d.date ? "selected" : ""}>${d.date}${d.mode === "weekend" ? "（周末汇总）" : d.mode === "backfill" ? "（回补）" : ""}</option>`).join("");
   const tickOpts = `<option value="">全部股票</option>` + META.universe.map((u) => `<option value="${u.ticker}" ${u.ticker === ticker ? "selected" : ""}>${esc(tickerLabel(u.ticker))}</option>`).join("");
   // 旧链接 ?event=<id>（Discord、个股页“相关事件”）：展开对应条目
-  const evKey = r.query.event ? all.find((it) => it.id === r.query.event) : null;
+  const evKey = r.query.event ? items.find((it) => it.id === r.query.event || (it.thread || []).some((m) => m.id === r.query.event)) : null;
   const openKey = r.query.open || (evKey ? `${evKey.kind}:${evKey.id}` : "");
   let lastDate = "";
   const list = items.slice(0, 300).map((it) => {
@@ -198,14 +326,16 @@ PAGES.news = async (r) => {
   const deepEvents = items.filter((it) => it.kind === "deep").map((it) => ({ ...it.raw, date: it.date }));
   const digestHtml = digest?.digest ? card(`本周摘要（${digest.week_start} – ${digest.week_end}）`,
     `<p>${esc(digest.digest.summary)}</p><ul>${digest.digest.highlights.map((h) => `<li>${esc(h.text)} <span class="src">${srcLinks(h.sources, 1)}</span></li>`).join("")}</ul>`) : "";
-  const active = NEWS_FILTERS.some(([k]) => r.query[k]) || r.query.held;
+  const active = NEWS_FILTERS.some(([k]) => r.query[k]) || r.query.held || r.query.unread;
   app().innerHTML = `
-    <h2>新闻 <span class="muted">${items.length} 条${active || ticker ? `（共 ${all.length} 条）` : ""} · 宏观 ${all.filter((x) => x.kind === "macro").length} · 深度 ${all.filter((x) => x.kind === "deep").length} · 简讯 ${all.filter((x) => x.kind === "brief").length}</span></h2>
+    <h2>新闻 <span class="muted">${items.length} 条${active || ticker ? `（共 ${all.length} 条）` : ""}${unreadN ? ` · <b class="nnew-t">${unreadN} 条新</b>` : ""} · 宏观 ${all.filter((x) => x.kind === "macro").length} · 深度 ${all.filter((x) => x.kind === "deep").length} · 简讯 ${all.filter((x) => x.kind === "brief").length}</span></h2>
     <section class="card nfilters"><div class="row">
       <label>范围 <select id="n-range"><optgroup label="按周">${weekOpts}</optgroup><optgroup label="按天（最近 21 天）">${dayOpts}</optgroup></select></label>
       <label>股票 <select id="n-ticker">${tickOpts}</select></label>
       <a class="chip ${r.query.held ? "on" : ""}" href="${q({ held: r.query.held ? "" : "1", open: "" })}">● 只看与持仓相关</a>
-      ${active ? `<a class="chip" href="${q(Object.fromEntries([...NEWS_FILTERS.map(([k]) => [k, ""]), ["held", ""], ["open", ""]]))}">清除筛选</a>` : ""}</div>
+      <a class="chip ${r.query.unread ? "on" : ""}" href="${q({ unread: r.query.unread ? "" : "1", open: "" })}" title="上次打开网页之后新增的条目（记录只保存在这台设备的浏览器里）">只看新的 <span class="muted">${unreadN}</span></a>
+      <a class="chip ${r.query.nomerge ? "" : "on"}" href="${q({ nomerge: r.query.nomerge ? "" : "1", open: "" })}" title="同一件事连续几天都有报道时合成一条，展开看来龙去脉">🧵 合并同一件事</a>
+      ${active ? `<a class="chip" href="${q(Object.fromEntries([...NEWS_FILTERS.map(([k]) => [k, ""]), ["held", ""], ["unread", ""], ["open", ""]]))}">清除筛选</a>` : ""}</div>
       ${NEWS_FILTERS.map(filterRow).join("")}</section>
     <div class="news-layout">
       <div class="news-main">${howto(NEWS_HOWTO2)}<section class="card nlist">${list || empty("没有符合条件的新闻")}${items.length > 300 ? `<p class="muted">只显示前 300 条，请缩小范围。</p>` : ""}</section>
@@ -218,6 +348,7 @@ PAGES.news = async (r) => {
   byId("n-range").onchange = (e) => { const [k, v] = e.target.value.split(":"); location.hash = q({ week: k === "w" ? v : "", date: k === "d" ? v : "", open: "" }); };
   byId("n-ticker").onchange = (e) => { location.hash = q({ ticker: e.target.value, open: "" }); };
   const byKey = Object.fromEntries(items.map((it) => [`${it.kind}:${it.id}`, it]));
+  markSeen(all.map(itemKey)); // 本次看到的都记为已读（本次打开期间“新”标记保留）
   // 展开 / 收起：不改地址（避免整页重绘与滚动跳动），只更新这一行
   document.querySelectorAll(".nrow .nhead").forEach((h) => h.addEventListener("click", (ev) => {
     if (ev.target.closest("a")) return;
@@ -233,3 +364,33 @@ PAGES.news = async (r) => {
     document.querySelector(`.nrow[data-key="${CSS.escape(openKey)}"]`)?.scrollIntoView({ block: "center" });
   }
 };
+
+// ---------------- 个股页“相关事件”（M43）：同样的折叠行，展开时再加载当天存档 ----------------
+function stockEventsHtml(events) {
+  if (!events.length) return empty("近期没有深度分析事件");
+  const row = (e) => `<article class="nrow deep" data-se="${esc(e.date)}|${esc(e.id)}|${esc(e.week || "")}">
+    <div class="nhead">${dirDot(e.direction)}<span class="muted small">${esc(e.date.slice(5))}</span><span class="nkind k-deep">${esc(EVENT_ZH[e.event_type] || "事件")}</span><span class="ntitle">${esc(e.headline)}</span>
+      <span class="ntags">${e.more?.length ? `<span class="chip thread" title="${esc(e.more.map((m) => `${m.date} ${m.headline}`).join("\n"))}">🧵 后续 ${e.more.length} 条</span>` : ""}</span></div><div class="ndetail"></div></article>`;
+  return `<div class="nlist">${[...events].reverse().map(row).join("")}</div><p class="muted small">点击一行展开详情；<a href="#/news">全部新闻 →</a></p>`;
+}
+async function findNewsItem(date, id, week) {
+  try { const it = newsItems([await load(`news/${date}.json`)], null, null).find((x) => x.id === id); if (it) return it; } catch { /* 当天存档不在网站数据中 */ }
+  if (week) try { return newsItems([], await load(`news/weeks/${week}.json`), week).find((x) => x.id === id) || null; } catch { /* 无周摘要 */ }
+  return null;
+}
+function bindStockEvents(graph) {
+  document.querySelectorAll(".nrow[data-se] > .nhead").forEach((h) => h.addEventListener("click", async (ev) => {
+    if (ev.target.closest("a")) return;
+    const row = h.parentElement;
+    const open = !row.classList.contains("open");
+    row.classList.toggle("open", open);
+    const box = row.querySelector(".ndetail");
+    if (!open) { box.innerHTML = ""; return; }
+    const [date, id, week] = row.dataset.se.split("|");
+    box.innerHTML = `<p class="muted">加载中…</p>`;
+    const it = await findNewsItem(date, id, week);
+    if (!row.classList.contains("open")) return;
+    box.innerHTML = it ? newsDetail(it) : `<p class="muted">找不到这条事件的详情，<a href="#/news?date=${esc(date)}&event=${esc(id)}">到新闻页查看 →</a></p>`;
+    if (it) drawMiniGraph(it, graph);
+  }));
+}

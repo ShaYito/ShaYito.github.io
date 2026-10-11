@@ -57,21 +57,14 @@ function loadHoldings() {
 function isHeld(t) {
   const h = loadHoldings();
   if (h && Object.keys(h.positions).length) return (h.positions[t] || 0) > 0;
-  return !!META.universe.find((u) => u.ticker === t)?.held;
+  return false; // M43：没有实际持仓时不再按系统建议配置标注
 }
 /* 平均成本为估计值的原因（持仓页 / 首页悬停说明） */
 function estCostNote(r) {
   return [r.est_start ? "起始持仓未填成本价，按起始日收盘价估计" : "", r.est_open ? `${r.est_open} 笔买入未填成交价，按当天开盘价估计` : ""].filter(Boolean).join("；");
 }
-function holdingsMode() { const h = loadHoldings(); return h && Object.keys(h.positions).length ? "mine" : "suggested"; }
+function holdingsMode() { const h = loadHoldings(); return h && Object.keys(h.positions).length ? "mine" : "none"; }
 
-async function suggestedTarget() {
-  const o = await load("overview.json").catch(() => null);
-  if (o?.available) return { target: Object.fromEntries(o.allocation.map((x) => [x.ticker, x.weight])), source: `周报 ${o.signal_date}` };
-  const s = await load("sim/system.json").catch(() => null);
-  if (s?.targets?.length) return { target: s.targets[s.targets.length - 1], source: `回测模拟 ${s.dates[s.dates.length - 1]}（首份正式周报前）` };
-  return { target: {}, source: "无" };
-}
 
 const money = (v) => (isNum(v) ? `${v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("zh-CN", { maximumFractionDigits: 0 })}` : "–");
 const money2 = (v) => (isNum(v) ? `${v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "–");
@@ -80,7 +73,7 @@ const shareFmt = (n) => (isNum(n) ? (Math.abs(n - Math.round(n)) < 1e-6 ? String
 const TICKER_RE = /^[A-Z0-9^][A-Z0-9\-=^]{0,11}$/;
 const normTicker = (s) => s.trim().toUpperCase().replace(/\./g, "-");
 
-const HOLD_TABS = [["positions", "持仓"], ["buyplan", "买入计划"], ["attrib", "收益归因"], ["lots", "持有期与税务"], ["ledger", "交易记录"], ["recon", "实盘对账"], ["plan", "调仓建议"]];
+const HOLD_TABS = [["positions", "持仓"], ["buyplan", "买入计划"], ["attrib", "收益归因"], ["lots", "持有期与税务"], ["ledger", "交易记录"], ["recon", "实盘对账"]];
 const HOLD_HOWTO = {
   positions: [
     "本页由“交易记录”标签里的起始持仓与每一笔交易自动推算：当前股数、[[avg_cost|平均成本]]、现金（含分红与现金利息）、[[unrealized|浮动盈亏]]与[[realized|已实现盈亏]]。价格为最新收盘价（每天更新一次）。",
@@ -96,7 +89,7 @@ const HOLD_HOWTO = {
   recon: [
     "用你的真实调仓来检验模拟运算：同一起始持仓、同一批交易，分别按“实际”（原始股价估值、你的成交价与费用、除息日收到现金分红）和“模拟”（当天开盘价、单边成本假设、分红再投资）计算两条资产曲线。",
     "两条曲线的差额被拆成：成交价差（你的成交价 vs 当天开盘价）、费用差（实际费用 vs 模拟成本假设）、现金利息差、其他。没有交易时两条曲线应完全一致。",
-    "期间的资金存取在当天开盘前同时计入两条曲线，不会被算成差额。下方还有“整体对比：跟随系统模型”和每次操作的“决策评估”。",
+    "期间的资金存取在当天开盘前同时计入两条曲线，不会被算成差额。下方还有“整体对比：你的账户 vs 一直不动”和每次操作的“决策评估”。",
   ],
   attrib: [
     "把一段时间内账户的盈亏拆到每只持仓：盈亏 = 期末市值 − 期初市值 − 买入花费 + 卖出所得 + 分红（含费用）。",
@@ -108,15 +101,12 @@ const HOLD_HOWTO = {
     "美国税法：持有超过 1 年再卖出属于长期资本利得，税率通常明显低于短期（按普通收入计税）。批次快满 1 年又有较大浮盈时，推迟几天卖出可能更划算。",
     "仅供参考，不构成税务建议：券商可能按其他方式（如指定批次）匹配卖出；洗售规则（wash sale：亏损卖出前后 30 天内买回同一股票，亏损不能抵税）未计入；起始持仓的实际买入日未知，按起始日计（标“起始”），请以券商的成本与持有期为准。",
   ],
-  plan: [
-    "把系统模型的最新建议配置换算成你的股数：只调整系统覆盖范围内的标的，范围外持仓保持不动；整股计算，零头留在现金，成本按单边 0.1% 估算。",
-    "这是[[model|模型建议]]，本身可能出错，仅供参考；持仓按交易记录推算，请以券商显示为准。",
-  ],
 };
 
 PAGES.holdings = async (r) => {
   const tab = HOLD_TABS.some(([k]) => k === r.query.tab) ? r.query.tab : "positions";
-  const { P, raw, sys } = await simData();
+  const { P, raw } = await simData();
+  const sys = null; // M43：系统模型已停用，不再对比“跟随系统模型 / 按系统建议操作”
   // 首次使用：本机有旧版手动填写的持仓、还没有账本 → 作为起始持仓
   if (!loadReconStart()) {
     let legacy = null; try { legacy = JSON.parse(localStorage.getItem(HOLD_KEY) || "null"); } catch { /* 忽略 */ }
@@ -148,7 +138,6 @@ PAGES.holdings = async (r) => {
   if (tab === "ledger") return renderLedgerTab(P, raw);
   if (tab === "recon") { if (start) return renderReconTab(P, raw, sys, start); byId("h-body").innerHTML = empty; return bindRestore(); }
   if (!book) { byId("h-body").innerHTML = empty; return bindRestore(); }
-  if (tab === "plan") return renderPlanTab(book);
   if (tab === "buyplan") return renderBuyPlanTab(book, r.query);
   if (tab === "attrib") return renderAttribTab(P, raw, start, loadTrades());
   if (tab === "lots") return renderLotsTab(P, raw, start, loadTrades(), book);
@@ -368,33 +357,6 @@ async function syncBackend(book, msg) {
   } catch (e) { msg(`同步失败：${e.message}`); }
 }
 
-// ---------------- 调仓建议（建议 vs 实际）----------------
-async function renderPlanTab(book) {
-  const sugg = await suggestedTarget();
-  const sysSet = new Set(META.allocation_tickers_system || []);
-  const s = book.snapshot;
-  const price = Object.fromEntries(book.rows.map((r) => [r.ticker, r.price]));
-  const { prices } = await latestPrices();
-  const px = (t) => price[t] || prices[t];
-  const tickers = [...new Set([...Object.keys(s.positions), ...Object.keys(sugg.target)])];
-  const plan = HoldingsCalc.rebalancePlan(s.positions, s.cash, Object.fromEntries(tickers.map((t) => [t, px(t)]).filter(([, p]) => p > 0)), sugg.target, [...sysSet], 10);
-  const trades = plan.rows.filter((r) => r.trade_shares !== 0);
-  const ins = [];
-  if (trades.length) ins.push({ level: "info", kind: "model", text: `按系统建议（${sugg.source}）需要 ${trades.length} 笔交易，合计买入 ${money(plan.total_buy)}、卖出 ${money(plan.total_sell)}，预估成本 ${money(plan.total_cost)}。` });
-  byId("h-body").innerHTML = `${insightBox(ins)}
-    <section class="card"><h3>建议 vs 实际（${esc(sugg.source)}）${badge("model")}${badge("derived")}</h3>
-      <p class="muted">可调资金 ${money(plan.managed_value)}（系统范围内持仓 + 现金）；整股计算，零头留现金；成本按单边 0.1%。</p>
-      <div class="table-wrap"><table><thead><tr><th>标的</th><th class="num">价格</th><th class="num">当前股数</th><th class="num">目标股数</th><th class="num">买卖</th><th class="num">金额</th><th class="num">成本</th><th class="num">当前</th><th class="num">调仓后</th><th class="num">建议</th></tr></thead>
-      <tbody>${plan.rows.map((r) => `<tr><td><b>${esc(r.ticker)}</b> <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span></td><td class="num">${num(r.price, 2)}</td>
-        <td class="num">${shareFmt(r.current_shares)}</td><td class="num">${r.target_shares}</td>
-        <td class="num ${r.trade_shares > 0 ? "pos" : r.trade_shares < 0 ? "neg" : ""}">${r.trade_shares ? (r.trade_shares > 0 ? "+" : "") + shareFmt(r.trade_shares) : "–"}</td>
-        <td class="num">${r.trade_shares ? money(r.trade_value) : "–"}</td><td class="num">${num(r.cost, 2)}</td>
-        <td class="num">${pct(r.current_weight, 1)}</td><td class="num">${pct(r.after_weight, 1)}</td><td class="num">${pct(r.target_weight, 1)}</td></tr>`).join("")}</tbody></table></div>
-      <p>合计买入 ${money(plan.total_buy)}、卖出 ${money(plan.total_sell)}，预估成本 ${num(plan.total_cost, 2)}；调仓后现金 ${money(plan.cash_after)}（建议 ${pct(plan.target_cash_weight, 1)}），与建议的最大偏差 ${pct(plan.max_deviation, 1)}。</p>
-      ${Object.keys(plan.unmanaged).length ? `<p class="muted">不参与调仓（系统范围外）：${Object.entries(plan.unmanaged).map(([t, v]) => `${esc(t)} ${money(v)}`).join("、")}</p>` : ""}
-      ${plan.no_price.length ? `<p class="warn">缺少价格、未计算：${plan.no_price.join("、")}</p>` : ""}
-      <p class="muted"><a href="#/sim?c=${simEncode({ ...SIM_DEFAULT, posMode: "weight", weights: Object.fromEntries(book.rows.filter((r) => r.has_data && isNum(r.weight)).map((r) => [r.ticker, r.weight])), initial: Math.round(book.account.total_value), strategy: "hold", start: "2019-01-01" })}">在模拟经营中回测“按当前比例持有”→</a></p></section>`;
-}
 async function latestPrices() {
   const raw = await load("sim/prices.json");
   const out = {};
@@ -677,8 +639,8 @@ function renderFollowCompare(P, raw, sys, recon, money) {
     text: `若起始时一次性换成系统配置并每周跟随系统模型：${money(f)}（调仓 ${cf.followTrades} 次、成本 ${money(cf.followCost)}）；你${a >= f ? "多赚" : "少赚"} ${money(Math.abs(a - f))}。` });
   ins.push({ level: "info", kind: "derived", text: `对比期 ${cf.dates[0]} ~ ${cf.dates[last]}（${last} 个交易日）；期间的存取款三条曲线同时计入。时间越短，结论越受运气影响。` });
   host.innerHTML = `${insightBox(ins)}
-    <section class="card"><h3>整体对比：你的账户 vs 一直跟随系统模型 vs 一直不动 ${badge("derived")}${badge("simulated")}</h3>
-      <p class="muted">三条曲线都从对账起始持仓出发：<b>你的实际账户</b>（按你录入的交易与费用）；<b>跟随系统模型</b>（起始日后第一个交易日开盘一次性换成系统建议配置，之后每周按系统信号调仓，成本按模拟假设）；<b>一直不动</b>（起始持仓持有到底）。回答“系统模型值不值得跟随”。</p>
+    <section class="card"><h3>整体对比：你的账户 vs 一直不动 ${badge("derived")}</h3>
+      <p class="muted">两条曲线都从对账起始持仓出发：<b>你的实际账户</b>（按你录入的交易与费用）；<b>一直不动</b>（起始持仓持有到底）。差额 = 你全部操作的合计贡献。</p>
       ${chartDiv("c-fc")}</section>`;
   mkChart(byId("c-fc"), {
     tooltip: { trigger: "axis", valueFormatter: (v) => money(v) }, legend: { top: 0 }, grid: { left: 70, right: 20, top: 40, bottom: 30 },

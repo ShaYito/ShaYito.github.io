@@ -1,20 +1,19 @@
 "use strict";
 /* ETF / 大类资产页（个股页中的专用版式）：SPY / QQQ / GLD / SMH / XLC。
-   通用：它是什么与在系统里的作用、K 线（背景 = 系统的市场状态）、收益与风险表、在系统里的仓位。
-   专属：SPY = 市场状态三项依据 + 成分与集中度 + 现金层；QQQ / SMH / XLC = 相对 SPY 强弱 + 成分与重叠 + 主题内个股相对它；
+   通用：它是什么、K 线、收益与风险表（M43 起不再显示系统模型的市场状态与仓位）。
+   专属：SPY = 市场环境三项指标 + 成分与集中度；QQQ / SMH / XLC = 相对 SPY 强弱 + 成分与重叠 + 主题内个股相对它；
         GLD = 实际利率 / 美元驱动 + 对冲效果 + 黄金新闻。 */
 
 const SECTOR_ZH = { technology: "信息技术", communication_services: "通信服务", consumer_cyclical: "可选消费", consumer_defensive: "必需消费",
   financial_services: "金融", healthcare: "医疗保健", industrials: "工业", energy: "能源", utilities: "公用事业", realestate: "房地产", basic_materials: "原材料" };
 const KIND_ZH = { broad: "大盘指数", growth: "成长科技指数", gold: "黄金", sector: "行业指数" };
-const STATE_ORDER = ["risk_on", "neutral", "risk_off"];
 function isEtf(t) { return (META.etfs || []).some((e) => e.ticker === t); }
 
 function etfHowto(e) {
   return [
     `${e.info.what}`,
     ...e.info.read,
-    "页面上每一块都标明了性质：基金资料、价格与宏观数据是[[fact|事实]]；收益、波动、相关性是[[derived|计算]]；系统仓位是[[model|模型]]给出的。成分股与行业分布来自 yfinance（每天更新一次，只有前 10 大持仓）；SPY 的成分来自 SSGA 官方完整持仓。",
+    "页面上每一块都标明了性质：基金资料、价格与宏观数据是[[fact|事实]]；收益、波动、相关性是[[derived|计算]]。成分股与行业分布来自 yfinance（每天更新一次，只有前 10 大持仓）；SPY 的成分来自 SSGA 官方完整持仓。",
   ];
 }
 
@@ -37,7 +36,7 @@ function etfInsights(e, t) {
   }
   if (e.regime_inputs?.dates?.length) {
     const r = e.regime_inputs, i = r.dates.length - 1;
-    out.push({ level: "info", kind: "model", text: `系统当前判断：${REGIME_ZH[r.regime[i]] || r.regime[i]}（总分 ${num(r.score[i], 0, true)}：SPY 相对 200 日均线 ${pct(r.spy_vs_ma200[i], 1, true)}，VIX ${num(r.vix[i], 1)}，利差 ${num(r.curve[i], 2, true)}）。` });
+    out.push({ level: "info", kind: "fact", text: `市场环境：SPY 相对 200 日均线 ${pct(r.spy_vs_ma200[i], 1, true)}，[[vix|VIX]] ${num(r.vix[i], 1)}，10 年 − 3 个月利差 ${num(r.curve[i], 2, true)} 个百分点。` });
   }
   return out;
 }
@@ -49,59 +48,34 @@ async function renderEtfPage(t) {
   const subtitle = [info.name, KIND_ZH[info.kind], f.family, isNum(f.expense_ratio) ? `[[expense_ratio|费率]] ${pct(f.expense_ratio, 2)}/年` : ""].filter(Boolean).join(" · ");
   const statRows = Object.entries(e.stats);
   const cols = [["1M", "1 月"], ["3M", "3 月"], ["YTD", "今年"], ["1Y", "1 年"], ["3Y", "3 年（年化）"], ["5Y", "5 年（年化）"], ["vol_1y", "波动（1 年）"], ["max_dd_5y", "最大回撤（5 年）"], ["dd_now", "距高点"]];
-  const role = e.role;
-  const myW = personalOn() ? window.PERSONAL.weights?.[t] : null;
-  const roleHtml = role.layer
-    ? `<div class="table-wrap"><table><thead><tr><th>市场状态</th>${STATE_ORDER.map((k) => `<th class="num ${role.regime === k ? "hl" : ""}">${esc((REGIME_ZH[k] || k).split("（")[1]?.replace("）", "") || k)}${role.regime === k ? "（当前）" : ""}</th>`).join("")}</tr></thead>
-        <tbody><tr><td>${esc({ core: "核心层", hedge: "对冲层" }[role.layer])}建议比例</td>${STATE_ORDER.map((k) => `<td class="num">${pct(role.regime_weights[k], 0)}</td>`).join("")}</tr></tbody></table></div>
-      <p>当前建议 ${pct(role.current, 1)}${isNum(myW) ? `；你的实际比例 <b>${pct(myW, 1)}</b>` : ""}。${role.layer === "core" ? "市场越偏防守，核心仓越低、现金越高。" : "市场越偏防守，黄金对冲比例越高。"}</p>`
-    : `<p>${rich(`系统不直接配置 ${t}；它是${role.benchmark_of.length ? `「${role.benchmark_of.map(themeName).join("」「")}」主题的[[benchmark|基准]]：这些主题里个股的[[relative_strength|相对强弱]]是相对它计算的。` : "业绩比较基准。"}`)}${isNum(myW) ? `你的实际比例 <b>${pct(myW, 1)}</b>。` : ""}</p>`;
   app().innerHTML = `
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
     <h2>${esc(t)} ${esc(info.name_zh)} <span class="muted">${rich(subtitle)}</span></h2>
     ${myPositionLine(t, e)}
     ${howto(etfHowto(e))}${insightBox(etfInsights(e, t))}
-    <section class="card"><h3>它是什么 · 在系统里的作用 ${badge("fact")}${badge("model")}</h3>
-      <p>${esc(info.what)}</p><p><b>在系统里：</b>${esc(info.role)}</p>${info.watch ? `<p class="muted"><b>需要关注：</b>${esc(info.watch)}</p>` : ""}</section>
-    <section class="card"><h3>价格走势 ${badge("fact")}${badge("model")}</h3><p class="muted">${rich(`K 线与 50 / 200 日[[ma|均线]]（${pxLabel(e)}）；背景色 = 系统当时判断的[[regime|市场状态]]（绿 = 进攻，黄 = 中性，红 = 防守）。${myCost(t) ? "紫色实线：你的平均成本。" : ""}${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易。" : ""}`)}</p>${priceModeToggle(e)}${e.div_factor ? `<p class="muted">${esc(priceModeNote(e))}</p>` : ""}${chartDiv("c-etf-k", "tall")}</section>
+    <section class="card"><h3>它是什么 ${badge("fact")}</h3>
+      <p>${esc(info.what)}</p>${info.watch ? `<p class="muted"><b>需要关注：</b>${esc(info.watch)}</p>` : ""}</section>
+    <section class="card"><h3>价格走势 ${badge("fact")}</h3><p class="muted">${rich(`K 线与 50 / 200 日[[ma|均线]]（${pxLabel(e)}）。${myCost(t) ? "紫色实线：你的平均成本。" : ""}${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易。" : ""}`)}</p>${priceModeToggle(e)}${e.div_factor ? `<p class="muted">${esc(priceModeNote(e))}</p>` : ""}${chartDiv("c-etf-k", "tall")}</section>
     <section class="card"><h3>收益与风险（与 SPY / QQQ / GLD 并列）${badge("derived")}</h3>
       <div class="table-wrap"><table><thead><tr><th>标的</th>${cols.map(([, n]) => `<th class="num">${n}</th>`).join("")}</tr></thead>
       <tbody>${statRows.map(([k, s]) => `<tr class="${k === t ? "hl" : ""}"><td><a href="#/stock/${k}"><b>${esc(k)}</b></a></td>${cols.map(([c]) => `<td class="num ${c.startsWith("vol") ? "" : cls(s[c])}">${pct(s[c], 1, !c.startsWith("vol") && !c.startsWith("max") && c !== "dd_now")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
       <p class="muted">${rich("3 年、5 年为年化收益；[[volatility|波动]]为近 1 年日收益的年化标准差；[[drawdown|回撤]]按复权价格（含分红）计算。")}</p></section>
-    <section class="card"><h3>在系统里的仓位 ${badge("model")}</h3>${roleHtml}${role.layer && role.history.dates.length ? chartDiv("c-etf-role", "short") : ""}</section>
     ${info.kind === "broad" ? spyBlocks(e) : ""}${info.kind === "growth" || info.kind === "sector" ? sectorBlocks(e, t) : ""}${info.kind === "gold" ? goldBlocks(e) : ""}
     </div></div>`;
   bindPriceMode();
   drawEtfK(e, t);
-  if (role.layer && role.history.dates.length) {
-    mkChart(byId("c-etf-role"), { tooltip: { trigger: "axis", valueFormatter: (v) => pct(v, 1) }, legend: { show: false }, grid: { left: 48, right: 20, top: 16, bottom: 30 },
-      xAxis: { type: "category", data: role.history.dates }, yAxis: { type: "value", axisLabel: { formatter: (v) => pct(v, 0) } },
-      series: [{ name: "建议比例", type: "bar", barMaxWidth: 14, color: palette()[0], itemStyle: { borderRadius: [3, 3, 0, 0] }, data: role.history.weights }] });
-  }
   if (info.kind === "broad") drawSpyBlocks(e);
   if (info.kind === "growth" || info.kind === "sector") drawSectorBlocks(e, t);
   if (info.kind === "gold") drawGoldBlocks(e);
 }
 
 function drawEtfK(e, t) {
-  const r = e.regimes || { dates: [], regime: [] };
-  const d0 = e.dates[0], d1 = e.dates[e.dates.length - 1];
-  const near = (d) => e.dates.find((x) => x >= d) || d1;
-  const areas = [];
-  let s = 0;
-  for (let i = 1; i <= r.dates.length; i++) {
-    if (i === r.dates.length || r.regime[i] !== r.regime[i - 1]) {
-      const a = r.dates[s], b = i < r.dates.length ? r.dates[i] : d1;
-      if (b >= d0) areas.push([{ xAxis: near(a < d0 ? d0 : a), itemStyle: { color: REGIME_COLOR[r.regime[s]], opacity: 0.08 } }, { xAxis: near(b) }]);
-      s = i;
-    }
-  }
   mkChart(byId("c-etf-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } }, grid: { left: 56, right: 20, top: 36, bottom: 60 },
     xAxis: { type: "category", data: e.dates, boundaryGap: true }, yAxis: yWithCost(myCost(t)),
     dataZoom: [{ type: "inside", start: 40, end: 100 }, { type: "slider", start: 40, end: 100, height: 18, bottom: 10 }],
     series: [
-      { name: t, type: "candlestick", data: e.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") }, markArea: { silent: true, data: areas },
+      { name: t, type: "candlestick", data: e.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") },
         markPoint: { data: tradeMarkPoints(e, t), tooltip: { formatter: tradeTooltip } },
         ...(myCost(t) ? { markLine: { symbol: "none", silent: true, data: [costMarkLine(myCost(t), t)] } } : {}) },
       { name: "MA50", type: "line", showSymbol: false, data: e.ma50, color: palette()[0], lineStyle: { width: 1.4 } },
@@ -132,36 +106,26 @@ function drawSectors(e) {
 
 // ---------- SPY ----------
 function spyBlocks(e) {
-  const c = e.cash;
-  return `<section class="card"><h3>市场状态的三项依据 ${badge("fact")}${badge("model")}</h3>
-      <p class="muted">${rich(`系统每周按三项打分，合计决定[[regime|市场状态]]：① SPY 在 200 日均线之上 +1、之下 −1；② [[vix|VIX]] 低于 ${num(e.thresholds.vix_low, 0)} +1、高于 ${num(e.thresholds.vix_high, 0)} −1；③ [[yield_curve|收益率曲线]]（10 年 − 3 个月）倒挂（< 0）−1。虚线为阈值；背景色为当时的状态。`)}</p>
+  return `<section class="card"><h3>市场环境三项指标 ${badge("fact")}</h3>
+      <p class="muted">${rich(`常用的大盘环境指标：① SPY 相对 200 日均线（在线上通常表示长期趋势向上）；② [[vix|VIX]] 恐慌指数（虚线 ${num(e.thresholds.vix_low, 0)} / ${num(e.thresholds.vix_high, 0)} 为常用的平静 / 紧张分界）；③ [[yield_curve|收益率曲线]]（10 年 − 3 个月，低于 0 = 倒挂，历史上常出现在衰退之前，但领先时间很不固定）。`)}</p>
       <div class="grid three">${chartDiv("c-ri-ma", "short")}${chartDiv("c-ri-vix", "short")}${chartDiv("c-ri-curve", "short")}</div></section>
     <div class="grid two"><section class="card"><h3>成分与集中度（前 10 大，SSGA 官方持仓）${badge("fact")}</h3>${holdingsTable(e, "SPY")}</section>
       <section class="card"><h3>行业分布 ${badge("fact")}</h3>${sectorChartDiv(e)}</section></div>
-    ${c ? `<section class="card"><h3>现金层（${esc(c.ticker)}）${badge("fact")}${badge("model")}</h3>
-      <p>${rich(`系统把没有配置出去的资金放在[[cash|现金]]（${c.ticker} 货币基金），收益按 13 周美国国债收益率（^IRX）近似。各状态下的现金比例：${STATE_ORDER.map((k) => `${(REGIME_ZH[k] || k).split("（")[1]?.replace("）", "") || k} ${pct(c.regime_weights[k], 0)}`).join(" · ")}。`)}</p>${chartDiv("c-cash", "short")}</section>` : ""}`;
+`;
 }
 function drawSpyBlocks(e) {
   const r = e.regime_inputs;
-  const areas = [];
-  let s = 0;
-  for (let i = 1; i <= r.dates.length; i++) {
-    if (i === r.dates.length || r.regime[i] !== r.regime[i - 1]) { areas.push([{ xAxis: r.dates[s], itemStyle: { color: REGIME_COLOR[r.regime[s]], opacity: 0.08 } }, { xAxis: r.dates[i - 1] }]); s = i; }
-  }
   const small = (id, name, data, lines, fmt) => mkChart(byId(id), {
     title: { text: name, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
     tooltip: { trigger: "axis", valueFormatter: fmt }, legend: { show: false }, grid: { left: 44, right: 12, top: 28, bottom: 24 },
     xAxis: { type: "category", data: r.dates, boundaryGap: false }, yAxis: { type: "value", scale: true, axisLabel: { formatter: fmt } },
-    series: [{ name, type: "line", showSymbol: false, color: palette()[0], lineStyle: { width: 1.6 }, data, markArea: { silent: true, data: areas },
+    series: [{ name, type: "line", showSymbol: false, color: palette()[0], lineStyle: { width: 1.6 }, data,
       markLine: { symbol: "none", silent: true, lineStyle: { color: css("--bad"), type: "dashed" }, label: { color: css("--muted"), fontSize: 10 }, data: lines.map((y) => ({ yAxis: y })) } }],
   });
   small("c-ri-ma", "① SPY 相对 200 日均线", r.spy_vs_ma200, [0], (v) => pct(v, 0));
   small("c-ri-vix", "② VIX", r.vix, [e.thresholds.vix_low, e.thresholds.vix_high], (v) => num(v, 0));
   small("c-ri-curve", "③ 收益率曲线（百分点）", r.curve, [0], (v) => num(v, 1));
   drawSectors(e);
-  if (e.cash && byId("c-cash")) mkChart(byId("c-cash"), { tooltip: { trigger: "axis", valueFormatter: (v) => pct(v, 2) }, legend: { show: false }, grid: { left: 48, right: 20, top: 12, bottom: 24 },
-    xAxis: { type: "category", data: e.cash.rate.dates, boundaryGap: false }, yAxis: { type: "value", axisLabel: { formatter: (v) => pct(v, 1) } },
-    series: [{ name: "年化收益率", type: "line", showSymbol: false, color: palette()[2], data: e.cash.rate.values }] });
 }
 
 // ---------- QQQ / SMH / XLC ----------

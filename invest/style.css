@@ -365,6 +365,13 @@ button.sm { padding: 2px 8px; font-size: 12px; }
 .nrow.macro .ntitle, .nrow.deep .ntitle { font-weight: 600; }
 .ntags { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
 .ndot { width: 8px; height: 8px; border-radius: 50%; background: var(--axis); flex: none; align-self: center; }
+.nnew { font-size: 10px; font-weight: 700; color: #fff; background: var(--bad); border-radius: 3px; padding: 0 4px; flex: none; align-self: center; }
+.nnew-t { color: var(--bad); }
+.chip.thread { border-color: var(--accent); color: var(--accent); }
+.chip.expo { border-color: var(--warn); }
+.nthread { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed var(--grid); }
+.nthread ol { margin: 4px 0 6px; padding-left: 20px; }
+.nthread li { margin: 2px 0; }
 .ndot.positive { background: var(--good); } .ndot.negative { background: var(--bad); } .ndot.mixed { background: var(--warn); }
 .nkind { font-size: 11px; padding: 0 6px; border-radius: 4px; flex: none; color: var(--muted); border: 1px solid var(--grid); }
 .nkind.k-macro { color: var(--accent); border-color: var(--accent); } .nkind.k-deep { color: var(--ink-2); border-color: var(--axis); }

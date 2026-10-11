@@ -1,11 +1,10 @@
 /* 总览（首页）：只放事实与高置信信息。
-   顺序：我的持仓（账户曲线 + 各持仓走势与成本价）→ 近期日程 → 市场 → 本周涨跌 → 近期要闻 → 系统建议摘要（一行，详情在“模型与回测”）。
+   顺序：我的持仓（账户曲线 + 各持仓走势与成本价）→ 近期日程 → 市场 → 本周涨跌 → 近期要闻（M43 起不再显示系统模型建议）。
    持仓数据只在本机计算：本机账本优先，否则用个人数据包里的账本（解锁后），都没有时提示录入。 */
 
 const HOME_HOWTO = [
   "首页只放[[fact|事实]]与高置信度的信息：你的账户与持仓（由你的交易记录推算）、未来几周的财报 / 除息 / 宏观日程、市场行情，以及最近的新闻。",
   "“持仓走势与成本价”每张小图是一只持仓近 6 个月的实际价格，横线是你的[[avg_cost|平均成本]]：价格在线上方 = 浮盈。",
-  "系统模型的建议放在最后一行，只作参考；详情与依据在“模型与回测”。",
 ];
 const SCHED_ZH = { earnings: "财报", ex_dividend: "除息", fomc: "FOMC", cpi: "CPI", nfp: "非农", ppi: "PPI", pce: "PCE" };
 
@@ -26,7 +25,7 @@ async function currentBook() {
 }
 
 PAGES.overview = async () => {
-  const [h, o, mine] = await Promise.all([load("home.json"), load("overview.json").catch(() => null), currentBook()]);
+  const [h, mine] = await Promise.all([load("home.json"), currentBook()]);
   const held = new Set((mine?.book?.rows || []).map((r) => r.ticker));
   const watch = new Set(META.universe.filter((u) => u.watchlist).map((u) => u.ticker));
   app().innerHTML = `
@@ -40,8 +39,7 @@ PAGES.overview = async () => {
     <div class="grid two">
       ${card("选股池本周涨跌（近 5 个交易日）", homeMovers(h, held), "", ["fact"])}
       ${card("近期要闻", homeHeadlines(h, held), "", ["fact", "model"])}
-    </div>
-    ${homeAdvice(o)}`;
+    </div>`;
   if (mine?.book) drawHomeHoldings(mine);
   drawSparks(h);
 };
@@ -196,16 +194,6 @@ function homeHeadlines(h, held) {
       ${(e.tickers || []).slice(0, 3).map((t) => `<span class="muted">${esc(t)}${held.has(t) ? "（持有）" : isPlanned(t) ? "（计划）" : ""}</span>`).join(" ")}
       ${e.direction ? `<span class="${dir[e.direction] || "muted"}">${esc(DIR_ZH[e.direction] || "")}</span>` : ""}</li>`).join("")}</ul>
     <p class="muted">标题与摘要来自新闻原文；“利好 / 利空”是 AI 的判断${list.some((e) => e.tier && e.tier !== "gemini" && e.tier !== "groq") ? "（部分为规则降级）" : ""}，仅供参考。<a href="#/news">全部新闻 →</a></p>`;
-}
-
-// ---------- 系统建议（一行摘要）----------
-function homeAdvice(o) {
-  if (!o?.available) return "";
-  const layers = Object.entries(o.layers || {}).map(([k, v]) => `${LAYER_ZH[k] || k} ${pct(v, 0)}`).join(" · ");
-  return `<section class="card muted-card"><h3>系统模型本周建议 ${badge("model")}</h3>
-    <p>市场状态 <b style="color:${REGIME_COLOR[o.regime] || "inherit"}">${esc(REGIME_ZH[o.regime] || o.regime)}</b> · ${esc(layers)} · 信号日 ${esc(o.signal_date)}
-    <a href="#/advice">配置详情与依据 →</a></p>
-    <p class="muted">${rich("这是规则模型的建议，不是事实；回测显示模型选股在样本外几乎没有预测力（见[[model|系统模型说明]]），卫星层因此采用选股池等权。")}</p></section>`;
 }
 
 // ---------- 本周目标价变动（近 7 天；与每周操作节奏最相关的分析师信息）----------

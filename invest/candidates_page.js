@@ -175,7 +175,7 @@ async function candReview(b) {
   const tags = [...box.querySelectorAll(".cand-tags input:checked")].map((x) => x.value);
   const tagTxt = tags.length ? tags.map((k) => META.tags?.[k]?.name || k).join("、") : "未选（之后需人工补）";
   const what = { watch: "关注", ignore: "忽略", reset: "撤销审核", add: `加入选股池（主题：${themeName(theme)}，中文名：${name}，业务标签：${tagTxt}）` }[act];
-  if (!confirm(`确认对 ${t} ${what}？${act === "add" ? "\n加入后会修改配置，从下次运行起参与系统模型的选股、训练与回测。" : ""}`)) return;
+  if (!confirm(`确认对 ${t} ${what}？${act === "add" ? "\n加入后会修改配置，从下次运行起纳入每日新闻、产业链与各项指标。" : ""}`)) return;
   box.querySelectorAll("button, select, input").forEach((x) => { x.disabled = true; });
   try {
     const resp = await fetch(`https://api.github.com/repos/${META.github_repo}/actions/workflows/review-candidate.yml/dispatches`, {

@@ -75,7 +75,7 @@ const PlanCalc = {
     return out;
   },
   /* 风险检查：只针对与计划相关的标的 / 主题（与 portfolio/plans.py 的 risk_checks 一致） */
-  checks(pf, planned, target) {
+  checks(pf, planned) {
     const L = META.plan_limits || {};
     const out = [];
     const theme = (t) => META.universe.find((u) => u.ticker === t)?.theme;
@@ -83,18 +83,13 @@ const PlanCalc = {
     const lt = this.lookthrough(pf.weights);
     for (const t of [...planned].sort()) {
       const w = pf.weights[t] || 0;
-      if (L.max_single && w > L.max_single) out.push(`${t} 计划持仓占 ${pct(w)}，超过系统单股上限 ${pct(L.max_single, 0)}`);
+      if (L.max_single && w > L.max_single) out.push(`${t} 计划持仓占 ${pct(w)}，超过单股上限 ${pct(L.max_single, 0)}`);
       if (L.lookthrough_single && lt[t] > L.lookthrough_single) out.push(`${t} 计划持仓的真实暴露（直接 + 经 SPY）${pct(lt[t])}，超过阈值 ${pct(L.lookthrough_single, 0)}`);
     }
     const themes = {};
     for (const [t, w] of Object.entries(pf.weights)) { const th = theme(t); if (th) themes[th] = (themes[th] || 0) + w; }
     for (const th of new Set([...planned].map(theme).filter(Boolean))) {
-      if (L.max_theme && themes[th] > L.max_theme) out.push(`主题「${themeName(th)}」计划持仓合计 ${pct(themes[th])}，超过系统上限 ${pct(L.max_theme, 0)}`);
-    }
-    if (target && Object.keys(target).length) {
-      const outside = [...planned].filter((t) => theme(t) && !(target[t] > 0)).sort();
-      if (outside.length) out.push(`${outside.join("、")} 不在系统最新建议的卫星持仓中（与系统建议不一致，仅供参考）`);
-      for (const t of [...planned].sort()) if (target[t] > 0 && (pf.weights[t] || 0) > target[t] * 1.5 + 0.01) out.push(`${t} 计划持仓 ${pct(pf.weights[t])}，明显高于系统建议 ${pct(target[t])}`);
+      if (L.max_theme && themes[th] > L.max_theme) out.push(`主题「${themeName(th)}」计划持仓合计 ${pct(themes[th])}，超过主题上限 ${pct(L.max_theme, 0)}`);
     }
     return { list: out, lookthrough: lt };
   },
@@ -123,7 +118,7 @@ function holdChip(t, held, watch, short = false) {
 }
 
 const PLAN_HOWTO = [
-  "在这里列出打算买入的股票：按股数或按金额，可选填“目标买入价”。计划持仓 = 当前持仓 + 尚未成交的计划，用来在下单前检查买入后的单股 / 主题占比、经 SPY 的真实暴露、现金是否足够、与系统建议的差异。",
+  "在这里列出打算买入的股票：按股数或按金额，可选填“目标买入价”。计划持仓 = 当前持仓 + 尚未成交的计划，用来在下单前检查买入后的单股 / 主题占比、经 SPY 的真实暴露、现金是否足够。",
   "录入交易记录后，计划创建日之后的同一股票买入会自动从计划中扣减；全部成交后标“已完成”，可以删除。",
   "“同步到后台”后：每日推送的“与你持仓相关”也分析计划中的股票；收盘价跌到目标买入价时在每日推送里提醒一次；周末汇总与周报列出全部计划进度和风险检查。仅为提醒，不会自动下单。",
 ];
@@ -131,15 +126,14 @@ const PLAN_HOWTO = [
 async function renderBuyPlanTab(book, query) {
   const { prices: lp, asof } = await latestPrices();
   const price = { ...lp, ...Object.fromEntries(book.rows.filter((r) => r.price > 0).map((r) => [r.ticker, r.price])) };
-  const sugg = await suggestedTarget();
   const plans = loadPlans();
   const st = PlanCalc.status(plans, loadTrades(), price);
   const planned = new Set(st.filter((s) => !s.done).map((s) => s.plan.ticker));
   const pf = PlanCalc.proForma(book.snapshot, st, price);
-  const chk = PlanCalc.checks(pf, planned, sugg.target);
+  const chk = PlanCalc.checks(pf, planned);
   const ins = chk.list.map((c) => ({ level: c.startsWith("现金不足") ? "high" : "medium", kind: "derived", text: c }));
   for (const s of st.filter((x) => !x.done && x.to_target != null && x.to_target >= 0)) ins.unshift({ level: "medium", kind: "fact", text: `${s.plan.ticker} 最新收盘 ${num(s.price, 2)}，已在目标买入价 ${num(s.plan.target_price, 2)} 或以下。` });
-  if (!ins.length && planned.size) ins.push({ level: "info", kind: "derived", text: "按计划全部买入后，没有超出系统单股 / 主题上限与穿透暴露阈值，现金足够。" });
+  if (!ins.length && planned.size) ins.push({ level: "info", kind: "derived", text: "按计划全部买入后，没有超出单股 / 主题上限与穿透暴露阈值，现金足够。" });
   const tickers = [...new Set([...(META.universe || []).map((u) => u.ticker), ...(META.etfs || []).map((e) => e.ticker), ...(META.allocation_tickers || [])])];
   const sizeText = (p) => (p.shares != null ? `${shareFmt(p.shares)} 股` : `${money(p.amount)} 美元`);
   const rows = st.map((s) => {
@@ -159,7 +153,7 @@ async function renderBuyPlanTab(book, query) {
   const over = (t, w) => (META.universe.some((u) => u.ticker === t) && L.max_single && w > L.max_single ? ' class="num down"' : ' class="num"');
   const pfRows = show.map((t) => `<tr><td><b>${esc(t)}</b> <span class="muted">${esc(META.names_zh?.[t] || "")}</span>${planned.has(t) ? ' <span class="chip plan">计划</span>' : ""}</td>
       <td class="num">${pct(pf.current[t] || 0, 1)}</td><td${over(t, pf.weights[t] || 0)}>${pct(pf.weights[t] || 0, 1)}</td>
-      <td class="num">${sugg.target[t] > 0 ? pct(sugg.target[t], 1) : "–"}</td><td class="num">${lt[t] != null && t !== L.core ? pct(lt[t], 1) : "–"}</td></tr>`).join("");
+      <td class="num">${lt[t] != null && t !== L.core ? pct(lt[t], 1) : "–"}</td></tr>`).join("");
   const prefill = normTicker(query?.t || "");
   byId("h-body").innerHTML = `${insightBox(ins, 20)}
     <section class="card"><h3>添加买入计划</h3>
@@ -177,9 +171,9 @@ async function renderBuyPlanTab(book, query) {
       ${st.length ? `<div class="table-wrap"><table><thead><tr><th>股票</th><th>创建</th><th class="num">计划</th><th class="num">已成交</th><th class="num">剩余</th><th class="num">最新价</th><th class="num">自计划以来</th><th class="num">目标买入价</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : empty("还没有买入计划")}
       ${plans.length && !plansEdited() ? '<p class="muted">以上计划来自个人数据包（后台最近一次同步）；在这里修改后会保存到这台设备。</p>' : ""}</section>
     <section class="card"><h3>计划持仓（按计划全部买入后）${badge("derived")}</h3>
-      ${planned.size ? `<p class="muted">当前持仓 + 尚未成交的计划，按最新收盘价估值；总资产不变，计划买入的资金从现金中扣除。系统单股上限 ${pct(L.max_single || 0, 0)}、主题上限 ${pct(L.max_theme || 0, 0)}、真实暴露（直接 + 经 SPY）阈值 ${pct(L.lookthrough_single || 0, 0)}；系统建议来自${esc(sugg.source)}。</p>
-      <div class="table-wrap"><table><thead><tr><th>标的</th><th class="num">当前</th><th class="num">计划持仓</th><th class="num">系统建议</th><th class="num">真实暴露</th></tr></thead><tbody>${pfRows}
-        <tr><td><b>现金</b></td><td class="num">${pct(pf.current.CASH || 0, 1)}</td><td class="num ${pf.gap > 0 ? "down" : ""}">${pf.gap > 0 ? `缺 ${money(pf.gap)}` : pct(pf.weights.CASH || 0, 1)}</td><td class="num">${sugg.target.SPAXX > 0 ? pct(sugg.target.SPAXX, 1) : "–"}</td><td></td></tr></tbody></table></div>
+      ${planned.size ? `<p class="muted">当前持仓 + 尚未成交的计划，按最新收盘价估值；总资产不变，计划买入的资金从现金中扣除。单股上限 ${pct(L.max_single || 0, 0)}、主题上限 ${pct(L.max_theme || 0, 0)}、真实暴露（直接 + 经 SPY）阈值 ${pct(L.lookthrough_single || 0, 0)}（上限在 config.yaml 中设置）。</p>
+      <div class="table-wrap"><table><thead><tr><th>标的</th><th class="num">当前</th><th class="num">计划持仓</th><th class="num">真实暴露</th></tr></thead><tbody>${pfRows}
+        <tr><td><b>现金</b></td><td class="num">${pct(pf.current.CASH || 0, 1)}</td><td class="num ${pf.gap > 0 ? "down" : ""}">${pf.gap > 0 ? `缺 ${money(pf.gap)}` : pct(pf.weights.CASH || 0, 1)}</td><td></td></tr></tbody></table></div>
       ${pf.unpriced.length ? `<p class="muted">没有价格数据、未计入：${esc(pf.unpriced.join("、"))}</p>` : ""}` : empty("没有尚未完成的计划")}</section>
     <section class="card"><h3>同步</h3><p class="muted">计划只保存在这台设备；“同步到后台”会把当前持仓、账本和买入计划一起加密提交，之后的每日 / 每周推送按计划持仓分析。修改计划后同步一次。</p>
       <div class="row"><button type="button" class="primary" id="pl-sync">同步到后台</button><span class="muted" id="h-msg"></span></div></section>`;

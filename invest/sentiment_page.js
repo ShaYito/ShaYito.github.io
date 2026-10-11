@@ -1,4 +1,4 @@
-/* 新闻情绪的更多维度（M41）：个股页卡片 + “信号 × 新闻”页明细表。数据：sentiment_profile.json */
+/* 新闻情绪的更多维度（M41）：个股页卡片 + 新闻栏目“情绪维度”子标签（M43 从“信号 × 新闻”页移来）。数据：sentiment_profile.json */
 const SP_NOTE = "情绪为按来源标准化后的分数（0 = 该来源平常水平，约 ±0.15 已算明显）；只描述正在发生什么，不预测涨跌。";
 const SP_COLS = [
   ["mean", "7 日情绪", (v) => num(v, 2, true), true],
@@ -34,7 +34,7 @@ async function fillSentimentProfile(t) {
     </tbody></table></div><p class="muted">${esc(SP_NOTE)}</p>`;
 }
 
-// “信号 × 新闻”页：全部股票的多维情绪表（可按列排序，标出需要留意的情况）
+// “情绪维度”页：全部股票的多维情绪表（可按列排序，标出需要留意的情况）
 async function fillSentimentTable(sortKey) {
   const el = byId("sp-table");
   if (!el) return;
@@ -44,10 +44,20 @@ async function fillSentimentTable(sortKey) {
   const rows = Object.entries(d.rows || {}).map(([t, x]) => ({ t, ...x })).filter((x) => x.count);
   const v = (x) => (key === "flags" ? (x.flags || []).length * 10 + Math.abs(x.mean ?? 0) : key === "mean" || key === "change" || key === "qmean" || key === "ret" ? Math.abs(x[key] ?? 0) : x[key] ?? -1);
   rows.sort((a, b) => v(b) - v(a));
-  const th = (k, label) => `<th class="num"><a href="#/signal-news?sp=${k}" class="${k === key ? "on" : ""}">${label}${k === key ? " ▼" : ""}</a></th>`;
+  const th = (k, label) => `<th class="num"><a href="#/sentiment?sp=${k}" class="${k === key ? "on" : ""}">${label}${k === key ? " ▼" : ""}</a></th>`;
   el.innerHTML = card(`新闻情绪：更多维度（近 ${d.window_days} 天 vs 之前 ${d.baseline_days} 天，截至 ${d.asof}）`, `
     <p class="muted">${esc(SP_NOTE)} 带符号的列按绝对值排序。</p>
-    <div class="table-wrap"><table><thead><tr><th>股票</th>${SP_COLS.map(([k, label]) => th(k, label)).join("")}<th>正面 / 负面</th><th><a href="#/signal-news?sp=flags" class="${key === "flags" ? "on" : ""}">需要留意${key === "flags" ? " ▼" : ""}</a></th></tr></thead>
+    <div class="table-wrap"><table><thead><tr><th>股票</th>${SP_COLS.map(([k, label]) => th(k, label)).join("")}<th>正面 / 负面</th><th><a href="#/sentiment?sp=flags" class="${key === "flags" ? "on" : ""}">需要留意${key === "flags" ? " ▼" : ""}</a></th></tr></thead>
     <tbody>${rows.map((x) => `<tr><td><a href="#/stock/${x.t}">${esc(x.t)}</a></td>${SP_COLS.map(([k, , f, signed]) => `<td class="num ${signed ? cls(x[k]) : ""}">${f(x[k])}</td>`).join("")}
       <td>${spShare(x)}</td><td>${(x.flags || []).map((f) => `<span class="chip warnchip">${esc(f)}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table></div>`, "", ["derived"]);
 }
+
+const SP_HOWTO = [
+  "每篇新闻先由 AI（Gemini / Groq，降级时 FinBERT）打情绪分，再按来源标准化：0 = 该来源的平常水平，正 = 偏利好，负 = 偏利空。",
+  "“分歧度”高说明利好利空混杂；“新闻量 / 平时”突然放大说明这只股票正被集中报道；“较前 4 周”看情绪是在变好还是变坏。",
+  "“需要留意”只标出约前 3–5% 的极端情况（阈值按历史分布设定），例如情绪明显偏正而股价反向下跌（可能消息已被消化或有更强的力量）。点击列名排序。",
+];
+PAGES.sentiment = async (r) => {
+  app().innerHTML = `<h2>新闻情绪：更多维度</h2>${howto(SP_HOWTO)}<div id="sp-table"></div>`;
+  await fillSentimentTable(r.query.sp);
+};
