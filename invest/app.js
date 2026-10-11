@@ -181,7 +181,7 @@ const NAV_GROUPS = {
   stock: [],
   market: [["performance", "相对表现"], ["risk", "风险与集中度"]],
   news: [["news", "新闻"], ["macro", "宏观与异动"], ["retail", "散户热度"], ["sentiment", "情绪维度"]],
-  chain: [],
+  chain: [["chain", "产业链"], ["bottleneck", "瓶颈时间线"], ["claims", "说法检验"]],
 };
 // M43：系统模型（配置建议 / 评分矩阵 / 信号 × 新闻 / 回测 / 模型说明 / 模拟经营）已停用，旧链接回到总览
 const RETIRED_PAGES = new Set(["lab", "advice", "matrix", "signal-news", "backtest", "model", "sim"]);
@@ -1164,6 +1164,7 @@ PAGES.stock = async (r) => {
     ${insiderCard(s, t)}
     <section class="card" id="sp-card" data-nav="情绪维度" hidden></section>
     <section class="card" id="retail-card" data-nav="散户热度" hidden></section>
+    <section class="card" id="bn-card" data-nav="相关瓶颈" hidden></section>
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid" data-nav-skip>
       ${card("相关事件（点击展开）", stockEventsHtml(s.events))}
@@ -1188,6 +1189,7 @@ PAGES.stock = async (r) => {
   fillSentimentProfile(t); // 新闻情绪更多维度（sentiment_page.js）
   bindStockEvents(graphData); // 相关事件折叠行（news_page.js）
   fillHealthCard(s, t); fillPeerRadar(t); // 证据型指标（evidence_page.js）
+  fillBottleneckCard(t); // 相关瓶颈（bottleneck_page.js）
   const k = mkChart(byId("c-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     grid: { ...K_GRID_X, top: 36, bottom: 60 },

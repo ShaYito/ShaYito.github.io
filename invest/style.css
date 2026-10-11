@@ -408,3 +408,10 @@ table.health th:nth-child(1) { width: 140px; } table.health th:nth-child(2) { wi
 table.health td { vertical-align: top; white-space: normal; word-break: break-word; }
 table.health .tone { display: inline-block; margin-top: 3px; }
 @media (max-width: 700px) { table.health th:nth-child(1) { width: 92px; } table.health th:nth-child(2) { width: 45%; } }
+
+/* 瓶颈研究（M45） */
+.vchip { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--grid); white-space: nowrap; font-weight: 500; }
+.vchip.v-good { color: var(--good); border-color: var(--good); }
+.vchip.v-medium { color: var(--warn); border-color: var(--warn); }
+.vchip.v-high { color: var(--bad); border-color: var(--bad); }
+.vchip.v-info { color: var(--muted); }
