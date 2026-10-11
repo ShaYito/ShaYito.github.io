@@ -395,3 +395,16 @@ button.sm { padding: 2px 8px; font-size: 12px; }
   .ndgrid { grid-template-columns: minmax(0, 1fr); }
   .nside-rel { border-left: none; padding-left: 0; border-top: 1px solid var(--grid); padding-top: 8px; }
 }
+
+/* 证据型指标（M44） */
+.tone { font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--grid); white-space: nowrap; }
+.tone.t-pos { color: var(--good); border-color: var(--good); }
+.tone.t-neg { color: var(--bad); border-color: var(--bad); }
+.tone.t-warn { color: var(--warn); border-color: var(--warn); }
+.tone.t-neu, .tone.t-na { color: var(--muted); }
+.warn-t { color: var(--warn); }
+table.health { width: 100%; table-layout: fixed; }
+table.health th:nth-child(1) { width: 140px; } table.health th:nth-child(2) { width: 42%; }
+table.health td { vertical-align: top; white-space: normal; word-break: break-word; }
+table.health .tone { display: inline-block; margin-top: 3px; }
+@media (max-width: 700px) { table.health th:nth-child(1) { width: 92px; } table.health th:nth-child(2) { width: 45%; } }

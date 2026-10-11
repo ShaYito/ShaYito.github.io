@@ -763,6 +763,7 @@ const STOCK_HOWTO = [
   "📍 标记是 AI 分析过的新闻事件；◆ ▲ ○ 是系统识别的[[turning_point|转折点]]：◆ 公司自身事件驱动（附 AI 归因，属推断），▲ 主要由大盘或板块带动（按 [[beta|β]] 计算），○ 证据不足、不做解释。点击任一标记查看详情。",
   "“业务关联”以本公司各业务为中心，画出直接相关的上游供应商、下游客户、竞争对手（细化到对方的具体业务），用来判断一条新闻会通过哪块业务影响这家公司。",
   "“收入结构”来自公司财报：[[segment_revenue|分业务收入]]看公司靠什么赚钱，[[geo_revenue|分地区收入]]看钱从哪里来；可切换“占比 / 金额”，下表给出最新一期的[[yoy|同比]]和[[share_change|占比变化]]。",
+  "最上方“个股体检”把各方面证据逐项摆在一起（每项一句话解读，不合成总分）；“同行对比雷达”看它在同主题里哪方面强、哪方面弱；“财报前后表现”看财报前是否提前上涨、财报跳动多大、之后是否继续漂移。",
   "“关键指标”把估值、增长、盈利能力、财务健康、价格位置与市场预期放在一张表里，并和同主题、选股池的中位数比较；点击指标名可看定义、如何理解与如何使用。",
   "“内部人交易”是高管与董事向 SEC 申报的买卖（[[fact|事实]]）；公开市场买入比卖出更有信息量。",
 ];
@@ -1156,9 +1157,10 @@ PAGES.stock = async (r) => {
     <h2>${esc(t)} ${esc(nameZh)} <span class="tg-row">${tagNames(t)}</span> <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""} · <a href="#/holdings?tab=buyplan&t=${t}">加入买入计划</a></span></h2>
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
+    <section class="card" id="health-card" data-nav="个股体检" hidden></section>
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
     ${relCard()}${valuationCard(s)}${phaseCard(s)}
-    ${metricsCard(s)}${earningsCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
+    ${metricsCard(s)}<section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
     ${insiderCard(s, t)}
     <section class="card" id="sp-card" data-nav="情绪维度" hidden></section>
     <section class="card" id="retail-card" data-nav="散户热度" hidden></section>
@@ -1177,7 +1179,7 @@ PAGES.stock = async (r) => {
   }
   const dirColor = { positive: "#0ca30c", negative: "#d03b3b" };
   bindPriceMode();
-  drawEarnings(s); drawRevisions(s); drawTargets(s); drawProfitGrowth(sc);
+  drawEarnings(s); drawEarningsWindow(s); drawRevisions(s); drawTargets(s); drawProfitGrowth(sc);
   const closeOn = Object.fromEntries(s.dates.map((d, i) => [d, s.ohlc[i][1]]));
   const cost = myCost(t);
   const nearest = (d) => s.dates.find((x) => x >= d) || s.dates[s.dates.length - 1];
@@ -1185,6 +1187,7 @@ PAGES.stock = async (r) => {
   fillRetailCard(t); // 散户热度（retail_page.js，异步加载，失败不影响个股页）
   fillSentimentProfile(t); // 新闻情绪更多维度（sentiment_page.js）
   bindStockEvents(graphData); // 相关事件折叠行（news_page.js）
+  fillHealthCard(s, t); fillPeerRadar(t); // 证据型指标（evidence_page.js）
   const k = mkChart(byId("c-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     grid: { ...K_GRID_X, top: 36, bottom: 60 },
