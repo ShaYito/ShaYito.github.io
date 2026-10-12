@@ -1223,7 +1223,7 @@ PAGES.stock = async (r) => {
         markArea: bnAreas(),
         markPoint: { label: { show: false },
           data: bnMarks(),
-          tooltip: { formatter: (p) => p.data.kind === "bn" ? bnSignalTooltip(p.data) : p.data.kind === "trade" ? tradeTooltip(p) : p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
+          tooltip: { trigger: "item", formatter: (p) => p.data.kind === "bn" ? bnSignalTooltip(p.data) : p.data.kind === "trade" ? tradeTooltip(p) : p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
             : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
           data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d), ...(earningsLineStyle(s, d) || {}) })),
