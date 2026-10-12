@@ -251,7 +251,13 @@ function drawTechCombo(d, t, v) {
     data: sigs.map(({ m }) => ({ xAxis: m.date, lineStyle: { color: TK_COLOR[m.kind], type: "dashed", width: 1, opacity: 0.55 } })) };
   const ch = mkChart(el, {
     legend: { type: "plain", top: 0, left: 0, right: 0, data: names, itemGap: 8, textStyle: { fontSize: 11 } },
-    tooltip: { trigger: "axis", order: "valueDesc", valueFormatter: (x) => (x == null ? "–" : num(x, v.mode === "abs" ? 2 : 0)) },
+    // 只列价格线；信号带的内部序列（__sig / __plan）不进提示框，其内容显示在右侧列表
+    tooltip: { trigger: "axis", formatter: (ps) => {
+      const rows = (Array.isArray(ps) ? ps : [ps]).filter((p) => !p.seriesName.startsWith("__") && isNum(p.value?.[1]))
+        .sort((a, b) => b.value[1] - a.value[1]);
+      if (!rows.length) return "";
+      return `${esc(rows[0].axisValueLabel)}<br>${rows.map((p) => `${p.marker}${esc(p.seriesName)} <b>${num(p.value[1], v.mode === "abs" ? 2 : 0)}</b>`).join("<br>")}`;
+    } },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
     grid: [{ left: 64, right: 16, top, height: stripH }, { left: 64, right: 16, top: top + stripH + 12, bottom: 56 }],
     xAxis: [{ type: "time", gridIndex: 0, min: v.start, max: xmax, axisLabel: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
