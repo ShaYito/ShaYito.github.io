@@ -114,6 +114,7 @@ function renderBnDetail(d, c) {
       <p class="muted small">数字 = 对应那一波的上涨确认日 − 信号日（黄色 = 股价先动）；下方小字 = 那一波相对大盘的总涨幅。“同”= 与更早的里程碑匹配到同一波，不重复计入统计。没有匹配时显示信号后 12 个月相对大盘的涨跌供参考。悬停看波段起止。</p></section>
     <section class="card"><h3>逐家公司：相对本地大盘的走势、识别出的上涨波段与信号位置 ${badge("fact")}${badge("derived")}</h3>
       <p class="muted">每张小图一家公司：线 = 公司 ÷ 本地大盘（首个信号当周 = 1，对数刻度）；紫色底 = 识别出的上涨波段（顶部数字为这一波相对大盘的涨幅）；带编号的竖线 = 里程碑（编号对应上方列表，悬停看内容）。用它核对：信号出现时，股价是已经在涨、刚开始涨，还是之后才涨。</p>
+      <div id="bn-sm-info" class="k-info muted">把鼠标移到小图里带编号的竖线上（或点击），这里显示该信号的内容与对这家公司的结果。</div>
       <div class="bn-sm">${comps.map((p, i) => `<div><b>${esc(p.ticker)} ${esc(bnName(d, p.ticker))}</b> <span class="muted small">${BN_MKT[p.market] || ""} · ${BN_POS[p.position] || ""}</span>${p.series ? chartDiv(`c-bn-sm-${i}`, "short") : empty("无价格")}</div>`).join("")}</div></section>
     ${card("新闻量（GDELT，占全部报道 %，月）与美股申报提及（份，季）", chartDiv("c-bn-news", "short"), "", ["fact"])}
     <section class="card"><h3>逐家公司 ${badge("derived")}${badge("model")}</h3><div class="table-wrap"><table><thead><tr><th>公司</th><th>市场</th><th>位置</th><th>纯度</th><th>定价</th><th>供应</th><th>周期股</th><th>相对大盘的各波上涨（2021 年起）</th><th class="num">分析师</th><th>五问得分</th></tr></thead>
@@ -134,11 +135,15 @@ function renderBnDetail(d, c) {
       series: [{ name: p.ticker, type: "line", showSymbol: false, data: p.series.dates.map((x, k) => [x, p.series.values[k]]), color: palette()[0], lineStyle: { width: 1.5 },
         markArea: { silent: true, label: { show: true, position: "insideTop", color: "#7c5cff", fontSize: 10 },
           data: (p.legs || []).filter((l) => l.peak >= lo && l.t0 <= hi).map((l) => [{ xAxis: l.t0 < lo ? lo : l.t0, name: pct(l.gain, 0, true), itemStyle: { color: "rgba(124, 92, 255, 0.10)" } }, { xAxis: l.peak > hi ? hi : l.peak }]) },
-        markLine: { symbol: "none", tooltip: { trigger: "item", formatter: (q) => q.data.tip },
+        markLine: { symbol: "none", tooltip: { show: false },
           data: ms.map((m, k) => ({ xAxis: m.date, label: { formatter: `${k + 1}`, color: css("--ink-2"), fontSize: 10 },
             lineStyle: { color: res(k)?.status === "matched" ? "#7c5cff" : css("--axis"), type: "dashed", width: 1.2 },
-            tip: `${k + 1}. ${esc(m.date)} ${esc(BN_KIND[m.kind][0])}<br>${esc(m.text)}<br><span style="opacity:.75">对 ${esc(p.ticker)}：${esc(BN_MATCH[res(k)?.status] || "–")}${res(k)?.status === "matched" ? `，时滞 ${days(res(k).lag_confirm)}` : ""}</span>` })) } }],
+            tip: `<b>${esc(p.ticker)} ${esc(bnName(d, p.ticker))}</b> · ${k + 1}. ${esc(m.date)} ${esc(BN_KIND[m.kind][0])}：${esc(m.text)} <a href="${esc(m.url)}" target="_blank" rel="noopener">来源</a><br>对这家公司：${esc(BN_MATCH[res(k)?.status] || "–")}${res(k)?.status === "matched" ? `，这一波 ${esc(res(k).leg_t0)} → ${esc(res(k).leg_peak)} 相对大盘 ${pct(res(k).gain, 0, true)}，时滞 ${days(res(k).lag_confirm)}` : ""}${isNum(res(k)?.ret_12m) ? `；信号后 12 个月相对大盘 ${pct(res(k).ret_12m, 0, true)}` : ""}` })) } }],
     });
+    const ch = echarts.getInstanceByDom(el);
+    const show = (q) => { if (q.componentType === "markLine" && q.data?.tip) { const box = byId("bn-sm-info"); box.classList.remove("muted"); box.innerHTML = q.data.tip; } };
+    ch?.on("mouseover", show);
+    ch?.on("click", show);
   });
   const mls = ms.map((m) => ({ xAxis: m.date, label: { show: false }, lineStyle: { color: css("--axis"), type: "dotted" } }));
   mkChart(byId("c-bn-news"), {
@@ -312,5 +317,5 @@ function bnStockOverlay(d, t, s, nearest) {
   return { signals, areas, cases: [...new Set(hits.map((h) => h.c.id))] };
 }
 function bnSignalTooltip(x) {
-  return x.items.map(({ c, r, m }) => `<b>${esc(c.name)}</b> · ${esc(m.date)} ${esc(BN_KIND[m.kind][0])}<br>${esc(m.text)}<br><span style="opacity:.75">对这只股票：${esc(BN_MATCH[r.status] || r.status)}${r.status === "matched" ? `（上涨确认 ${esc(r.leg_t1 || "–")}，时滞 ${days(r.lag_confirm)}；这一波 ${esc(r.leg_t0)} → ${esc(r.leg_peak)} 相对大盘 ${pct(r.gain, 0, true)}）` : ""}${isNum(r.ret_12m) ? `；信号后 12 个月相对大盘 ${pct(r.ret_12m, 0, true)}` : ""}</span>`).join("<hr style='margin:4px 0;opacity:.3'>");
+  return x.items.map(({ c, r, m }) => `<b>${esc(c.name)}</b> · ${esc(m.date)} ${esc(BN_KIND[m.kind][0])}：${esc(m.text)} <a href="${esc(m.url)}" target="_blank" rel="noopener">来源</a><br><span style="opacity:.75">对这只股票：${esc(BN_MATCH[r.status] || r.status)}${r.status === "matched" ? `（上涨确认 ${esc(r.leg_t1 || "–")}，时滞 ${days(r.lag_confirm)}；这一波 ${esc(r.leg_t0)} → ${esc(r.leg_peak)} 相对大盘 ${pct(r.gain, 0, true)}）` : ""}${isNum(r.ret_12m) ? `；信号后 12 个月相对大盘 ${pct(r.ret_12m, 0, true)}` : ""}</span>`).join("<hr>");
 }

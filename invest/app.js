@@ -1159,7 +1159,7 @@ PAGES.stock = async (r) => {
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
     <section class="card" id="health-card" data-nav="个股体检" hidden></section>
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}</section>
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}<div id="k-info" class="k-info muted">把鼠标移到图上的标记（📍 新闻、◆▲○ 转折点、紫色瓶颈信号、你的交易）上，或点击标记，这里显示详细内容。</div></section>
     ${relCard()}${valuationCard(s)}${phaseCard(s)}
     ${metricsCard(s)}<section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
     ${insiderCard(s, t)}
@@ -1223,7 +1223,7 @@ PAGES.stock = async (r) => {
         markArea: bnAreas(),
         markPoint: { label: { show: false },
           data: bnMarks(),
-          tooltip: { trigger: "item", formatter: (p) => p.data.kind === "bn" ? bnSignalTooltip(p.data) : p.data.kind === "trade" ? tradeTooltip(p) : p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
+          tooltip: { show: false, formatter: (p) => p.data.kind === "bn" ? bnSignalTooltip(p.data) : p.data.kind === "trade" ? tradeTooltip(p) : p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
             : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
           data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d), ...(earningsLineStyle(s, d) || {}) })),
@@ -1245,12 +1245,25 @@ PAGES.stock = async (r) => {
   const earnLabels = () => { const [a, b] = zoomRange(k, nK); k?.setOption({ series: [{ markLine: { label: { show: b - a <= 300 } } }] }); };
   if (k) { earnLabels(); k.on("datazoom", earnLabels); }
   drawRelStr(t, s, k).catch((e) => console.error(e));
-  k?.on("click", (p) => {
+  // 标记内容显示在图下方的固定信息栏（悬浮窗内容长时会超出屏幕）；悬停或点击都会更新
+  const kInfo = (p) => {
+    const x = p.data;
+    if (x.kind === "bn") return `${bnSignalTooltip(x)}<div><a href="#/bottleneck?id=${x.items[0].c.id}">打开「${esc(x.items[0].c.name)}」详情 →</a></div>`;
+    if (x.kind === "trade") return tradeTooltip(p);
+    if (x.kind === "event") return `<b>📍 ${esc(x.date)}</b> ${esc(x.name)} <a href="${x.week ? `#/news?week=${x.week}&event=${x.id}` : `#/news?date=${x.date}&event=${x.id}`}">在新闻页查看 →</a>`;
+    const tp = s.turning[x.idx];
+    return `<b>${esc(tp.date)} ${esc(TP_KIND_ZH[tp.kind])}</b>：区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}${tp.explanation ? `<br>${esc(tp.explanation)}` : ""} <a href="#" class="k-tp">详见转折点详情 ↓</a>`;
+  };
+  const showKInfo = (p) => {
     if (p.componentType !== "markPoint") return;
-    if (p.data.kind === "bn") { location.hash = `#/bottleneck?id=${p.data.items[0].c.id}`; return; }
-    if (p.data.kind === "turning") { byId("tp-detail").innerHTML = turningDetail(s.turning[p.data.idx], s.benchmark); byId("tp-card").scrollIntoView({ block: "nearest" }); return; }
-    location.hash = p.data.week ? `#/news?week=${p.data.week}&event=${p.data.id}` : `#/news?date=${p.data.date}&event=${p.data.id}`;
-  });
+    const el = byId("k-info");
+    el.classList.remove("muted");
+    el.innerHTML = kInfo(p);
+    el.querySelector(".k-tp")?.addEventListener("click", (e) => { e.preventDefault(); byId("tp-detail").innerHTML = turningDetail(s.turning[p.data.idx], s.benchmark); byId("tp-card").scrollIntoView({ block: "start" }); });
+    if (p.data.kind === "turning") byId("tp-detail").innerHTML = turningDetail(s.turning[p.data.idx], s.benchmark);
+  };
+  k?.on("mouseover", showKInfo);
+  k?.on("click", showKInfo);
   if (Object.keys(s.sentiment).length) {
     const ds = Object.keys(s.sentiment).sort();
     const sv = (d) => s.sentiment[d];

@@ -417,3 +417,5 @@ table.health .tone { display: inline-block; margin-top: 3px; }
 .vchip.v-info { color: var(--muted); }
 .bn-sm { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px 18px; }
 .bn-sm .chart.short { height: 200px; }
+.k-info { margin-top: 8px; padding: 8px 12px; border: 1px solid var(--grid); border-radius: 6px; background: var(--chip); min-height: 2.6em; line-height: 1.6; font-size: 13px; }
+.k-info hr { border: none; border-top: 1px solid var(--grid); margin: 6px 0; }
