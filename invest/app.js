@@ -181,7 +181,7 @@ const NAV_GROUPS = {
   stock: [],
   market: [["performance", "相对表现"], ["risk", "风险与集中度"]],
   news: [["news", "新闻"], ["macro", "宏观与异动"], ["retail", "散户热度"], ["sentiment", "情绪维度"]],
-  chain: [["chain", "产业链"], ["bottleneck", "瓶颈时间线"], ["claims", "说法检验"]],
+  chain: [],
 };
 // M43：系统模型（配置建议 / 评分矩阵 / 信号 × 新闻 / 回测 / 模型说明 / 模拟经营）已停用，旧链接回到总览
 const RETIRED_PAGES = new Set(["lab", "advice", "matrix", "signal-news", "backtest", "model", "sim"]);
@@ -1197,7 +1197,7 @@ PAGES.stock = async (r) => {
   if (bnOv) byId("k-bn-ctl").innerHTML = `<div class="row"><span class="muted">瓶颈研究</span>
     <label><input type="checkbox" id="k-bn-sig" ${bnShow.sig ? "checked" : ""}> <span style="color:#7c5cff">◆▲●</span> 瓶颈信号（悬停看内容，点击打开该瓶颈）</label>
     <label><input type="checkbox" id="k-bn-leg" ${bnShow.leg ? "checked" : ""}> <span style="background:rgba(124,92,255,.18);padding:0 6px">　</span> 相对大盘的上涨波段</label>
-    <span class="muted small">波段按“相对本地大盘”识别（回撤 25% 结束、至少涨 50%），所以和这里的绝对价格走势不完全一致；<a href="#/bottleneck?id=${bnOv.cases[0]}">方法与详情 →</a></span></div>`;
+    <span class="muted small">波段按“相对本地大盘”识别（回撤 25% 结束、至少涨 50%），所以和这里的绝对价格走势不完全一致；<a href="#/bottleneck?id=${bnOv.cases[0]}">所属技术 →</a></span></div>`;
   const kMarks = [
     ...s.events.map((e) => ({ symbol: "pin", symbolSize: 24, name: e.headline, coord: [nearest(e.date), closeOn[nearest(e.date)]], id: e.id, date: e.date,
       kind: "event", week: e.week, itemStyle: { color: dirColor[e.direction] || "#898781" } })),
@@ -1248,7 +1248,7 @@ PAGES.stock = async (r) => {
   // 标记内容显示在图下方的固定信息栏（悬浮窗内容长时会超出屏幕）；悬停或点击都会更新
   const kInfo = (p) => {
     const x = p.data;
-    if (x.kind === "bn") return `${bnSignalTooltip(x)}<div><a href="#/bottleneck?id=${x.items[0].c.id}">打开「${esc(x.items[0].c.name)}」详情 →</a></div>`;
+    if (x.kind === "bn") return `${bnSignalTooltip(x)}<div><a href="#/tech/${x.items[0].c.tech || ""}">打开所属技术页面（${esc(x.items[0].c.name)}）→</a></div>`;
     if (x.kind === "trade") return tradeTooltip(p);
     if (x.kind === "event") return `<b>📍 ${esc(x.date)}</b> ${esc(x.name)} <a href="${x.week ? `#/news?week=${x.week}&event=${x.id}` : `#/news?date=${x.date}&event=${x.id}`}">在新闻页查看 →</a>`;
     const tp = s.turning[x.idx];
