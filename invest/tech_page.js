@@ -221,15 +221,23 @@ function drawTechCombo(d, t, v) {
   const width = el.clientWidth || 800;
   let rows = 1, line = 0;
   for (const n of names) { const w = 30 + n.length * 12; if (line + w > width - 20) { rows++; line = 0; } line += w; }
-  const top = 8 + rows * 22, stripH = t.capacity?.length ? 64 : 40;
+  const top = 8 + rows * 22, stripH = t.capacity?.length ? 96 : 72;
   const lastWeek = d.weeks[d.weeks.length - 1];
   const showPlan = t.capacity?.length && !hid.has("plan");
   const xmax = showPlan ? [lastWeek, ...t.capacity.map((c) => c.date)].sort().pop() : lastWeek;
   const sigs = t.signals.map((m, k) => ({ m, k })).filter(({ m }) => !hid.has(m.kind) && m.date >= v.start);
+  // 相近日期（时间轴上 30 天内）的信号错开叠放，避免互相遮住
+  const span = (Date.parse(xmax) - Date.parse(v.start)) / 86400000;
+  const near = Math.max(20, span / 60);
+  sigs.forEach((x, j) => {
+    let lv = 0;
+    for (let q = j - 1; q >= 0 && (Date.parse(x.m.date) - Date.parse(sigs[q].m.date)) / 86400000 < near; q--) lv = Math.max(lv, sigs[q].lv + 1);
+    x.lv = lv % 3;
+  });
   const stripY = showPlan ? ["信号", "扩产 / 缓解"] : ["信号"];
   const series = [
     { name: "__sig", type: "scatter", xAxisIndex: 0, yAxisIndex: 0, z: 5, legendHoverLink: false,
-      data: sigs.map(({ m, k }) => ({ value: [m.date, "信号"], k, symbol: TK_KIND[m.kind][1], symbolSize: techSigSize(m),
+      data: sigs.map(({ m, k, lv }) => ({ value: [m.date, "信号"], k, symbol: TK_KIND[m.kind][1], symbolSize: techSigSize(m), symbolOffset: [0, 16 - lv * 19],
         itemStyle: m.precision === "month" ? { color: "transparent", borderColor: TK_COLOR[m.kind], borderWidth: 2 } : { color: TK_COLOR[m.kind], opacity: 0.85 },
         label: { show: true, position: "top", formatter: `${k + 1}`, fontSize: 9, color: css("--ink-2") } })),
       emphasis: { scale: 1.6 } },
