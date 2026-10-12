@@ -251,6 +251,12 @@ function valuationInsights(s) {
   if (v.fcf_hist && isNum(v.fcf_hist.capex_share) && v.fcf_hist.capex_share >= 0.5) out.push({ level: "info", kind: "derived", target: "val-card",
     text: `FCF 收益率 ${pct(v.fcf_hist.now, 1)}（中位数 ${pct(v.fcf_hist.median, 1)}）：资本支出占经营现金流的 ${pct(v.fcf_hist.capex_share, 0)}，现金正大量投入未来，FCF 收益率偏低不等于变贵。` });
   const m = v.margins;
+  for (const [h, name] of [[m?.net_margin_hist, "净利润率（近 4 季）"], [m?.roic_hist, "ROIC（近 4 季）"]]) {
+    if (!h || (h.pct < 0.85 && h.pct > 0.15)) continue;
+    const hi = h.pct >= 0.85;
+    out.push({ level: hi ? "good" : "medium", kind: "derived", target: "val-card",
+      text: `${name} ${pct(h.now, 1)}，处于自身近 ${h.years} 年的第 ${Math.round(h.pct * 100)} 百分位（中位数 ${pct(h.median, 1)}）：${hi ? "盈利能力接近自己的历史高位——强周期股要留意这可能是景气高点" : "盈利能力处于自己的历史低位——看是周期低谷、一次性因素，还是竞争力在下降"}。` });
+  }
   if (m?.op_margin?.length >= 5) {
     const a = m.op_margin.at(-1), b = m.op_margin.at(m.frequency === "annual" ? -2 : -5);
     if (isNum(a) && isNum(b) && Math.abs(a - b) >= 0.03) out.push({ level: a > b ? "good" : "medium", kind: "fact", target: "val-card",
@@ -286,6 +292,8 @@ const MARGIN_GUIDE = {
     ["毛利率", "（收入 − 直接成本）÷ 收入，反映定价能力与产品竞争力。持续上升 = 产品更有竞争力，或高毛利业务占比在提高（如英伟达数据中心）；持续下降 = 价格战、成本上涨或低毛利业务占比提高，往往是竞争恶化或周期下行的早期信号。不同行业水平差别很大（软件常在 70% 以上，半导体 / 硬件约 40%–60%，代工与零售更低），只和自己的历史及同行比。"],
     ["营业利润率", "再扣除研发、销售、管理费用后的利润率，反映规模效应与费用控制。收入增长而费用增长较慢时，营业利润率会上升，利润增速就快于收入增速（经营杠杆，常常是盈利超预期的来源）。"],
     ["两条线一起看", "两条都升：定价能力和规模效应同时在改善，最理想。毛利率稳、营业利润率升：主要靠费用控制与规模效应（成熟期软件公司常见）。毛利率升、营业利润率不升：多赚的毛利被费用吃掉了，看是不是在主动加大研发 / 销售投入换增长。毛利率下降：最需要警惕。"],
+    ["净利润率（近 4 季）", "近 4 季净利润 ÷ 近 4 季收入，最终落到股东手里的比例。多了利息、税和一次性项目（资产减值、投资收益、可转债公允价值变动等），所以会比营业利润率跳得更厉害；两者走势明显背离时，先找一次性项目。分位只和自己近 5 年比。"],
+    ["ROIC（投入资本回报率）", "近 4 季营业利润 ×（1 − 实际税率）÷ 平均投入资本，投入资本 = 股东权益 + 有息负债 − 现金。衡量“每投入 1 元资本能赚多少”，是判断护城河最常用的指标：长期稳定在 15%–20% 以上通常说明有定价权或规模优势。ROIC 下降而利润在涨，多半是投入资本扩张得更快（大规模资本开支、并购），要看这些投资几年后能否把 ROIC 拉回来。不适用于银行和保险；投入资本很小（大量预收款或现金，如 GE Vernova）时数值会被放大，这类期间不计算。"],
     ["注意", "强周期股的利润率高点 ≈ 景气高点，此时 P/E 看起来最低，反而要小心；季度数据有季节性（如零售第四季度），看趋势不看单季；减值、重组等一次性费用会让营业利润率单季骤降，看下一季是否恢复。"],
   ],
 };
@@ -307,12 +315,15 @@ function valuationCard(s) {
   if (!v) return "";
   const kpi = (label, val, sub = "") => `<div class="kpi"><span class="muted">${label}</span><b>${val}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
   const rank = (h) => (h ? `近 ${h.years} 年第 ${Math.round(h.pct * 100)} 百分位` : "");
+  const lastP = v.margins?.periods?.at(-1);
+  const stale = (h) => (h?.end && lastP && h.end < lastP ? `，截至 ${h.end}` : "");
   const hints = valuationHints(v);
   const panels = valPanels(v);
   const def = !v.pe?.base || v.cyclicality?.tier === "strong" ? "ps" : "pe";
   const modes = [["pe", "按盈利（P/E）"], ["ps", "按收入（P/S）"]].filter(([m]) => (m === "pe" ? v.pe?.base : v.ps_hist?.base));
   const missing = [!v.pe && "P/E（亏损或数据不足）", !v.ps_hist && `P/S（${v.hist_note || "外国公司只有年报且涉及外币 / ADR 口径，或 SEC 数据不足"}）`,
-    !v.fcf_hist && "FCF 收益率（缺少资本支出数据，或银行等行业不适用）", !v.margins?.periods?.length && "利润率"].filter(Boolean);
+    !v.fcf_hist && "FCF 收益率（缺少资本支出数据，或银行等行业不适用）", !v.margins?.periods?.length && "利润率",
+    v.margins?.periods?.length && !v.margins?.roic_hist && `ROIC（${v.margins?.roic_na || (v.margins?.roic_skipped ? "投入资本 ≤ 0 或不足收入的 5%，数值失真" : "资产负债表数据不足")}）`].filter(Boolean);
   return `<section class="card" id="val-card"><h3>估值与利润率 ${badge("fact")}${badge("derived")}</h3>
     <p class="muted">${rich("估值决定“同样的好消息还能涨多少”：处于自身历史高位时，市场已经预期了很多，稍有失望就容易大跌；处于低位时相反。估值对未来几周的涨跌几乎没有预测力，适合用来判断风险与控制仓位，而不是择时。")}</p>
     <div class="kpis">
@@ -321,6 +332,9 @@ function valuationCard(s) {
       ${kpi("市销率 P/S", num(v.ps_hist?.now ?? v.ps, 1), v.ps_hist ? rank(v.ps_hist) : "按过去 12 个月收入")}
       ${kpi("FCF 收益率", v.fcf_hist ? pct(v.fcf_hist.now, 1) : "–", v.fcf_hist ? `${rank(v.fcf_hist)}（越高越便宜）` : "")}
       ${kpi("PEG", num(v.peg, 2), "市盈率 ÷ 盈利增速；约 1 为合理")}
+      ${kpi("净利润率（近 4 季）", v.margins?.net_margin_hist ? pct(v.margins.net_margin_hist.now, 1) : "–", v.margins?.net_margin_hist ? rank(v.margins.net_margin_hist) + stale(v.margins.net_margin_hist) : "")}
+      ${kpi("ROIC（近 4 季）", v.margins?.roic_hist ? pct(v.margins.roic_hist.now, 1) : v.margins?.roic_na ? "不适用" : "–",
+        v.margins?.roic_hist ? rank(v.margins.roic_hist) + stale(v.margins.roic_hist) + (v.margins.roic_basis === "pretax" ? "（用税前利润近似）" : "") : esc(v.margins?.roic_na || ""))}
     </div>
     ${hints.length ? `<div class="warn-box">${hints.map((h) => `<p>💡 ${esc(h)}</p>`).join("")}</div>` : ""}
     ${v.lag_note ? `<p class="muted">⏳ ${esc(v.lag_note)}。</p>` : ""}
@@ -337,23 +351,24 @@ function valuationCard(s) {
       <p><b>利润率（和估值是什么关系）</b>：${esc(MARGIN_GUIDE.role)}</p>
       <ul>${MARGIN_GUIDE.items.map(([n, t]) => `<li><b>${n}</b>：${esc(t)}</li>`).join("")}</ul>
       <p class="muted">另外：公司业务转型后（如英伟达从游戏显卡转向数据中心、西部数据分拆闪迪后），过去几年的估值区间可比性会变差。</p></div></details>
-    <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && peCap(v.pe) ? `；市盈率栏纵轴截断在 ${num(peCap(v.pe), 0)}（历史最高 ${num(v.pe.max, 0)}，出现在盈利接近 0 的时期；悬停可看真实值）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率来自 SEC 财报（公司合计），按季末后约 45 天（财报公布时）计入。股价为实际价格（不含分红）。</p></section>`;
+    <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && peCap(v.pe) ? `；市盈率栏纵轴截断在 ${num(peCap(v.pe), 0)}（历史最高 ${num(v.pe.max, 0)}，出现在盈利接近 0 的时期；悬停可看真实值）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率、ROIC 来自 SEC 财报（公司合计，按季末后约 45 天、即财报公布时计入；用最新报告的数据，含重述）；净利润率、ROIC 的分位 = 当前值在自身近 5 年各季中的百分位（与 P/E、P/S 一致）；ROIC 的税率取近 4 季实际税率（限 0–35%，税前亏损时按 21%），没有营业利润科目的公司用税前利润近似。股价为实际价格（不含分红）。</p></section>`;
 }
 // 多栏图包含哪些栏（只放有数据的）
-const VAL_PANEL_H = { px: 120, dec: 110, pe: 105, ps: 105, mg: 95, fcf: 95 };
+const VAL_PANEL_H = { px: 120, dec: 110, pe: 105, ps: 105, mg: 95, roic: 90, fcf: 95 };
 function valPanels(v) {
   return [(v.pe?.px || v.ps_hist?.px) && "px", (v.pe?.base || v.ps_hist?.base) && "dec", v.pe && "pe", v.ps_hist && "ps",
-    v.margins?.periods?.length && "mg", v.fcf_hist && "fcf"].filter(Boolean);
+    v.margins?.periods?.length && "mg", v.margins?.roic_hist && "roic", v.fcf_hist && "fcf"].filter(Boolean);
 }
 const valHeight = (panels) => panels.reduce((a, k) => a + VAL_PANEL_H[k] + 42, 40);
 function valReadGuide(v, panels) {
-  const no = Object.fromEntries(panels.map((k, i) => [k, "①②③④⑤⑥"[i]]));
+  const no = Object.fromEntries(panels.map((k, i) => [k, "①②③④⑤⑥⑦"[i]]));
   const g = [];
   if (no.px) g.push(`<b>${no.px} 股价</b>：每周收盘（实际价格）。其余各栏都和它对齐，竖向指示线同时穿过所有栏。`);
   if (no.dec) g.push(`<b>${no.dec} 每季涨跌拆分</b>：每个色块是一个季度（上季末 → 本季末）。<span style="color:#1baf7a">■ 绿色</span> = 每股盈利（或收入，按上方按钮切换）变化带来的涨跌，<span style="color:#c98500">■ 琥珀色</span> = 估值（P/E 或 P/S）变化带来的涨跌，<b>黑色横线</b> = 股价实际涨跌（= 两者之和）。绿色占大头 = 这一季靠业绩；琥珀色占大头 = 靠估值（市场情绪与预期）；两者方向相反 = 业绩变好但估值收缩（或反过来）。悬停看具体数字。`);
   if (no.pe) g.push(`<b>${no.pe} 市盈率 P/E</b>：灰色带 = 自身近 5 年 20%–80% 区间，虚线 = 中位数。财报后的台阶 = 新一季盈利计入（● 标出跳变 ≥ 10% 的：绿 = 盈利增长使 P/E 下台阶，红 = 盈利下滑使 P/E 上台阶）。${v.cyclicality?.tier === "strong" ? "强周期股：P/E 低位用琥珀底与 ⚠ 标出，往往对应盈利高峰，不代表便宜。" : ""}`);
   if (no.ps) g.push(`<b>${no.ps} 市销率 P/S</b>：读法同上。P/S 抬升时，看${no.mg ? `正下方 ${no.mg} 栏` : "利润率"}同一时间利润率是否也在升：一起升 = 抬升有基本面支撑；利润率持平或下降 = 单纯估值扩张（<span class="neg">▲</span> 标出“P/S 13 周 +15% 而营业利润率两季下降 ≥ 2 个百分点”的时点）。`);
-  if (no.mg) g.push(`<b>${no.mg} 毛利率 / 营业利润率</b>：按财报公布时间（季末后约 45 天）画成台阶，和 P/E、P/S 的台阶出现在同一时间，便于上下对照。`);
+  if (no.mg) g.push(`<b>${no.mg} 毛利率 / 营业利润率 / 净利润率</b>：按财报公布时间（季末后约 45 天）画成台阶，和 P/E、P/S 的台阶出现在同一时间，便于上下对照。毛利率、营业利润率是单季值；虚线净利润率是近 4 季合计（平滑掉季节性，但含一次性收益 / 损失，和营业利润率走势差很大时多半是一次性项目）。`);
+  if (no.roic) g.push(`<b>${no.roic} ROIC</b>：每投入 1 元资本（股东权益 + 有息负债 − 现金）每年赚多少税后营业利润。灰色带 = 自身近 5 年 20%–80% 区间，虚线 = 中位数。ROIC 持续高于约 10%（资本成本）说明公司在创造价值；下降时看是利润下滑，还是投入资本猛增（如大建数据中心、大额并购，回报要几年后才体现）。`);
   if (no.fcf) g.push(`<b>${no.fcf} FCF 收益率</b>：方向与 P/E、P/S 相反，越高越便宜；下一张卡片把它的上升拆成“现金流增加”与“股价下跌”。`);
   g.push(`淡红 / 淡绿底 = 连续 ${VM.run} 周以上高于自身 80% 分位（偏贵）/ 低于 20% 分位（偏便宜），每栏只标最近 ${VM.maxAreas} 段。时间范围跟随上方价格走势的区间按钮与缩放。`);
   return g;
@@ -458,20 +473,22 @@ function drawValuation(s, k) {
   const m = v.margins, lag = m?.frequency === "quarterly" ? 45 : 75;
   const eff = (m?.periods || []).map((d) => { const x = new Date(d); x.setDate(x.getDate() + lag); return x.toISOString().slice(0, 10); });
   const mAt = (arr) => axis.map((d) => { let q = -1; for (let t = 0; t < eff.length; t++) if (eff[t] <= d) q = t; return q >= 0 && isNum(arr?.[q]) ? arr[q] : null; });
-  const gm = mAt(m?.gross_margin), om = mAt(m?.op_margin);
-  const C = { px: css("--ink"), pe: palette()[0], ps: palette()[6], fcf: palette()[2], gm: palette()[5], om: palette()[0], biz: "#1baf7a", val: "#e0a419" };
+  const gm = mAt(m?.gross_margin), om = mAt(m?.op_margin), nm = mAt(m?.net_margin_ttm), roic = mAt(m?.roic);
+  const C = { px: css("--ink"), pe: palette()[0], ps: palette()[6], fcf: palette()[2], gm: palette()[5], om: palette()[0], nm: palette()[3], roic: palette()[4], biz: "#1baf7a", val: "#e0a419" };
   // 网格布局
   const grids = [], xAxes = [], yAxes = [], titles = [], series = [];
   let top = 30;
   panels.forEach((key, gi) => {
     const h = VAL_PANEL_H[key];
     grids.push({ left: 56, right: 78, top: top + 8, height: h });
-    titles.push({ text: { px: "① 股价", dec: "② 每季涨跌拆分", pe: "③ 市盈率 P/E", ps: "④ 市销率 P/S", mg: "⑤ 毛利率 / 营业利润率", fcf: "⑥ FCF 收益率" }[key].replace(/^[①-⑥]/, "①②③④⑤⑥"[gi]),
+    titles.push({ text: { px: "① 股价", dec: "② 每季涨跌拆分", pe: "③ 市盈率 P/E", ps: "④ 市销率 P/S", mg: "⑤ 毛利率 / 营业利润率 / 净利润率（近 4 季）", roic: "⑥ ROIC（近 4 季）", fcf: "⑦ FCF 收益率" }[key].replace(/^[①-⑦]/, "①②③④⑤⑥⑦"[gi]),
       left: 56, top: top - 18, textStyle: { fontSize: 12, fontWeight: 600, color: css("--ink-2") } });
     xAxes.push({ type: "category", data: axis, gridIndex: gi, boundaryGap: false, axisLabel: { show: gi === panels.length - 1 }, axisTick: { show: gi === panels.length - 1 } });
-    const fmt = { px: (x) => num(x, 0), dec: (x) => `${num(x, 0)}%`, pe: (x) => num(x, 0), ps: (x) => num(x, 1), mg: (x) => pct(x, 0), fcf: (x) => pct(x, 1) }[key];
+    const fmt = { px: (x) => num(x, 0), dec: (x) => `${num(x, 0)}%`, pe: (x) => num(x, 0), ps: (x) => num(x, 1), mg: (x) => pct(x, 0), roic: (x) => pct(x, 0), fcf: (x) => pct(x, 1) }[key];
     yAxes.push({ type: "value", gridIndex: gi, scale: key !== "dec", splitNumber: 3, axisLabel: { formatter: fmt, fontSize: 10 },
-      max: key === "pe" && peCap(v.pe) ? peCap(v.pe) : undefined });
+      max: key === "pe" && peCap(v.pe) ? peCap(v.pe) : key === "roic" ? (e) => Math.max(e.max, v.margins.roic_hist.p80, v.margins.roic_hist.median) : undefined,
+      // ROIC 栏：纵轴包含近 5 年 20%–80% 分位与中位数（否则显示区间较短时看不到“相对历史”的位置）
+      min: key === "roic" ? (e) => Math.min(e.min, v.margins.roic_hist.p20, v.margins.roic_hist.median) : undefined });
     top += h + 42;
   });
   const gi = (key) => panels.indexOf(key);
@@ -491,7 +508,9 @@ function drawValuation(s, k) {
   if (gi("mg") >= 0) {
     series.push(line("mg", "毛利率", gm, C.gm, { step: "end" }));
     series.push(line("mg", "营业利润率", om, C.om, { step: "end", lineStyle: { width: 2 } }));
+    if (m?.net_margin_ttm) series.push(line("mg", "净利润率（近 4 季）", nm, C.nm, { step: "end", lineStyle: { width: 1.6, type: "dashed" } }));
   }
+  if (gi("roic") >= 0) series.push(line("roic", "ROIC", roic, C.roic, { step: "end", lineStyle: { width: 2 }, ...band(m.roic_hist, (x) => pct(x, 0)) }));
   if (gi("fcf") >= 0) series.push(line("fcf", "FCF 收益率", fcf, C.fcf, band(v.fcf_hist, (x) => pct(x, 1))));
   // 第 ② 栏：自定义矩形（横跨整个季度）
   let quarters = [];
@@ -531,7 +550,7 @@ function drawValuation(s, k) {
     const row = (name, val, f) => (isNum(val) ? `${name} <b>${f(val)}</b><br>` : "");
     const q = qAt(i);
     const qtxt = !q ? "" : q.na ? `${q.q}：亏损或数据缺口，无法拆分<br>` : `${q.q} 股价 <b>${pct(Math.expm1(q.dp), 0, true)}</b> = ${den()} ${pct(Math.expm1(q.db), 0, true)} × ${mul()} ${pct(Math.expm1(q.dm), 0, true)}<br>`;
-    return `${esc(axis[i])}<br>${row("股价", px[i], (x) => num(x, 2))}${qtxt}${row("P/E", pe[i], (x) => num(x, 1))}${row("P/S", ps[i], (x) => num(x, 1))}${row("毛利率", gm[i], (x) => pct(x, 1))}${row("营业利润率", om[i], (x) => pct(x, 1))}${row("FCF 收益率", fcf[i], (x) => pct(x, 2))}`;
+    return `${esc(axis[i])}<br>${row("股价", px[i], (x) => num(x, 2))}${qtxt}${row("P/E", pe[i], (x) => num(x, 1))}${row("P/S", ps[i], (x) => num(x, 1))}${row("毛利率", gm[i], (x) => pct(x, 1))}${row("营业利润率", om[i], (x) => pct(x, 1))}${row("净利润率（近 4 季）", nm[i], (x) => pct(x, 1))}${row("ROIC（近 4 季）", roic[i], (x) => pct(x, 1))}${row("FCF 收益率", fcf[i], (x) => pct(x, 2))}`;
   };
   const chart = mkChart(el, { animation: false, title: titles, grid: grids, xAxis: xAxes, yAxis: yAxes, series, legend: { show: false },
     axisPointer: { link: [{ xAxisIndex: "all" }] }, tooltip: { trigger: "axis", formatter: tip, axisPointer: { type: "line" } },
