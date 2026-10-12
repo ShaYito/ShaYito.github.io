@@ -110,6 +110,7 @@ function compareSidebar(sel) {
 }
 
 PAGES.compare = async (r) => {
+  await bnData().catch(() => null); // 侧边栏紫色标出有瓶颈信号的股票
   const st = cmpParse(r);
   const raw = await load("sim/prices.json");
   const dates = raw.dates, end = dates.length - 1;

@@ -1045,13 +1045,13 @@ function stockSidebar(cur) {
   const pass = (t) => !ft || tagsOf(t).includes(ft);
   const groups = META.themes.map((th) => {
     const items = sidebarOrder(META.universe.filter((u) => u.theme === th.key && pass(u.ticker))).map((u) => `<a href="#/stock/${u.ticker}" class="side-item ${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}${(u.tags || []).length ? ` · ${u.tags.map((k) => META.tags?.[k]?.name).filter(Boolean).join(" / ")}` : ""}`)}">
-      <span class="nm"><span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</span><span class="tgs">${tagChips(u.ticker)}</span></a>`).join("");
+      <span class="nm ${BN_COVER.has(u.ticker) ? "bn-cover" : ""}"><span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</span><span class="tgs">${tagChips(u.ticker)}</span></a>`).join("");
     return items ? `<h4>${esc(th.name)}</h4>${items}` : "";
   }).join("");
   // 按实际持仓时：顶部加“你的持仓”一组
   let mine = "";
   if (holdingsMode() === "mine") {
-    const link = (u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}"><span class="dot" style="background:${themeColor(u.theme)}"></span><b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}</a>`;
+    const link = (u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}"><span class="${BN_COVER.has(u.ticker) ? "bn-cover" : ""}"><span class="dot" style="background:${themeColor(u.theme)}"></span><b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}</span></a>`;
     const held = sidebarOrder(META.universe.filter((u) => isHeld(u.ticker)));
     mine = held.length ? `<h4>你的持仓</h4>${held.map(link).join("")}` : "";
   }
@@ -1059,7 +1059,7 @@ function stockSidebar(cur) {
   if (plannedU.length) mine += `<h4>买入计划</h4>${plannedU.map((u) => `<a href="#/stock/${u.ticker}" class="${u.ticker === cur ? "on" : ""}"><span class="dot" style="background:${themeColor(u.theme)}"></span>◇ <b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}</a>`).join("")}`;
   const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
-  const cmp = `<a href="#/compare${cur ? `?t=${cur}` : ""}" class="cmp-entry" title="勾选多只股票 / ETF，对比走势与相关性">📊 多股对比</a>`;
+  const cmp = `<a href="#/compare${cur ? `?t=${cur}` : ""}" class="cmp-entry" title="勾选多只股票 / ETF，对比走势与相关性">📊 多股对比</a>${BN_COVER.size ? '<p class="muted small bn-legend"><span class="bn-cover"><b>紫色</b></span> = 价格图上有 AI 瓶颈信号</p>' : ""}`;
   return `<aside class="stock-side" aria-label="选择股票">${cmp}${tagFilterBar()}${ft ? "" : mine}${etfs && !ft ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
 }
 // K 线价格口径：复权价（默认，含分红再投资，用于各项计算）/ 实际价格（除权不除息，与券商 K 线及你的成本同口径）

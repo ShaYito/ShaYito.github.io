@@ -419,3 +419,9 @@ table.health .tone { display: inline-block; margin-top: 3px; }
 .bn-sm .chart.short { height: 200px; }
 .k-info { margin-top: 8px; padding: 8px 12px; border: 1px solid var(--grid); border-radius: 6px; background: var(--chip); min-height: 2.6em; line-height: 1.6; font-size: 13px; }
 .k-info hr { border: none; border-top: 1px solid var(--grid); margin: 6px 0; }
+/* 有 AI 瓶颈信号的股票：侧边栏紫色 */
+:root { --bn: #6d4ce8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bn: #a993ff; } }
+:root[data-theme="dark"] { --bn: #a993ff; }
+.bn-cover, .bn-cover b { color: var(--bn); }
+.bn-legend { margin: 4px 0 6px; }

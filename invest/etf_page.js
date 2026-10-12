@@ -42,6 +42,7 @@ function etfInsights(e, t) {
 }
 
 async function renderEtfPage(t) {
+  await bnData().catch(() => null); // 侧边栏紫色标出有瓶颈信号的股票
   const e = pricedView(await load(`etf/${t}.json`));
   const f = e.fund || {};
   const info = e.info;

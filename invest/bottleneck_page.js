@@ -23,9 +23,14 @@ const BN_HOWTO = [
   "这些都是事后识别的（知道后来涨了才找得到起点），用于总结历史规律，不能当作实时买卖信号。案例是因为“后来成了著名瓶颈”才被选进来的（幸存者偏差），结论只说明这些案例里的规律。",
 ];
 
+// 有瓶颈信号的选股池代码（侧边栏紫色显示用；案例库里的本地上市代码换回选股池代码）
+let BN_COVER = new Set();
 async function bnData() {
   const d = await load("bottlenecks.json");
-  return d?.cases ? d : null;
+  if (!d?.cases) return null;
+  const back = Object.fromEntries(Object.entries(UNIVERSE_ALIAS).map(([u, k]) => [k, u]));
+  BN_COVER = new Set(d.cases.flatMap((c) => c.companies.map((p) => back[p.ticker] || p.ticker)));
+  return d;
 }
 // 全部 公司 × 里程碑（附公司与瓶颈）
 function bnRows(d) {
