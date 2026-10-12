@@ -9,6 +9,28 @@ const TK_KIND = { leader: ["龙头表态 / 指引", "diamond"], report: ["行业
 const TK_COLOR = { leader: "#e8590c", report: "#1c7ed6", price: "#d6336c", capacity: "#7c5cff", order: "#2f9e44", product: "#f59f00", plan: "#0ca678" };
 const TK_GLYPH = { diamond: "◆", circle: "●", triangle: "▲", rect: "■", pin: "📍", roundRect: "▢" };
 const TK_STATUS = { ongoing: "仍紧缺", eased: "已缓解" };
+// 主图“突出显示”筛选：返回要突出的公司代码；null = 该技术没有可用数据
+const TK_TOP = 5;
+const TK_FOCUS = [
+  ["all", "全部", "不突出任何公司", () => null],
+  ["us", "仅美股", "美国上市的公司（含 ADR）", (t) => t.companies.filter((c) => c.market === "US").map((c) => c.ticker)],
+  ["pool", "选股池", "已在你选股池中的公司", (t) => t.companies.filter((c) => c.in_pool).map((c) => c.ticker)],
+  ["share", "份额最大", `行业信息里市场份额最大的 ${TK_TOP} 家（只含有份额数字且有股价的公司）`, (t) => {
+    const have = new Set(t.companies.map((c) => c.ticker));
+    const best = {};
+    for (const tb of t.shares || []) for (const x of tb.items) if (x.ticker && isNum(x.share) && have.has(x.ticker)) best[x.ticker] = Math.max(best[x.ticker] || 0, x.share);
+    return Object.entries(best).sort((a, b) => b[1] - a[1]).slice(0, TK_TOP).map(([k]) => k);
+  }],
+  ["mcap", "市值最大", `美元市值最大的 ${TK_TOP} 家（行业龙头的近似）`, (t) => [...t.companies].filter((c) => isNum(c.mcap_usd)).sort((a, b) => b.mcap_usd - a.mcap_usd).slice(0, TK_TOP).map((c) => c.ticker)],
+  ["pure", "高纯度", "这项业务占公司收入大头的公司（瓶颈库中纯度为“高”）：股价最能反映这项技术", (t) => t.companies.filter((c) => c.purity === "high").map((c) => c.ticker)],
+  ["strong", "近 6 月最强", `近 6 个月相对本地大盘涨得最多的 ${TK_TOP} 家：市场正在押注谁`, (t) => [...t.companies].filter((c) => isNum(c.rel?.["6m"])).sort((a, b) => b.rel["6m"] - a.rel["6m"]).slice(0, TK_TOP).map((c) => c.ticker)],
+  ["weak", "近 6 月最弱", `近 6 个月相对本地大盘涨得最少（或跌得最多）的 ${TK_TOP} 家：落后者或被替代者`, (t) => [...t.companies].filter((c) => isNum(c.rel?.["6m"])).sort((a, b) => a.rel["6m"] - b.rel["6m"]).slice(0, TK_TOP).map((c) => c.ticker)],
+];
+function techFocus(t, key) {
+  const f = TK_FOCUS.find((x) => x[0] === key);
+  const tk = f ? f[3](t) : null;
+  return tk && tk.length ? new Set(tk) : null;
+}
 const TK_MODES = [["index", "指数化（起点 = 100）"], ["rel", "相对本地大盘"], ["abs", "绝对价格"]];
 const TK_STARTS = ["2020-01-01", "2022-01-01", "2023-01-01", "2024-01-01", "2025-01-01"];
 const TK_PREF = "invest.tech.view";
@@ -19,7 +41,7 @@ async function techData() {
   return TK_DATA?.technologies ? TK_DATA : null;
 }
 function techView() {
-  const v = { mode: "index", start: "2023-01-01", log: true, legs: false, hidden: [] };
+  const v = { mode: "index", start: "2023-01-01", log: true, legs: false, hidden: [], focus: "all" };
   try { Object.assign(v, JSON.parse(localStorage.getItem(TK_PREF) || "{}")); } catch { /* 忽略 */ }
   return v;
 }
@@ -194,9 +216,14 @@ function techComboHtml(t, v) {
       <span class="muted">起点</span><div class="seg" id="tk-start">${TK_STARTS.map((s) => `<button type="button" data-v="${s}" class="${v.start === s ? "on" : ""}">${s.slice(0, 4)}</button>`).join("")}</div>
       <label><input type="checkbox" id="tk-log" ${v.log ? "checked" : ""}> 对数刻度</label>
       <label><input type="checkbox" id="tk-legs" ${v.legs ? "checked" : ""}> 小图显示相对大盘上涨波段</label></div>
+    <div class="row tk-kinds"><span class="muted">突出显示</span>${TK_FOCUS.map(([k, n, tip, fn]) => {
+      const tk = k === "all" ? [] : fn(t) || [];
+      const off = k !== "all" && !tk.length;
+      return `<button type="button" class="tk-kind tk-focus ${(v.focus || "all") === k ? "on" : ""}" data-f="${k}" ${off ? "disabled" : ""} title="${esc(off ? "这项技术没有符合条件的公司（或没有带代码的份额数据）" : tip)}">${esc(n)}${k === "all" ? "" : ` <span class="muted">${tk.length}</span>`}</button>`;
+    }).join("")}</div>
     <div class="row tk-kinds"><span class="muted">信号类型（点击开关）</span>${kinds}${plan}</div>
     <p class="muted small">${v.mode === "index" ? "各公司股价（当地货币，周收盘）以起点为 100；粗黑线 = 等权指数。" : v.mode === "rel" ? "公司 ÷ 本地大盘（美股 SPY、台股加权、日经、KOSPI、沪深 300 ETF、恒生、DAX 等），起点为 100：线往上 = 跑赢本地大盘；粗黑线 = 等权平均。" : "当地货币的周收盘价（不同货币不可直接比较，建议配合对数刻度）。"}
-      顶部信号带：点越大 = 影响力越大（信号前后 3 个交易日，相关公司相对本地大盘的平均涨跌是平时波动的几倍；同日的其他消息也会混在里面，只作参考）；空心 = 日期只精确到月。点击图例可隐藏 / 显示公司。</p>
+      顶部信号带：点越大 = 影响力越大（信号前后 3 个交易日，相关公司相对本地大盘的平均涨跌是平时波动的几倍；同日的其他消息也会混在里面，只作参考）；空心 = 日期只精确到月。点击图例可隐藏 / 显示公司；“突出显示”把其余公司调淡，并加一条所选公司的等权线（虚线）。</p>
     <div class="tk-combo"><div>${chartDiv("c-tk-main", "tk-tall")}</div><div class="tk-list" id="tk-list">${techListHtml(t, hid)}</div></div></section>`;
 }
 function techListHtml(t, hid) {
@@ -216,7 +243,9 @@ function drawTechCombo(d, t, v) {
   const el = byId("c-tk-main");
   const hid = new Set(v.hidden || []);
   const comps = t.companies.map((c, i) => ({ c, i, data: techSeries(d, t, c, v.mode, v.start) })).filter((x) => x.data.some((p) => isNum(p[1])));
-  const names = [...(v.mode !== "abs" ? ["等权指数"] : []), ...comps.map(({ c }) => `${c.name}（${c.ticker}）`)];
+  const focus = techFocus(t, v.focus);
+  const focusName = focus ? `所选等权（${TK_FOCUS.find((x) => x[0] === v.focus)[1]}）` : null;
+  const names = [...(v.mode !== "abs" ? ["等权指数", ...(focus ? [focusName] : [])] : []), ...comps.map(({ c }) => `${c.name}（${c.ticker}）`)];
   // 图例多行：按名称长度估算每行能放几个，算出图例高度，信号带与价格图依次往下排
   const width = el.clientWidth || 800;
   let rows = 1, line = 0;
@@ -243,8 +272,13 @@ function drawTechCombo(d, t, v) {
       emphasis: { scale: 1.6 } },
     ...(showPlan ? [{ name: "__plan", type: "scatter", xAxisIndex: 0, yAxisIndex: 0, symbol: "triangle", symbolRotate: 180, symbolSize: 11, color: TK_COLOR.plan, z: 5, legendHoverLink: false,
       data: t.capacity.map((c, p) => ({ value: [c.date, "扩产 / 缓解"], p })), emphasis: { scale: 1.6 } }] : []),
-    ...(v.mode !== "abs" ? [{ name: "等权指数", type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, data: techEqual(d, t, v.mode, v.start), color: css("--ink"), lineStyle: { width: 3 }, z: 4 }] : []),
-    ...comps.map(({ c, i, data }) => ({ name: `${c.name}（${c.ticker}）`, type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, connectNulls: true, data, color: palette()[i % 10], lineStyle: { width: 1.3 } })),
+    ...(v.mode !== "abs" ? [{ name: "等权指数", type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, data: techEqual(d, t, v.mode, v.start), color: css("--ink"), lineStyle: { width: 3, opacity: focus ? 0.35 : 1 }, z: 4 }] : []),
+    ...(v.mode !== "abs" && focus ? [{ name: focusName, type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, data: techEqual(d, t, v.mode, v.start, [...focus]), color: css("--ink"), lineStyle: { width: 3, type: "dashed" }, z: 4 }] : []),
+    ...comps.map(({ c, i, data }) => {
+      const dim = focus && !focus.has(c.ticker);
+      return { name: `${c.name}（${c.ticker}）`, type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, connectNulls: true, data, color: palette()[i % 10],
+        lineStyle: { width: dim ? 1 : focus ? 2.2 : 1.3, opacity: dim ? 0.12 : 1 }, z: dim ? 1 : 3 };
+    }),
   ];
   const firstLine = series.findIndex((s) => s.type === "line");
   if (firstLine >= 0) series[firstLine].markLine = { symbol: "none", silent: true, label: { show: false },
@@ -253,7 +287,8 @@ function drawTechCombo(d, t, v) {
     legend: { type: "plain", top: 0, left: 0, right: 0, data: names, itemGap: 8, textStyle: { fontSize: 11 } },
     // 只列价格线；信号带的内部序列（__sig / __plan）不进提示框，其内容显示在右侧列表
     tooltip: { trigger: "axis", formatter: (ps) => {
-      const rows = (Array.isArray(ps) ? ps : [ps]).filter((p) => !p.seriesName.startsWith("__") && isNum(p.value?.[1]))
+      const keep = (n) => !focus || !/（([^（）]+)）$/.test(n) || n.startsWith("所选等权") || focus.has(n.match(/（([^（）]+)）$/)[1]);
+      const rows = (Array.isArray(ps) ? ps : [ps]).filter((p) => !p.seriesName.startsWith("__") && isNum(p.value?.[1]) && keep(p.seriesName))
         .sort((a, b) => b.value[1] - a.value[1]);
       if (!rows.length) return "";
       return `${esc(rows[0].axisValueLabel)}<br>${rows.map((p) => `${p.marker}${esc(p.seriesName)} <b>${num(p.value[1], v.mode === "abs" ? 2 : 0)}</b>`).join("<br>")}`;
@@ -274,7 +309,9 @@ function drawTechCombo(d, t, v) {
     const it = sel && list.querySelector(sel);
     if (!it) return;
     it.classList.add("hl");
-    list.scrollTop = it.offsetTop - list.offsetTop - list.clientHeight / 3; // 只滚动列表本身
+    // 只滚动列表本身：用视口坐标算条目相对列表可视区的位置（offsetTop 的参照物会因定位方式而变，之前因此滚错位置）
+    const a = it.getBoundingClientRect(), b = list.getBoundingClientRect();
+    if (a.top < b.top || a.bottom > b.bottom) list.scrollTop += a.top - b.top - list.clientHeight / 3;
   };
   ch?.on("mouseover", (p) => { if (p.seriesName === "__sig") mark(`.tk-it[data-i="${p.data.k}"]`); else if (p.seriesName === "__plan") mark(`.tk-it[data-p="${p.data.p}"]`); });
   ch?.on("click", (p) => { if (p.seriesName === "__sig") mark(`.tk-it[data-i="${p.data.k}"]`); else if (p.seriesName === "__plan") mark(`.tk-it[data-p="${p.data.p}"]`); });
@@ -357,7 +394,8 @@ function renderTech(d, t, ts) {
   document.querySelectorAll("#tk-start button").forEach((b) => (b.onclick = () => { v.start = b.dataset.v; redraw(); }));
   byId("tk-log").onchange = (e) => { v.log = e.target.checked; redraw(); };
   byId("tk-legs").onchange = (e) => { v.legs = e.target.checked; redraw(); };
-  document.querySelectorAll(".tk-kind").forEach((b) => (b.onclick = () => {
+  document.querySelectorAll(".tk-focus").forEach((b) => (b.onclick = () => { v.focus = b.dataset.f; redraw(); }));
+  document.querySelectorAll(".tk-kind:not(.tk-focus)").forEach((b) => (b.onclick = () => {
     const h = new Set(v.hidden || []);
     if (h.has(b.dataset.k)) h.delete(b.dataset.k); else h.add(b.dataset.k);
     v.hidden = [...h];

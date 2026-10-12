@@ -456,3 +456,6 @@ table.health .tone { display: inline-block; margin-top: 3px; }
 .tk-it.hl { background: var(--chip); outline: 1px solid var(--axis); }
 .tk-num { display: inline-block; min-width: 18px; text-align: center; color: #fff; border-radius: 9px; font-size: 11px; padding: 0 4px; }
 @media (max-width: 900px) { .tk-combo { grid-template-columns: 1fr; } .tk-list { max-height: 420px; } }
+.tk-kind.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.tk-kind.on .muted { color: inherit; opacity: .7; }
+.tk-kind:disabled { opacity: .35; cursor: not-allowed; }
