@@ -444,3 +444,15 @@ table.health .tone { display: inline-block; margin-top: 3px; }
 .tk-shares { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px 18px; }
 .tk-shares .chart.short { height: 180px; }
 .tk-news li { margin: 3px 0; }
+.tk-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 4px; }
+.tk-glyph { margin-right: 3px; }
+.tk-kinds { flex-wrap: wrap; gap: 4px; }
+.tk-kind { border: 1px solid var(--grid); background: var(--surface); color: inherit; border-radius: 12px; padding: 1px 9px; font-size: 12px; cursor: pointer; }
+.tk-kind.off { opacity: .4; text-decoration: line-through; }
+.tk-combo { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: start; }
+.chart.tk-tall { height: 640px; }
+.tk-list { max-height: 640px; overflow-y: auto; border: 1px solid var(--grid); border-radius: 6px; padding: 4px 6px; font-size: 13px; position: relative; }
+.tk-it { border-left: 3px solid var(--grid); padding: 5px 8px; margin: 3px 0; border-radius: 3px; line-height: 1.5; }
+.tk-it.hl { background: var(--chip); outline: 1px solid var(--axis); }
+.tk-num { display: inline-block; min-width: 18px; text-align: center; color: #fff; border-radius: 9px; font-size: 11px; padding: 0 4px; }
+@media (max-width: 900px) { .tk-combo { grid-template-columns: 1fr; } .tk-list { max-height: 420px; } }
