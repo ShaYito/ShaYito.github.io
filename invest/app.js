@@ -1150,6 +1150,7 @@ PAGES.stock = async (r) => {
   const seg = await load("segments.json").catch(() => null);
   const sc = seg?.available ? seg.companies[t] : null;
   const graphData = (await load("news/index.json").catch(() => null))?.graph;
+  const bnD = await bnData().catch(() => null); // 瓶颈研究（bottleneck_page.js）：价格图上叠加信号与上涨波段
   const inChain = (await load("chain.json").catch(() => null))?.metrics?.[t];
   const nameZh = META.names_zh?.[t] || "";
   app().innerHTML = `
@@ -1158,7 +1159,7 @@ PAGES.stock = async (r) => {
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
     <section class="card" id="health-card" data-nav="个股体检" hidden></section>
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}${chartDiv("c-k", "tall")}</section>
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}</section>
     ${relCard()}${valuationCard(s)}${phaseCard(s)}
     ${metricsCard(s)}<section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
     ${insiderCard(s, t)}
@@ -1190,6 +1191,26 @@ PAGES.stock = async (r) => {
   bindStockEvents(graphData); // 相关事件折叠行（news_page.js）
   fillHealthCard(s, t); fillPeerRadar(t); // 证据型指标（evidence_page.js）
   fillBottleneckCard(t); // 相关瓶颈（bottleneck_page.js）
+  const bnOv = bnStockOverlay(bnD, t, s, nearest);
+  const bnShow = { sig: true, leg: true };
+  try { const v = JSON.parse(localStorage.getItem("invest.k.bn") || "null"); if (v) Object.assign(bnShow, v); } catch { /* 忽略 */ }
+  if (bnOv) byId("k-bn-ctl").innerHTML = `<div class="row"><span class="muted">瓶颈研究</span>
+    <label><input type="checkbox" id="k-bn-sig" ${bnShow.sig ? "checked" : ""}> <span style="color:#7c5cff">◆▲●</span> 瓶颈信号（悬停看内容，点击打开该瓶颈）</label>
+    <label><input type="checkbox" id="k-bn-leg" ${bnShow.leg ? "checked" : ""}> <span style="background:rgba(124,92,255,.18);padding:0 6px">　</span> 相对大盘的上涨波段</label>
+    <span class="muted small">波段按“相对本地大盘”识别（回撤 25% 结束、至少涨 50%），所以和这里的绝对价格走势不完全一致；<a href="#/bottleneck?id=${bnOv.cases[0]}">方法与详情 →</a></span></div>`;
+  const kMarks = [
+    ...s.events.map((e) => ({ symbol: "pin", symbolSize: 24, name: e.headline, coord: [nearest(e.date), closeOn[nearest(e.date)]], id: e.id, date: e.date,
+      kind: "event", week: e.week, itemStyle: { color: dirColor[e.direction] || "#898781" } })),
+    ...(s.turning || []).filter((tp) => tp.date >= s.dates[0]).map((tp, i) => ({ kind: "turning", idx: i, name: tp.category_zh, date: tp.date,
+      coord: [nearest(tp.date), closeOn[nearest(tp.date)]],
+      symbol: tp.category === "company" ? "diamond" : tp.category === "market" ? "triangle" : "emptyCircle",
+      symbolSize: tp.category === "company" ? 16 : tp.category === "market" ? 12 : 9,
+      symbolOffset: [0, tp.kind === "peak" || tp.kind === "gap_down" ? -14 : 14],
+      itemStyle: { color: tp.category === "unclear" ? "#898781" : tp.move >= 0 ? dirColor.positive : dirColor.negative, borderColor: css("--surface"), borderWidth: 1 } })),
+    ...tradeMarkPoints(s, t),
+  ];
+  const bnMarks = () => [...kMarks, ...(bnOv && bnShow.sig ? bnOv.signals : [])];
+  const bnAreas = () => ({ silent: true, label: { show: true, position: "insideBottom", color: "#7c5cff", fontSize: 10 }, data: bnOv && bnShow.leg ? bnOv.areas : [] });
   const k = mkChart(byId("c-k"), {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     grid: { ...K_GRID_X, top: 36, bottom: 60 },
@@ -1199,19 +1220,10 @@ PAGES.stock = async (r) => {
       { type: "slider", startValue: kPeriodStart(nK, kPeriod()), endValue: nK - 1, height: 18, bottom: 10 }],
     series: [
       { name: t, type: "candlestick", data: s.ohlc, itemStyle: { color: css("--good"), color0: css("--bad"), borderColor: css("--good"), borderColor0: css("--bad") },
+        markArea: bnAreas(),
         markPoint: { label: { show: false },
-          data: [
-            ...s.events.map((e) => ({ symbol: "pin", symbolSize: 24, name: e.headline, coord: [nearest(e.date), closeOn[nearest(e.date)]], id: e.id, date: e.date,
-              kind: "event", week: e.week, itemStyle: { color: dirColor[e.direction] || "#898781" } })),
-            ...(s.turning || []).filter((tp) => tp.date >= s.dates[0]).map((tp, i) => ({ kind: "turning", idx: i, name: tp.category_zh, date: tp.date,
-              coord: [nearest(tp.date), closeOn[nearest(tp.date)]],
-              symbol: tp.category === "company" ? "diamond" : tp.category === "market" ? "triangle" : "emptyCircle",
-              symbolSize: tp.category === "company" ? 16 : tp.category === "market" ? 12 : 9,
-              symbolOffset: [0, tp.kind === "peak" || tp.kind === "gap_down" ? -14 : 14],
-              itemStyle: { color: tp.category === "unclear" ? "#898781" : tp.move >= 0 ? dirColor.positive : dirColor.negative, borderColor: css("--surface"), borderWidth: 1 } })),
-            ...tradeMarkPoints(s, t),
-          ],
-          tooltip: { formatter: (p) => p.data.kind === "trade" ? tradeTooltip(p) : p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
+          data: bnMarks(),
+          tooltip: { formatter: (p) => p.data.kind === "bn" ? bnSignalTooltip(p.data) : p.data.kind === "trade" ? tradeTooltip(p) : p.data.kind === "event" ? `${esc(p.data.date)}<br>${esc(p.data.name)}`
             : (() => { const tp = s.turning[p.data.idx]; return `${esc(tp.date)} ${esc({ trough: "波段低点", peak: "波段高点", gap_up: "大幅跳涨", gap_down: "大幅跳跌" }[tp.kind])}<br>区间 ${pct(tp.move, 1, true)} · ${esc(tp.category_zh)}`; })() } },
         markLine: { symbol: "none", silent: true, label: { formatter: "财报", color: css("--muted") }, lineStyle: { color: css("--axis"), type: "dashed" },
           data: [...s.earnings.filter((d) => d >= s.dates[0] && d <= s.dates[s.dates.length - 1]).map((d) => ({ xAxis: nearest(d), ...(earningsLineStyle(s, d) || {}) })),
@@ -1221,6 +1233,12 @@ PAGES.stock = async (r) => {
     ],
   });
   bindKPeriod(k, nK);
+  const bnToggle = () => {
+    bnShow.sig = !!byId("k-bn-sig")?.checked; bnShow.leg = !!byId("k-bn-leg")?.checked;
+    try { localStorage.setItem("invest.k.bn", JSON.stringify(bnShow)); } catch { /* 忽略 */ }
+    k?.setOption({ series: [{ markPoint: { data: bnMarks() }, markArea: bnAreas() }] });
+  };
+  for (const id of ["k-bn-sig", "k-bn-leg"]) byId(id)?.addEventListener("change", bnToggle);
   drawValuation(s, k); // 估值历史图的显示范围跟随 K 线
   drawPhase(s, k); // FCF 收益率上升期图同样跟随 K 线
   // 显示范围较长（> 约 1.2 年）时财报竖线不显示文字，避免挤在一起
@@ -1229,6 +1247,7 @@ PAGES.stock = async (r) => {
   drawRelStr(t, s, k).catch((e) => console.error(e));
   k?.on("click", (p) => {
     if (p.componentType !== "markPoint") return;
+    if (p.data.kind === "bn") { location.hash = `#/bottleneck?id=${p.data.items[0].c.id}`; return; }
     if (p.data.kind === "turning") { byId("tp-detail").innerHTML = turningDetail(s.turning[p.data.idx], s.benchmark); byId("tp-card").scrollIntoView({ block: "nearest" }); return; }
     location.hash = p.data.week ? `#/news?week=${p.data.week}&event=${p.data.id}` : `#/news?date=${p.data.date}&event=${p.data.id}`;
   });

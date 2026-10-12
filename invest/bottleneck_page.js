@@ -112,29 +112,33 @@ function renderBnDetail(d, c) {
       <div class="table-wrap"><table><thead><tr><th>公司</th>${ms.map((m, k) => `<th class="num">${k + 1}. ${esc(m.date)}<br><span class="muted small">${esc(BN_KIND[m.kind][0])}</span></th>`).join("")}</tr></thead>
       <tbody>${comps.map((p) => `<tr><td class="nowrap"><b>${esc(p.ticker)}</b> ${esc(bnName(d, p.ticker))}</td>${ms.map((_, k) => matchCell((p.matches || []).find((r) => r.milestone === k))).join("")}</tr>`).join("")}</tbody></table></div>
       <p class="muted small">数字 = 对应那一波的上涨确认日 − 信号日（黄色 = 股价先动）；下方小字 = 那一波相对大盘的总涨幅。“同”= 与更早的里程碑匹配到同一波，不重复计入统计。没有匹配时显示信号后 12 个月相对大盘的涨跌供参考。悬停看波段起止。</p></section>
-    <div class="grid two">
-      ${card("相关公司相对本地大盘的走势（首个信号当周 = 1；▲ = 各波起点）", chartDiv("c-bn-rel", "tall"), "", ["fact", "derived"])}
-      ${card("新闻量（GDELT，占全部报道 %，月）与美股申报提及（份，季）", chartDiv("c-bn-news", "tall"), "", ["fact"])}
-    </div>
+    <section class="card"><h3>逐家公司：相对本地大盘的走势、识别出的上涨波段与信号位置 ${badge("fact")}${badge("derived")}</h3>
+      <p class="muted">每张小图一家公司：线 = 公司 ÷ 本地大盘（首个信号当周 = 1，对数刻度）；紫色底 = 识别出的上涨波段（顶部数字为这一波相对大盘的涨幅）；带编号的竖线 = 里程碑（编号对应上方列表，悬停看内容）。用它核对：信号出现时，股价是已经在涨、刚开始涨，还是之后才涨。</p>
+      <div class="bn-sm">${comps.map((p, i) => `<div><b>${esc(p.ticker)} ${esc(bnName(d, p.ticker))}</b> <span class="muted small">${BN_MKT[p.market] || ""} · ${BN_POS[p.position] || ""}</span>${p.series ? chartDiv(`c-bn-sm-${i}`, "short") : empty("无价格")}</div>`).join("")}</div></section>
+    ${card("新闻量（GDELT，占全部报道 %，月）与美股申报提及（份，季）", chartDiv("c-bn-news", "short"), "", ["fact"])}
     <section class="card"><h3>逐家公司 ${badge("derived")}${badge("model")}</h3><div class="table-wrap"><table><thead><tr><th>公司</th><th>市场</th><th>位置</th><th>纯度</th><th>定价</th><th>供应</th><th>周期股</th><th>相对大盘的各波上涨（2021 年起）</th><th class="num">分析师</th><th>五问得分</th></tr></thead>
       <tbody>${comps.map((p) => `<tr><td class="nowrap"><b>${esc(p.ticker)}</b> ${esc(bnName(d, p.ticker))}<div class="muted small">${esc(p.note || "")}</div></td>
         <td>${BN_MKT[p.market] || ""}</td><td>${BN_POS[p.position] || ""}</td><td>${BN_PUR[p.purity] || ""}</td><td>${BN_PRICE[p.pricing] || ""}</td><td>${BN_SUPPLY[p.supply] || ""}</td><td>${p.cyclical ? "是" : "否"}</td>
         <td class="small">${(p.legs || []).filter((l) => l.peak >= "2021-01-01").map((l) => `${esc(l.t0)} → ${esc(l.peak)}${l.ongoing ? "（未结束）" : ""} <b class="pos">${pct(l.gain, 0, true)}</b>`).join("<br>") || "–"}</td>
         <td class="num">${p.analysts ?? "–"}</td><td class="nowrap">${bnScoreText(p.score)}</td></tr>`).join("")}</tbody></table></div>
       <p class="muted small">纯度 / 定价 / 供应 / 周期股为人工整理的判断（依据见每家公司下方说明），五问得分按这些判断与当前分析师覆盖数计算：每问 1 分（✓）/ 0.5 分（½）/ 0 分（✗）。</p></section>`;
-  // 相对走势（日期轴），标出各波起点与里程碑
-  const series = comps.filter((p) => p.series).map((p, i) => {
-    const at = (dt) => { const k = p.series.dates.findIndex((x) => x >= dt); return k >= 0 ? p.series.values[k] : null; };
+  // 每家公司一张小图：相对走势 + 上涨波段（底色）+ 里程碑竖线（悬停看内容）
+  comps.forEach((p, i) => {
+    const el = byId(`c-bn-sm-${i}`);
+    if (!el || !p.series) return;
     const lo = p.series.dates[0], hi = p.series.dates[p.series.dates.length - 1];
-    return { name: `${p.ticker} ${bnName(d, p.ticker)}`, type: "line", showSymbol: false, color: palette()[i % 8], lineStyle: { width: 1.6 },
-      data: p.series.dates.map((x, k) => [x, p.series.values[k]]),
-      markPoint: { symbol: "triangle", symbolSize: 9, label: { show: false }, data: (p.legs || []).filter((l) => l.t0 >= lo && l.t0 <= hi).map((l) => ({ coord: [l.t0, at(l.t0)], name: `起点 ${l.t0}（这一波 ${pct(l.gain, 0, true)}）` })) } };
-  });
-  if (series.length) series[0].markLine = { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" },
-    data: ms.map((m, k) => ({ xAxis: m.date, label: { formatter: `${k + 1}`, color: css("--muted") } })) };
-  mkChart(byId("c-bn-rel"), {
-    tooltip: { trigger: "axis", valueFormatter: (v) => num(v, 2) }, legend: { type: "scroll", top: 0 }, grid: { left: 44, right: 16, top: 40, bottom: 30 },
-    xAxis: { type: "time" }, yAxis: { type: "log", logBase: 2, axisLabel: { formatter: (v) => `${num(v, 1)}×` } }, series,
+    const res = (k) => (p.matches || []).find((r) => r.milestone === k);
+    mkChart(el, {
+      tooltip: { trigger: "axis", valueFormatter: (v) => `${num(v, 2)}×` }, legend: { show: false }, grid: { left: 40, right: 10, top: 18, bottom: 22 },
+      xAxis: { type: "time", min: lo, max: hi }, yAxis: { type: "log", logBase: 2, axisLabel: { formatter: (v) => `${num(v, 1)}×`, fontSize: 10 } },
+      series: [{ name: p.ticker, type: "line", showSymbol: false, data: p.series.dates.map((x, k) => [x, p.series.values[k]]), color: palette()[0], lineStyle: { width: 1.5 },
+        markArea: { silent: true, label: { show: true, position: "insideTop", color: "#7c5cff", fontSize: 10 },
+          data: (p.legs || []).filter((l) => l.peak >= lo && l.t0 <= hi).map((l) => [{ xAxis: l.t0 < lo ? lo : l.t0, name: pct(l.gain, 0, true), itemStyle: { color: "rgba(124, 92, 255, 0.10)" } }, { xAxis: l.peak > hi ? hi : l.peak }]) },
+        markLine: { symbol: "none", tooltip: { trigger: "item", formatter: (q) => q.data.tip },
+          data: ms.map((m, k) => ({ xAxis: m.date, label: { formatter: `${k + 1}`, color: css("--ink-2"), fontSize: 10 },
+            lineStyle: { color: res(k)?.status === "matched" ? "#7c5cff" : css("--axis"), type: "dashed", width: 1.2 },
+            tip: `${k + 1}. ${esc(m.date)} ${esc(BN_KIND[m.kind][0])}<br>${esc(m.text)}<br><span style="opacity:.75">对 ${esc(p.ticker)}：${esc(BN_MATCH[res(k)?.status] || "–")}${res(k)?.status === "matched" ? `，时滞 ${days(res(k).lag_confirm)}` : ""}</span>` })) } }],
+    });
   });
   const mls = ms.map((m) => ({ xAxis: m.date, label: { show: false }, lineStyle: { color: css("--axis"), type: "dotted" } }));
   mkChart(byId("c-bn-news"), {
@@ -277,4 +281,36 @@ async function fillBottleneckCard(t) {
       <td>${esc(BN_MATCH[r.status] || r.status)}${r.status === "matched" ? `<br><span class="muted small">${esc(r.leg_t0)} → ${esc(r.leg_peak)}，${pct(r.gain, 0, true)}</span>` : ""}</td>
       <td class="num">${days(r.lag_confirm)}</td><td class="num ${cls(r.ret_12m)}">${pct(r.ret_12m, 0, true)}</td></tr>`)).join("")}</tbody></table></div>
     <p class="muted small">波段：相对大盘回撤 25% 以上即一波结束，每波至少涨 50%。时滞 = 那一波相对涨 30% 的日子 − 信号日；事后识别，只描述历史。<a href="#/claims">这些因素是否真的影响时滞 →</a></p>`;
+}
+
+// ---------------- 个股价格图叠加：瓶颈信号 + 相对大盘上涨波段（app.js 个股 K 线调用） ----------------
+// 返回 { signals: K 线 markPoint 数据, areas: markArea 数据 }；该股票不在案例库时返回 null
+function bnStockOverlay(d, t, s, nearest) {
+  if (!d || !s.dates.length) return null;
+  const key = UNIVERSE_ALIAS[t] || t;
+  const hits = d.cases.flatMap((c) => c.companies.filter((p) => p.ticker === key).map((p) => ({ c, p })));
+  if (!hits.length) return null;
+  const d0 = s.dates[0], d1 = s.dates[s.dates.length - 1];
+  const lowOn = Object.fromEntries(s.dates.map((x, i) => [x, s.ohlc[i]?.[2]]));
+  const byDate = {};
+  for (const { c, p } of hits) {
+    for (const r of p.matches || []) {
+      if (r.date < d0 || r.date > d1) continue;
+      (byDate[r.date] ||= []).push({ c, r, m: c.milestones[r.milestone] });
+    }
+  }
+  const signals = Object.entries(byDate).map(([date, items]) => {
+    const x = nearest(date);
+    return { kind: "bn", coord: [x, lowOn[x]], symbol: BN_KIND[items[0].m.kind][1], symbolSize: 13, symbolOffset: [0, 18], items, date,
+      itemStyle: { color: "#7c5cff", borderColor: css("--surface"), borderWidth: 1 } };
+  });
+  const legs = hits[0].p.legs || [];
+  const areas = legs.filter((l) => l.peak >= d0 && l.t0 <= d1).map((l) => [
+    { xAxis: nearest(l.t0 < d0 ? d0 : l.t0), name: `相对大盘 ${pct(l.gain, 0, true)}${l.ongoing ? "（未结束）" : ""}`, itemStyle: { color: "rgba(124, 92, 255, 0.07)" } },
+    { xAxis: nearest(l.peak > d1 ? d1 : l.peak) },
+  ]);
+  return { signals, areas, cases: [...new Set(hits.map((h) => h.c.id))] };
+}
+function bnSignalTooltip(x) {
+  return x.items.map(({ c, r, m }) => `<b>${esc(c.name)}</b> · ${esc(m.date)} ${esc(BN_KIND[m.kind][0])}<br>${esc(m.text)}<br><span style="opacity:.75">对这只股票：${esc(BN_MATCH[r.status] || r.status)}${r.status === "matched" ? `（上涨确认 ${esc(r.leg_t1 || "–")}，时滞 ${days(r.lag_confirm)}；这一波 ${esc(r.leg_t0)} → ${esc(r.leg_peak)} 相对大盘 ${pct(r.gain, 0, true)}）` : ""}${isNum(r.ret_12m) ? `；信号后 12 个月相对大盘 ${pct(r.ret_12m, 0, true)}` : ""}</span>`).join("<hr style='margin:4px 0;opacity:.3'>");
 }

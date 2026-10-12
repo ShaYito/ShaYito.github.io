@@ -415,3 +415,5 @@ table.health .tone { display: inline-block; margin-top: 3px; }
 .vchip.v-medium { color: var(--warn); border-color: var(--warn); }
 .vchip.v-high { color: var(--bad); border-color: var(--bad); }
 .vchip.v-info { color: var(--muted); }
+.bn-sm { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px 18px; }
+.bn-sm .chart.short { height: 200px; }
