@@ -141,14 +141,14 @@ details.howto p, details.howto li { margin: 6px 0; }
 .insights { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px;
   padding: 10px 16px; margin-bottom: 14px; }
 .insights h3 { margin: 0 0 6px; color: var(--ink); }
-.insights ul { margin: 0; padding-left: 0; list-style: none; }
-.insights li { margin: 6px 0; padding-left: 22px; position: relative; }
-.insights li::before { position: absolute; left: 0; top: 0; }
-.insights li.high::before { content: "⚠"; color: var(--bad); }
-.insights li.medium::before { content: "●"; color: var(--warn); }
-.insights li.info::before { content: "ℹ"; color: var(--accent); }
-.insights li.good::before { content: "✓"; color: var(--good); }
-.insights a.goto { font-size: 12px; margin-left: 6px; }
+.insights ul, ul.insights-list { margin: 0; padding-left: 0; list-style: none; }
+.insights li, .insights-list li { margin: 6px 0; padding-left: 22px; position: relative; }
+.insights li::before, .insights-list li::before { position: absolute; left: 0; top: 0; }
+.insights li.high::before, .insights-list li.high::before { content: "⚠"; color: var(--bad); }
+.insights li.medium::before, .insights-list li.medium::before { content: "●"; color: var(--warn); }
+.insights li.info::before, .insights-list li.info::before { content: "ℹ"; color: var(--accent); }
+.insights li.good::before, .insights-list li.good::before { content: "✓"; color: var(--good); }
+.insights a.goto, .insights-list a.goto { font-size: 12px; margin-left: 6px; }
 /* ---------- 术语页 ---------- */
 .gloss-item { border-top: 1px solid var(--grid); padding: 10px 0; }
 .gloss-item:first-child { border-top: 0; }
@@ -465,3 +465,24 @@ table.health .tone { display: inline-block; margin-top: 3px; }
 .check-tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 9px; background: var(--chip); color: var(--ink-2); }
 details.val-guide > summary { cursor: pointer; }
 details.metric-more > summary { cursor: pointer; margin: 10px 0 4px; font-weight: 600; color: var(--ink-2); }
+/* 现状与展望（M52） */
+.brief-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.brief-col { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 10px; }
+.brief-h { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.brief-view { display: inline-block; padding: 1px 10px; border-radius: 10px; font-weight: 600; font-size: 13px; background: var(--chip); }
+.brief-view.pos { background: rgba(12, 163, 12, .15); color: var(--good); }
+.brief-view.pos-soft { background: rgba(12, 163, 12, .08); color: var(--good); }
+.brief-view.neg { background: rgba(208, 59, 59, .15); color: var(--bad); }
+.brief-view.neg-soft { background: rgba(208, 59, 59, .08); color: var(--bad); }
+.brief-pts { margin: 2px 0 6px; padding-left: 16px; }
+.brief-pts li { margin: 2px 0; line-height: 1.5; }
+.brief-mark { font-size: 10px; margin-right: 3px; }
+.brief-mark.pos { color: var(--good); } .brief-mark.neg { color: var(--bad); }
+.ev-ref { display: inline-block; font-size: 10px; padding: 0 4px; margin-left: 2px; border-radius: 4px; background: var(--chip); color: var(--ink-2); cursor: pointer; }
+.brief-watch { margin-top: 8px; }
+.brief-ev > summary { cursor: pointer; margin-top: 10px; font-weight: 600; }
+.brief-evt td { padding: 2px 6px; vertical-align: top; }
+.brief-evt tr.hl { background: var(--chip); }
+@media (max-width: 900px) { .brief-grid { grid-template-columns: 1fr; } }
+.table-wrap:not(.open) .x-more, .nlist:not(.open) .x-more { display: none; }
+.more-btn { margin: 6px 0; border: 1px solid var(--grid); background: var(--surface); color: var(--accent); border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 12px; }

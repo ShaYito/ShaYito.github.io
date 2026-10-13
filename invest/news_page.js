@@ -371,7 +371,8 @@ function stockEventsHtml(events) {
   const row = (e) => `<article class="nrow deep" data-se="${esc(e.date)}|${esc(e.id)}|${esc(e.week || "")}">
     <div class="nhead">${dirDot(e.direction)}<span class="muted small">${esc(e.date.slice(5))}</span><span class="nkind k-deep">${esc(EVENT_ZH[e.event_type] || "事件")}</span><span class="ntitle">${esc(e.headline)}</span>
       <span class="ntags">${e.more?.length ? `<span class="chip thread" title="${esc(e.more.map((m) => `${m.date} ${m.headline}`).join("\n"))}">🧵 后续 ${e.more.length} 条</span>` : ""}</span></div><div class="ndetail"></div></article>`;
-  return `<div class="nlist">${[...events].reverse().map(row).join("")}</div><p class="muted small">点击一行展开详情；<a href="#/news">全部新闻 →</a></p>`;
+  const SHOW = 8; // 默认只显示最近 8 条
+  return `<div class="nlist">${[...events].reverse().map((e, i) => row(e).replace('<article class="nrow deep"', `<article class="nrow deep${i >= SHOW ? " x-more" : ""}"`)).join("")}</div>${moreButton(events.length, SHOW)}<p class="muted small">点击一行展开详情；<a href="#/news">全部新闻 →</a></p>`;
 }
 async function findNewsItem(date, id, week) {
   try { const it = newsItems([await load(`news/${date}.json`)], null, null).find((x) => x.id === id); if (it) return it; } catch { /* 当天存档不在网站数据中 */ }

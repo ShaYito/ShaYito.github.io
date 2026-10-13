@@ -149,6 +149,14 @@ function howto(lines) {
 }
 // 重点：{level: high|medium|good|info, text, kind?, target?, check?}；check（读数提醒：单看数字容易读错，不是涨跌信号）排最前并加 🔍，
 // 其余按严重度排序，同一严重度内事实 / 计算优先于模型 / 模拟，最多 max 条
+function insightItems(list, max = 5) {
+  const order = { high: 0, medium: 1, good: 2, info: 3 };
+  const conf = { fact: 0, derived: 1, model: 2, simulated: 3 };
+  const items = list.filter(Boolean).sort((a, b) => (b.check ? 1 : 0) - (a.check ? 1 : 0) || order[a.level] - order[b.level] || (conf[a.kind] ?? 2) - (conf[b.kind] ?? 2)).slice(0, max);
+  if (!items.length) return "";
+  return `<ul class="insights-list">${items.map((x) => `<li class="${x.level}">${x.check ? `<span class="check-tag" title="单看某个数字容易读错的情形，提醒换个角度看；不是涨跌信号">🔍 读数提醒</span> ` : ""}${rich(x.text)}${x.kind ? badge(x.kind) : ""}${
+    x.target ? `<a class="goto" href="#" data-goto="${x.target}">查看图表 ↓</a>` : ""}</li>`).join("")}</ul>`;
+}
 function insightBox(list, max = 5) {
   const order = { high: 0, medium: 1, good: 2, info: 3 };
   const conf = { fact: 0, derived: 1, model: 2, simulated: 3 };
@@ -156,6 +164,10 @@ function insightBox(list, max = 5) {
   if (!items.length) return "";
   return `<section class="insights"><h3>本页重点</h3><ul>${items.map((x) => `<li class="${x.level}">${x.check ? `<span class="check-tag" title="单看某个数字容易读错的情形，提醒换个角度看；不是涨跌信号">🔍 读数提醒</span> ` : ""}${rich(x.text)}${x.kind ? badge(x.kind) : ""}${
     x.target ? `<a class="goto" href="#" data-goto="${x.target}">查看图表 ↓</a>` : ""}</li>`).join("")}</ul></section>`;
+}
+// 长列表折叠（M52）：第 n 行之后的行加 x-more（默认隐藏），容器后接这个按钮；点一下展开 / 收起
+function moreButton(total, n, unit = "条") {
+  return total > n ? `<button type="button" class="more-btn" onclick="const w=this.previousElementSibling;w.classList.toggle('open');this.textContent=w.classList.contains('open')?'收起':'展开全部 ${total} ${unit}（另 ${total - n} ${unit}）'">展开全部 ${total} ${unit}（另 ${total - n} ${unit}）</button>` : "";
 }
 function bindGoto() {
   document.querySelectorAll("a.goto").forEach((a) => a.addEventListener("click", (e) => {
@@ -1155,13 +1167,13 @@ PAGES.stock = async (r) => {
   const graphData = (await load("news/index.json").catch(() => null))?.graph;
   const bnD = await bnData().catch(() => null); // 瓶颈研究（bottleneck_page.js）：价格图上叠加信号与上涨波段
   const inChain = (await load("chain.json").catch(() => null))?.metrics?.[t];
+  const briefRow = (await load("stock_briefs.json").catch(() => null))?.stocks?.[t]; // 现状与展望（M52，每周生成）
   const nameZh = META.names_zh?.[t] || "";
   app().innerHTML = `
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
     <h2>${esc(t)} ${esc(nameZh)} <span class="tg-row">${tagNames(t)}</span> <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""} · <a href="#/holdings?tab=buyplan&t=${t}">加入买入计划</a></span></h2>
     ${myPositionLine(t, s)}
-    ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
-    <section class="card" id="health-card" data-nav="个股体检" hidden></section>
+    ${howto(STOCK_HOWTO)}${briefCard(t, briefRow, [...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)])}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}<div id="k-info" class="k-info muted">把鼠标移到图上的标记（📍 新闻、◆▲○ 转折点、紫色瓶颈信号、你的交易）上，或点击标记，这里显示详细内容。</div></section>
     ${relCard()}${metricsCard(s)}${valuationCard(s)}${phaseCard(s)}
     <section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}
@@ -1191,7 +1203,8 @@ PAGES.stock = async (r) => {
   fillRetailCard(t); // 散户热度（retail_page.js，异步加载，失败不影响个股页）
   fillSentimentProfile(t); // 新闻情绪更多维度（sentiment_page.js）
   bindStockEvents(graphData); // 相关事件折叠行（news_page.js）
-  fillHealthCard(s, t); fillPeerRadar(t); // 证据型指标（evidence_page.js）
+  fillHealthCard(s, t); fillPeerRadar(t); // 证据型指标（evidence_page.js）；个股体检在“现状与展望”的“逐项证据”里
+  bindBriefRefs();
   fillBottleneckCard(t); // 相关瓶颈（bottleneck_page.js）
   const bnOv = bnStockOverlay(bnD, t, s, nearest);
   const bnShow = { sig: true, leg: true };

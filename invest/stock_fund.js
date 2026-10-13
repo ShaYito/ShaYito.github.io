@@ -889,7 +889,8 @@ function targetsCard(s) {
   const a = s.analyst_targets;
   if (!a) return "";
   const kpi = (label, v, sub = "", c = "") => `<div class="kpi"><span class="muted">${label}</span><b class="${c}">${v}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
-  const rows = a.firms.map((f) => `<tr class="${f.outlier ? "muted" : ""}"><td><b>${esc(f.firm)}</b>${f.outlier ? ' <span class="chip warnchip" title="偏离全部目标价中位数超过 50%，不计入加权（可能是数据错误或极端观点）">偏离过大</span>' : ""}</td>
+  const SHOW = 8; // 默认只显示权重最高的 8 家，其余点“展开全部”
+  const rows = a.firms.map((f, i) => `<tr class="${f.outlier ? "muted" : ""}${i >= SHOW ? " x-more" : ""}"><td><b>${esc(f.firm)}</b>${f.outlier ? ' <span class="chip warnchip" title="偏离全部目标价中位数超过 50%，不计入加权（可能是数据错误或极端观点）">偏离过大</span>' : ""}</td>
     <td>${esc(f.grade || "–")}</td><td class="num"><b>${num(f.target, 2)}</b></td><td class="num ${cls(f.upside)}">${pct(f.upside, 1, true)}</td>
     <td>${esc(PT_ZH[f.pt_action] || f.pt_action || "")}${f.prior && Math.abs(f.prior / f.target - 1) > 0.01 ? `（原 ${num(f.prior, 0)}）` : ""}</td>
     <td class="nowrap">${esc(f.date)}${f.reiterations ? `<br><span class="muted">之后重申 ${f.reiterations} 次</span>` : ""}</td>
@@ -907,7 +908,7 @@ function targetsCard(s) {
     <div class="table-wrap"><table><thead><tr><th>机构</th><th>评级</th><th class="num">目标价</th><th class="num">较现价</th><th>最近调整</th><th>给出日期</th>
       <th class="num" title="历史目标价的连续准确度（0–1）± 约 95% 误差范围，括号内为有效样本数；按 12 个月期限、用波动率标准化">历史准确度</th>
       <th class="num" title="该机构得分 − 同一时刻共识（其他机构目标价中位数）的得分；正 = 比共识准">相对共识</th>
-      <th class="num" title="全体平均准确度 + 收缩后的“相对共识”；样本不足的机构取中性值。排序也按此（样本不足的排在最后）">权重</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <th class="num" title="全体平均准确度 + 收缩后的“相对共识”；样本不足的机构取中性值。排序也按此（样本不足的排在最后）">权重</th></tr></thead><tbody>${rows}</tbody></table></div>${moreButton(a.firms.length, SHOW, "家")}
     <details class="howto"><summary>准确度怎么算、参考价值如何</summary>
       <p>${rich(`目标价按惯例视为 12 个月目标。机构每给出一个新目标价算一次预测（相差不超过 ${pct(a.same_tol, 0)} 的重申合并）；机构改动目标价时，旧预测在改动当天截止检验。检验时按“复利匀速推进”算出此时应到的价格，与实际价格比较：偏差除以这只股票在这段时间的正常波动（发布前 60 天波动率），完全命中得 1，偏离 1 / 2 / 3 个正常波动约得 0.61 / 0.14 / 0.01。满 12 个月的预测权重为 1，未满的按已过时间比例加权，不足 ${a.min_age} 个交易日的不评估。`)}</p>
       <p>${rich("“相对共识”用同一时刻其他机构目标价的中位数按同样方法打分：机构得分 − 共识得分，比较的是同一只股票、同一时点的判断，能扣掉“覆盖了哪些股票、在什么时候”带来的运气。表格的排序与加权用它（经收缩），绝对准确度只作展示。")}</p>
