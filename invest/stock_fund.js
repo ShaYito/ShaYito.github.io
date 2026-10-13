@@ -762,8 +762,6 @@ const METRIC_DEFS = {
     read: "持有这只股票一年中最难受的时候亏了多少。", use: "问自己能否承受同样幅度的下跌而不恐慌卖出。" },
   beta: { name: "Beta（β）", value: ["中（风险）", "衡量与大盘的联动，用于理解组合整体风险；会随时间变化，对收益的预测力很弱。"], fmt: "num2", better: null, def: "股价对大盘涨跌的敏感度（yfinance 按 5 年月度数据计算）。",
     read: "1.5 = 大盘涨跌 1% 时它平均涨跌 1.5%；小于 1 更防御。", use: "组合整体 β 高意味着大盘下跌时损失更大；用来理解“我的组合有多跟着大盘走”。" },
-  target_upside: { name: "目标价空间", value: ["低", "分析师目标价整体偏乐观，平均空间常年为正；变化方向（上调 / 下调）比水平更有信息量。"], fmt: "pp", better: null, def: "分析师平均目标价 ÷ 现价 − 1。",
-    read: "分析师普遍偏乐观，目标价空间平均就是正的；绝对值意义有限。", use: "更有信息量的是变化方向：目标价被持续上调或下调。见“分析师预期修正”。" },
   rec_mean: { name: "分析师评级均值", value: ["低", "评级普遍偏买入，区分度小；评级的突然下调比水平本身更值得注意。"], fmt: "num2", better: "low", def: "1 = 强烈买入，3 = 持有，5 = 卖出 的平均值。",
     read: "卖出评级极少，2 左右已经很常见。", use: "参考价值有限；评级的突然下调比水平本身更值得注意。" },
   short_pct_float: { name: "空头比例", value: ["中", "研究显示空头比例高的股票未来平均表现偏弱（空头往往掌握负面信息）；但也可能触发轧空，短期波动加大。"], fmt: "pct", better: "low", def: "被卖空的股数 ÷ 流通股（交易所每半月公布，存在滞后）。",
@@ -814,7 +812,7 @@ const CYC_NOTE = "强周期股：P/E 高低主要反映盈利处于周期的哪�
 function metricHist(s) {
   const v = s.valuation || {}, mg = v.margins || {};
   return { pe_ttm: v.pe, ps: v.ps_hist, fcf_yield: v.fcf_hist, gross_margin: mg.gross_margin_hist, op_margin: mg.op_margin_hist,
-    net_margin: mg.net_margin_hist, roic: mg.roic_hist, target_upside: v.targets_hist?.upside_hist };
+    net_margin: mg.net_margin_hist, roic: mg.roic_hist };
 }
 function histCell(it, h, d, s) {
   if (!h || !isNum(h.pct)) return "–";
