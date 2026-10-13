@@ -487,3 +487,4 @@ details.metric-more > summary { cursor: pointer; margin: 10px 0 4px; font-weight
 .table-wrap:not(.open) .x-more, .nlist:not(.open) .x-more { display: none; }
 .more-btn { margin: 6px 0; border: 1px solid var(--grid); background: var(--surface); color: var(--accent); border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
 details.firm-list > summary { cursor: pointer; margin: 8px 0; font-weight: 600; }
+.side-sub { margin: 6px 0 2px 4px; font-size: 11px; font-weight: 600; color: var(--muted); }

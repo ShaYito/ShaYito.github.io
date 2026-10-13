@@ -1058,10 +1058,19 @@ function stockSidebar(cur) {
   SIDE_CUR = cur;
   const ft = sideTag();
   const pass = (t) => !ft || tagsOf(t).includes(ft);
+  // 大主题（≥ SUB_MIN 只）在主题下按主要业务（第一个标签）再分子分类（2026-10-13 用户要求）
+  const SUB_MIN = 8;
+  const tagOrder = Object.keys(META.tags || {});
   const groups = META.themes.map((th) => {
-    const items = sidebarOrder(META.universe.filter((u) => u.theme === th.key && pass(u.ticker))).map((u) => `<a href="#/stock/${u.ticker}" class="side-item ${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}${(u.tags || []).length ? ` · ${u.tags.map((k) => META.tags?.[k]?.name).filter(Boolean).join(" / ")}` : ""}`)}">
-      <span class="nm ${BN_COVER.has(u.ticker) ? "bn-cover" : ""}"><span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</span><span class="tgs">${tagChips(u.ticker)}</span></a>`).join("");
-    return items ? `<h4>${esc(th.name)}</h4>${items}` : "";
+    const list = META.universe.filter((u) => u.theme === th.key && pass(u.ticker));
+    const row = (u) => `<a href="#/stock/${u.ticker}" class="side-item ${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}${(u.tags || []).length ? ` · ${u.tags.map((k) => META.tags?.[k]?.name).filter(Boolean).join(" / ")}` : ""}`)}">
+      <span class="nm ${BN_COVER.has(u.ticker) ? "bn-cover" : ""}"><span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</span><span class="tgs">${tagChips(u.ticker)}</span></a>`;
+    if (!list.length) return "";
+    if (list.length < SUB_MIN || ft) return `<h4>${esc(th.name)}</h4>${sidebarOrder(list).map(row).join("")}`;
+    const by = {};
+    for (const u of list) (by[tagsOf(u.ticker)[0] || "_"] ||= []).push(u);
+    const keys = Object.keys(by).sort((a, b) => (tagOrder.indexOf(a) + 1 || 999) - (tagOrder.indexOf(b) + 1 || 999));
+    return `<h4>${esc(th.name)}</h4>${keys.map((k) => `<h5 class="side-sub">${esc(META.tags?.[k]?.name?.replace(/（.*$/, "") || "其他")}</h5>${sidebarOrder(by[k]).map(row).join("")}`).join("")}`;
   }).join("");
   // 按实际持仓时：顶部加“你的持仓”一组
   let mine = "";
