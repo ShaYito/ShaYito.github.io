@@ -459,3 +459,9 @@ table.health .tone { display: inline-block; margin-top: 3px; }
 .tk-kind.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .tk-kind.on .muted { color: inherit; opacity: .7; }
 .tk-kind:disabled { opacity: .35; cursor: not-allowed; }
+.hist-pct { white-space: nowrap; }
+.hist-bar { display: inline-block; position: relative; width: 40px; height: 6px; margin-left: 5px; vertical-align: middle; background: var(--chip); border-radius: 3px; }
+.hist-bar i { position: absolute; top: -2px; width: 4px; height: 10px; margin-left: -2px; border-radius: 2px; }
+.check-tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 9px; background: var(--chip); color: var(--ink-2); }
+details.val-guide > summary { cursor: pointer; }
+details.metric-more > summary { cursor: pointer; margin: 10px 0 4px; font-weight: 600; color: var(--ink-2); }

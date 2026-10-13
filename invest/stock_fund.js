@@ -251,25 +251,25 @@ function valuationInsights(s) {
   if (v.fcf_hist && isNum(v.fcf_hist.capex_share) && v.fcf_hist.capex_share >= 0.5) out.push({ level: "info", kind: "derived", target: "val-card",
     text: `FCF 收益率 ${pct(v.fcf_hist.now, 1)}（中位数 ${pct(v.fcf_hist.median, 1)}）：资本支出占经营现金流的 ${pct(v.fcf_hist.capex_share, 0)}，现金正大量投入未来，FCF 收益率偏低不等于变贵。` });
   const m = v.margins;
-  // 🌟 特别值得一看（M50）：净利润率 / ROIC 的组合信号
+  // 🔍 读数提醒（M50）：单看某个数字容易读错的情形，提醒换个角度看——不是涨跌信号
   const nh = m?.net_margin_hist, rh = m?.roic_hist, P = (h) => `第 ${Math.round(h.pct * 100)} 百分位`;
   const covered = new Set();
   if (nh && rh && nh.pct >= 0.8 && rh.pct <= 0.2) {
     covered.add("nm").add("roic");
-    out.push({ star: true, level: "medium", kind: "derived", target: "val-card",
-      text: `净利润率处于自身近 5 年高位（${pct(nh.now, 1)}，${P(nh)}），ROIC 却在低位（${pct(rh.now, 1)}，${P(rh)}）：赚钱能力没变差，是投入资本扩张得更快（大规模资本开支或并购）——这些投资几年后能否把 ROIC 拉回来，是判断它值不值这个估值的关键。` });
+    out.push({ check: true, level: "info", kind: "derived", target: "val-card",
+      text: `利润率高 ≠ 回报率高：净利润率在自身近 5 年高位（${pct(nh.now, 1)}，${P(nh)}），ROIC 却在低位（${pct(rh.now, 1)}，${P(rh)}）——投入资本（资本开支、并购）扩张得比利润快。要回答的问题是：这些投资几年后能否把 ROIC 拉回来。` });
   }
   const cyc = v.cyclicality?.tier;
   if (nh && rh && nh.pct >= 0.85 && rh.pct >= 0.85 && (cyc === "strong" || cyc === "medium")) {
     covered.add("nm").add("roic");
-    out.push({ star: true, level: "medium", kind: "derived", target: "val-card",
-      text: `净利润率（${pct(nh.now, 1)}）与 ROIC（${pct(rh.now, 1)}）都在自身近 5 年最高附近，而这是一只${cyc === "strong" ? "强" : "中等"}周期股：盈利可能接近景气高点，此时 P/E 看起来最低，反而要小心周期回落。` });
+    out.push({ check: true, level: "info", kind: "derived", target: "val-card",
+      text: `周期股的“低 P/E”要换个角度看：净利润率（${pct(nh.now, 1)}）与 ROIC（${pct(rh.now, 1)}）都在自身近 5 年最高附近，这是一只${cyc === "strong" ? "强" : "中等"}周期股——盈利处在周期高处时 P/E 自然最低，不代表便宜；估值以 P/S 和整个周期的平均盈利为准。` });
   }
   const nT = m?.net_margin_ttm?.at(-1), oT = m?.op_margin_ttm?.at(-1);
   if (isNum(nT) && isNum(oT) && Math.abs(nT - oT) >= 0.15) {
     covered.add("nm");
-    out.push({ star: true, level: "medium", kind: "fact", target: "val-card",
-      text: `近 4 季净利润率 ${pct(nT, 1)}，营业利润率 ${pct(oT, 1)}，相差 ${Math.abs((nT - oT) * 100).toFixed(0)} 个百分点：净利润含大额${nT < oT ? "一次性损失（如资产减值、可转债 / 投资的公允价值变动）" : "一次性收益（如出售资产、投资收益、税收利益）"}，判断经营情况以营业利润率为准，P/E 也会因此失真。` });
+    out.push({ check: true, level: "info", kind: "fact", target: "val-card",
+      text: `净利润被一次性项目扭曲：近 4 季净利润率 ${pct(nT, 1)}，营业利润率 ${pct(oT, 1)}，相差 ${Math.abs((nT - oT) * 100).toFixed(0)} 个百分点，净利润含大额${nT < oT ? "一次性损失（如资产减值、可转债 / 投资的公允价值变动）" : "一次性收益（如出售资产、投资收益、税收利益）"}。看经营情况以营业利润率为准，P/E（按净利润算）也会失真。` });
   }
   for (const [h, name, key] of [[nh, "净利润率（近 4 季）", "nm"], [rh, "ROIC（近 4 季）", "roic"]]) {
     if (!h || covered.has(key) || (h.pct < 0.85 && h.pct > 0.15)) continue;
@@ -337,16 +337,6 @@ function valuationHints(v) {
 function valuationCard(s) {
   const v = s.valuation;
   if (!v) return "";
-  const kpi = (label, val, sub = "") => `<div class="kpi"><span class="muted">${label}</span><b>${val}</b>${sub ? `<span class="muted">${sub}</span>` : ""}</div>`;
-  const rank = (h) => (h ? `近 ${h.years} 年第 ${Math.round(h.pct * 100)} 百分位` : "");
-  const lastP = v.margins?.periods?.at(-1);
-  const stale = (h) => (h?.end && lastP && h.end < lastP ? `，截至 ${h.end}` : "");
-  // 同行分位：同行与关键指标相同（按业务标签）；悬停列出各家最新值
-  const peerTxt = (p) => {
-    if (!p) return "";
-    const list = p.peers.map(([t, x, e]) => `${t === s.ticker ? "▶ " : ""}${t} ${pct(x, 1)}${e ? `（${e}）` : ""}`).join("\n");
-    return `<br><span class="peer-rank" title="${esc(`同行：${p.basis}\n${list}`)}">同行第 ${p.rank} / ${p.n}（中位 ${pct(p.median, 1)}）</span>`;
-  };
   const hints = valuationHints(v);
   const panels = valPanels(v);
   const def = !v.pe?.base || v.cyclicality?.tier === "strong" ? "ps" : "pe";
@@ -356,16 +346,7 @@ function valuationCard(s) {
     v.margins?.periods?.length && !v.margins?.roic_hist && `ROIC（${v.margins?.roic_na || (v.margins?.roic_skipped ? "投入资本 ≤ 0 或不足收入的 5%，数值失真" : "资产负债表数据不足")}）`].filter(Boolean);
   return `<section class="card" id="val-card"><h3>估值与利润率 ${badge("fact")}${badge("derived")}</h3>
     <p class="muted">${rich("估值决定“同样的好消息还能涨多少”：处于自身历史高位时，市场已经预期了很多，稍有失望就容易大跌；处于低位时相反。估值对未来几周的涨跌几乎没有预测力，适合用来判断风险与控制仓位，而不是择时。")}</p>
-    <div class="kpis">
-      ${kpi("市盈率 P/E", num(v.pe?.now ?? v.trailing_pe, 1), v.pe ? (v.pe.oneoff ? "⚠ 可能受一次性收益影响" : rank(v.pe)) : "")}
-      ${kpi("预期市盈率 Forward P/E", num(v.forward_pe, 1), "按未来 12 个月 EPS 预期")}
-      ${kpi("市销率 P/S", num(v.ps_hist?.now ?? v.ps, 1), v.ps_hist ? rank(v.ps_hist) : "按过去 12 个月收入")}
-      ${kpi("FCF 收益率", v.fcf_hist ? pct(v.fcf_hist.now, 1) : "–", v.fcf_hist ? `${rank(v.fcf_hist)}（越高越便宜）` : "")}
-      ${kpi("PEG", num(v.peg, 2), "市盈率 ÷ 盈利增速；约 1 为合理")}
-      ${kpi("净利润率（近 4 季）", v.margins?.net_margin_hist ? pct(v.margins.net_margin_hist.now, 1) : "–", v.margins?.net_margin_hist ? rank(v.margins.net_margin_hist) + stale(v.margins.net_margin_hist) + peerTxt(v.margins.peer?.net_margin) : "")}
-      ${kpi("ROIC（近 4 季）", v.margins?.roic_hist ? pct(v.margins.roic_hist.now, 1) : v.margins?.roic_na ? "不适用" : "–",
-        v.margins?.roic_hist ? rank(v.margins.roic_hist) + stale(v.margins.roic_hist) + (v.margins.roic_basis === "pretax" ? "（用税前利润近似）" : "") + peerTxt(v.margins.peer?.roic) : esc(v.margins?.roic_na || ""))}
-    </div>
+    <p class="muted">当前值、自身近 5 年分位与同行比较见上方 <a href="#" class="goto" data-goto="metrics-card">关键指标</a>；这里看它们随时间的变化。</p>
     ${hints.length ? `<div class="warn-box">${hints.map((h) => `<p>💡 ${esc(h)}</p>`).join("")}</div>` : ""}
     ${v.lag_note ? `<p class="muted">⏳ ${esc(v.lag_note)}。</p>` : ""}
     ${panels.length > 1 ? `<div class="row"><b>股价、估值与利润率（同一时间轴，悬停任一栏看当周全部数值）</b>
@@ -373,7 +354,7 @@ function valuationCard(s) {
       <p id="decomp-sum" class="ph-verdict" data-def="${def}"></p>
       <div id="c-val-all" class="chart" style="height:${valHeight(panels)}px"></div>
       ${missing.length ? `<p class="muted">暂无：${esc(missing.join("；"))}。</p>` : ""}
-      <div class="val-guide"><b>怎么读这张图</b><ul>${valReadGuide(v, panels).map((t) => `<li>${t}</li>`).join("")}</ul></div>`
+      <details class="val-guide"><summary><b>怎么读这张图</b>（各栏含义、灰色带与标记）</summary><ul>${valReadGuide(v, panels).map((t) => `<li>${t}</li>`).join("")}</ul></details>`
       : empty("暂无估值历史（外国公司只有年报且涉及外币 / ADR 口径，或数据不足）")}
     <details class="howto"><summary>三个估值指标与利润率的详细读法</summary>
       <div class="val-guide"><p>${esc(VAL_COMMON)}</p>
@@ -728,6 +709,10 @@ const METRIC_DEFS = {
   op_margin: { name: "营业利润率", value: ["中", "经营效率的综合体现；利润率扩张常是盈利超预期的来源，趋势比单期数值重要。"], fmt: "pct", better: "high", def: "营业利润 ÷ 收入（扣除研发、销售、管理费用后）。",
     read: "比毛利率更完整地反映经营效率。", use: "与过去比：利润率扩张是盈利超预期的常见来源，见下方利润率趋势图。" },
   net_margin: { name: "净利率", value: ["中", "最终留给股东的部分；易受一次性项目、税率影响，波动大于营业利润率。"], fmt: "pct", better: "high", def: "净利润 ÷ 收入。", read: "最终留给股东的部分；受税率、利息、一次性项目影响。", use: "与营业利润率差距很大时，查看是否有一次性收益或亏损。" },
+  roic: { name: "ROIC（投入资本回报率）", value: ["中–高", "判断护城河最常用的指标：长期稳定在 15%–20% 以上通常说明有定价权或规模优势；比 ROE 更不受负债和回购影响。"], fmt: "pct", better: "high", def: "近 4 季营业利润 ×（1 − 实际税率）÷ 平均投入资本（股东权益 + 有息负债 − 现金），SEC 财报计算。",
+    read: "每投入 1 元资本，每年赚多少税后营业利润。高于约 10%（资本成本）= 在创造价值。",
+    use: "ROIC 下降而利润在涨，多半是投入资本扩张更快（大规模资本开支、并购），要看这些投资几年后能否把 ROIC 拉回来。",
+    caveat: "银行 / 保险不适用；投入资本很小（预收款或现金很多）时数值失真，不计算；没有营业利润科目的公司用税前利润近似。" },
   roe: { name: "ROE（净资产收益率）", value: ["中", "衡量生意好坏的经典指标（质量因子的一部分）；高负债和大量回购会把 ROE 抬高，需结合负债看。"], fmt: "pct", better: "high", def: "净利润 ÷ 股东权益。",
     read: "每 1 元股东资本一年赚多少；长期 15% 以上通常是好生意。", use: "高负债也能抬高 ROE，需结合负债权益比看；回购多的公司权益很小，ROE 会异常高。" },
   roa: { name: "ROA（总资产收益率）", value: ["中", "不受负债结构影响；适合同行业比较，跨行业比较意义不大。"], fmt: "pct", better: "high", def: "净利润 ÷ 总资产。", read: "不受负债结构影响的盈利效率；银行 ROA 1% 左右已属正常。", use: "与同行比较；跨行业比较意义不大。" },
@@ -799,17 +784,40 @@ function metricCompare(it, d) {
 // 强周期股：P/E 类指标与同行相比的高低主要反映盈利处于周期的哪个阶段，不分好坏（标蓝）
 const CYC_NEUTRAL = ["pe_ttm", "pe_fwd", "peg", "ev_ebitda"];
 const CYC_NOTE = "强周期股：P/E 高低主要反映盈利处于周期的哪个阶段（盈利高峰时 P/E 最低、低谷时最高），不分好坏；参考 P/S 与自由现金流收益率";
+// 关键指标中有历史曲线的指标 → 自身近 5 年分位（数据来自“估值与利润率”的历史序列）
+function metricHist(s) {
+  const v = s.valuation || {}, mg = v.margins || {};
+  return { pe_ttm: v.pe, ps: v.ps_hist, fcf_yield: v.fcf_hist, gross_margin: mg.gross_margin_hist, op_margin: mg.op_margin_hist,
+    net_margin: mg.net_margin_hist, roic: mg.roic_hist, target_upside: v.targets_hist?.upside_hist };
+}
+function histCell(it, h, d, s) {
+  if (!h || !isNum(h.pct)) return "–";
+  const p = Math.round(h.pct * 100);
+  // 颜色与“比较”列同一套方向：越低越好的指标（估值）高位红、低位绿；越高越好的（利润率、ROIC、FCF 收益率）相反；无方向的蓝
+  const ext = p >= 85 ? "hi" : p <= 15 ? "lo" : null;
+  const color = !ext ? "var(--axis)" : !d.better ? "var(--accent, #1c7ed6)" : (ext === "hi") === (d.better === "high") ? "var(--pos)" : "var(--neg)";
+  // 历史序列的当前值与本表数值口径不同（如 P/E：调整后 EPS vs GAAP EPS）时注明按哪个数计算
+  const diff = isNum(it.value) && isNum(h.now) && Math.abs(h.now - it.value) > Math.max(Math.abs(it.value) * 0.05, d.fmt === "x" ? 0 : 0.005);
+  const oneoff = it.key === "pe_ttm" && s.valuation?.pe?.oneoff;
+  return `<span class="hist-pct" title="当前值在自身近 ${h.years} 年中的位置（0 = 最低，100 = 最高），中位数 ${fmtMetric(h.median, d.fmt)}">第 ${p}<span class="hist-bar"><i style="left:${p}%;background:${color}"></i></span></span>${diff ? `<br><span class="muted small">按 ${fmtMetric(h.now, d.fmt)} 计</span>` : ""}${oneoff ? `<br><span class="muted small">⚠ 可能含一次性收益</span>` : ""}`;
+}
 function metricsCard(s) {
   const m = s.metrics;
   if (!m) return "";
+  const hist = metricHist(s);
   const cycStrong = s.valuation?.cyclicality?.tier === "strong";
-  const groups = m.groups.map((g) => `<div class="metric-group"><h4>${esc(g.name)}</h4><div class="table-wrap"><table class="metrics"><colgroup><col style="width:34%"><col style="width:13%"><col style="width:14%"><col style="width:14%"><col></colgroup><thead><tr><th>指标（点击看说明）</th><th class="num">本股</th>
-      <th class="num">同行中位数</th><th class="num">选股池中位数</th><th>比较</th></tr></thead><tbody>${g.items.map((it) => {
+  const OPEN_GROUPS = 3; // 估值、增长、盈利能力默认展开；其余收进“更多指标”（展开状态记在本机）
+  const groupHtml = (g) => `<div class="metric-group"><h4>${esc(g.name)}</h4><div class="table-wrap"><table class="metrics"><colgroup><col style="width:27%"><col style="width:11%"><col style="width:13%"><col style="width:15%"><col style="width:11%"><col></colgroup><thead><tr><th>指标（点击看说明）</th><th class="num">本股</th>
+      <th class="num">自身近 5 年分位</th><th class="num">同行中位数（排名）</th><th class="num">选股池中位数</th><th>比较</th></tr></thead><tbody>${g.items.map((it) => {
       const d0 = METRIC_DEFS[it.key] || { name: it.key, fmt: "num2" };
       const d = cycStrong && CYC_NEUTRAL.includes(it.key) ? { ...d0, better: null, neutralNote: CYC_NOTE } : d0;
       return `<tr><td class="def"><details><summary><b>${esc(d.name)}</b></summary><p>${esc(d.def || "")}</p><p><b>如何理解：</b>${esc(d.read || "")}</p><p><b>如何使用：</b>${esc(d.use || "")}</p>${d.value ? `<p><b>参考价值：${esc(d.value[0])}</b>——${esc(d.value[1])}</p>` : ""}${d.caveat ? `<p class="muted">注意：${esc(d.caveat)}</p>` : ""}</details></td>
-        <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${fmtMetric(it.theme_median, d.fmt)}</td><td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
-    }).join("")}</tbody></table></div></div>`).join("");
+        <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${histCell(it, hist[it.key], d, s)}</td><td class="num">${fmtMetric(it.theme_median, d.fmt)}${it.peer_rank ? `<br><span class="muted small" title="同行中由高到低第几（不代表好坏，方向见“比较”）">第 ${it.peer_rank[0]} / ${it.peer_rank[1]}</span>` : ""}</td><td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
+    }).join("")}</tbody></table></div></div>`;
+  const more = m.groups.slice(OPEN_GROUPS);
+  let moreOpen = false;
+  try { moreOpen = localStorage.getItem("invest.metrics.more") === "1"; } catch { /* 忽略 */ }
+  const groups = m.groups.slice(0, OPEN_GROUPS).map(groupHtml).join("") + (more.length ? `<details class="metric-more" ${moreOpen ? "open" : ""} ontoggle="try{localStorage.setItem('invest.metrics.more',this.open?'1':'0')}catch(e){}"><summary>更多指标：${more.map((g) => esc(g.name)).join("、")}</summary>${more.map(groupHtml).join("")}</details>` : "");
   return `<section class="card" id="metrics-card"><h3>关键指标 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 公司数据 ${esc(m.fetched || "")}（yfinance）· 价格类按最新收盘计算</span></h3>
     ${m.fin_currency && m.fin_currency !== "USD" ? `<p class="warn">该公司财报以 ${esc(m.fin_currency)} 计、股价以美元计：P/S、自由现金流收益率、净现金占比已按最新汇率换算；P/B 与 EV/EBITDA 涉及 ADR 换股比例，无法可靠换算，不显示；P/E 沿用 yfinance 数值，每股收益口径（外币或美元）因公司而异，可能有约一成的汇率偏差。</p>` : ""}
     <p class="muted">同行 = ${esc(m.peer_basis || `同主题且同行业${m.sector ? `（${m.sector}）` : ""}`)}：${m.peers.length >= 3 ? m.peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、") : "不足 3 只，只与选股池比较"}。${m.peer_basis?.startsWith("同主题") ? "" : " 同行按业务标签划分（主要业务相同优先）。"}</p>
@@ -817,6 +825,7 @@ function metricsCard(s) {
     <p class="muted">${rich("先看估值和增长是否匹配，再看盈利能力和财务健康是否支撑，最后看价格位置与市场预期。“比较”一栏的颜色含义见表格下方；“–”表示该行业不适用或暂无数据。")}
       点击指标名可看含义、用法与参考价值；全部指标的对照表见 <a href="#/glossary?t=metric-dict">术语与说明 → 指标词典</a>。</p>
     ${groups}
+    <p class="muted">“自身近 5 年分位” = 当前值在这家公司自己过去 5 年中的位置（0 = 最低，100 = 最高；标记颜色只在 ≥ 85 或 ≤ 15 时出现，方向与“比较”一栏相同：估值类处于历史高位为红（比自己过去贵），利润率、ROIC 处于历史高位为绿），曲线见下方“估值与利润率”；只有能取得历史序列的指标才有。历史序列来自 SEC 财报与逐机构目标价，与本表 Yahoo 数值口径不同时注明“按 X 计”（如 P/E 历史用与分析师预期同口径的调整后 EPS，Yahoo 用 GAAP EPS）。“排名”为同行中由高到低第几。</p>
     <p class="muted">“比较”一栏的颜色：<span class="pos">绿</span> = 与同行相比通常被认为更好；<span class="neg">红</span> = 通常被认为更差；<span class="dir-neutral">蓝</span> = 该指标没有通用的好坏方向（如涨跌、Beta、持股结构、股息率），只列出差距；<span class="muted">灰</span> = 与同行接近（倍数类相差 &lt; 10%；百分比类相差 &lt; 2 个百分点且相对差 &lt; 25%）。颜色只表示方向，不代表买卖建议。</p></section>`;
 }
 function metricInsights(s) {

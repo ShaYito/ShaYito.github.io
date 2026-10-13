@@ -147,20 +147,22 @@ function howto(lines) {
   return `<details class="howto"><summary>如何阅读本页</summary>${lines.map((l) => `<p>${rich(l)}</p>`).join("")}
     <p class="muted">标签说明：${badges(["fact", "derived", "model", "simulated"])} —— 点击标签或带下划虚线的术语可查看解释。</p></details>`;
 }
-// 重点：{level: high|medium|good|info, text, kind?, target?, star?}；star（特别值得一看）排最前并加 🌟，
+// 重点：{level: high|medium|good|info, text, kind?, target?, check?}；check（读数提醒：单看数字容易读错，不是涨跌信号）排最前并加 🔍，
 // 其余按严重度排序，同一严重度内事实 / 计算优先于模型 / 模拟，最多 max 条
 function insightBox(list, max = 5) {
   const order = { high: 0, medium: 1, good: 2, info: 3 };
   const conf = { fact: 0, derived: 1, model: 2, simulated: 3 };
-  const items = list.filter(Boolean).sort((a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0) || order[a.level] - order[b.level] || (conf[a.kind] ?? 2) - (conf[b.kind] ?? 2)).slice(0, max);
+  const items = list.filter(Boolean).sort((a, b) => (b.check ? 1 : 0) - (a.check ? 1 : 0) || order[a.level] - order[b.level] || (conf[a.kind] ?? 2) - (conf[b.kind] ?? 2)).slice(0, max);
   if (!items.length) return "";
-  return `<section class="insights"><h3>本页重点</h3><ul>${items.map((x) => `<li class="${x.level}">${x.star ? "🌟 " : ""}${rich(x.text)}${x.kind ? badge(x.kind) : ""}${
+  return `<section class="insights"><h3>本页重点</h3><ul>${items.map((x) => `<li class="${x.level}">${x.check ? `<span class="check-tag" title="单看某个数字容易读错的情形，提醒换个角度看；不是涨跌信号">🔍 读数提醒</span> ` : ""}${rich(x.text)}${x.kind ? badge(x.kind) : ""}${
     x.target ? `<a class="goto" href="#" data-goto="${x.target}">查看图表 ↓</a>` : ""}</li>`).join("")}</ul></section>`;
 }
 function bindGoto() {
   document.querySelectorAll("a.goto").forEach((a) => a.addEventListener("click", (e) => {
     e.preventDefault();
-    byId(a.dataset.goto)?.closest(".card")?.scrollIntoView({ block: "start" });
+    const card = byId(a.dataset.goto)?.closest(".card");
+    card?.querySelectorAll("details.metric-more:not([open])").forEach((d) => (d.open = true)); // 折叠的指标组一并展开
+    card?.scrollIntoView({ block: "start" });
   }));
 }
 // ● 持仓：本机填写了“我的持仓”（或解锁个人版）时按实际持仓，否则没有持仓标注（isHeld 定义于 holdings_page.js）
@@ -1161,19 +1163,18 @@ PAGES.stock = async (r) => {
     ${howto(STOCK_HOWTO)}${insightBox([...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], 8)}
     <section class="card" id="health-card" data-nav="个股体检" hidden></section>
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}<div id="k-info" class="k-info muted">把鼠标移到图上的标记（📍 新闻、◆▲○ 转折点、紫色瓶颈信号、你的交易）上，或点击标记，这里显示详细内容。</div></section>
-    ${relCard()}${valuationCard(s)}${phaseCard(s)}
-    ${metricsCard(s)}<section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}
+    ${relCard()}${metricsCard(s)}${valuationCard(s)}${phaseCard(s)}
+    <section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}
+    ${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${segSection(sc, t, "geography")}${segGraphCard(t, graphData)}
+    <section class="card" id="bn-card" data-nav="相关瓶颈" hidden></section>
     ${insiderCard(s, t)}
     <section class="card" id="sp-card" data-nav="情绪维度" hidden></section>
     <section class="card" id="retail-card" data-nav="散户热度" hidden></section>
-    <section class="card" id="bn-card" data-nav="相关瓶颈" hidden></section>
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid" data-nav-skip>
       ${card("相关事件（点击展开）", stockEventsHtml(s.events))}
       ${card("每日新闻情绪（相对平常水平，−1 ~ 1）", Object.keys(s.sentiment).length ? `${chartDiv("c-sent", "short")}<p class="muted">${rich("0 = 该打分来源的平常水平（已扣除财经新闻整体偏乐观的倾向）；浅色柱 = 当天少于 3 篇，仅供参考。情绪描述的是正在发生什么，实测对下一周涨跌没有预测力（见[[sentiment|新闻情绪]]）。")}</p>` : empty("近期无相关新闻"))}
     </div>
-    ${segGraphCard(t, graphData)}
-    ${segSection(sc, t, "geography")}
     </div></div>`;
   if (byId("c-sg")) drawSegGraph(byId("c-sg"), t, graphData, sc);
   if (sc) {
