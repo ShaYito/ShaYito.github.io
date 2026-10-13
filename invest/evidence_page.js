@@ -215,7 +215,7 @@ function radarScores(rows) {
 }
 const median = (a) => { const v = a.filter(isNum).sort((x, y) => x - y); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) : null; };
 
-async function fillPeerRadar(t) {
+async function fillPeerRadar(t, m) {
   const el = byId("radar-card");
   if (!el) return;
   const [cm, sp] = await Promise.all([load("compare_metrics.json").catch(() => null), load("sentiment_profile.json").catch(() => null)]);
@@ -223,24 +223,31 @@ async function fillPeerRadar(t) {
   const rows = cm.rows.map((r) => ({ ...r, _sent: sp?.rows?.[r.ticker]?.count ? sp.rows[r.ticker].mean : null }));
   const sc = radarScores(rows);
   const me = rows.find((r) => r.ticker === t);
-  const peers = rows.filter((r) => r.theme === me.theme && r.ticker !== t);
-  const med = Object.fromEntries(RADAR_DIMS.map(([k]) => [k, median(peers.map((p) => sc[p.ticker][k]))]));
+  // 同行与“关键指标”一致：按主要业务（M53 起）；边界情况（config tags.alt_primary）另按第二种主要业务画一份
+  const sets = [{ basis: m?.peer_basis || `同主题「${themeName(me.theme)}」`, list: m?.peers || rows.filter((r) => r.theme === me.theme).map((r) => r.ticker) }];
+  if (m?.alt_peers) sets.push({ basis: m.alt_peer_basis, list: m.alt_peers });
   const fmt = (k, v) => (!isNum(v) ? "–" : ["pe_fwd", "ps", "ev_ebitda", "debt_to_equity", "current_ratio", "rec_mean"].includes(k) ? num(v, 2) : k === "_sent" ? num(v, 2, true) : pct(v, 1, ["fcf_yield", "gross_margin", "op_margin", "roe", "pos_52w"].includes(k) ? false : true));
+  const blocks = sets.map((set) => {
+    const peers = rows.filter((r) => set.list.includes(r.ticker) && r.ticker !== t);
+    const med = Object.fromEntries(RADAR_DIMS.map(([k]) => [k, median(peers.map((p) => sc[p.ticker][k]))]));
+    return { ...set, peers, med };
+  });
   el.hidden = false;
-  el.innerHTML = `<h3>同行对比雷达（与「${esc(themeName(me.theme))}」${peers.length} 家同行）${badge("derived")}</h3>
-    <p class="muted">每个维度是几项指标在选股池 ${rows.length} 只股票中的分位（0–100，越靠外越好；“估值便宜度”越靠外 = 越便宜，亏损公司的估值倍数不参与）。实线 = ${esc(t)}，虚线 = 同主题其他公司的中位数。分位只说明相对位置，选股池整体偏贵或偏好时，50 分也不代表绝对水平。</p>
-    <div class="grid two"><div>${chartDiv("c-radar", "tall")}</div>
+  el.innerHTML = `<h3>同行对比雷达${blocks.length > 1 ? "（边界情况：按两种主要业务各画一份）" : `（${esc(blocks[0].basis)}，${blocks[0].peers.length} 家同行）`}${badge("derived")}</h3>
+    <p class="muted">每个维度是几项指标在选股池 ${rows.length} 只股票中的分位（0–100，越靠外越好；“估值便宜度”越靠外 = 越便宜，亏损公司的估值倍数不参与）。实线 = ${esc(t)}，虚线 = 同行中位数（同行与“关键指标”相同，按主要业务划分）。分位只说明相对位置，选股池整体偏贵或偏好时，50 分也不代表绝对水平。</p>
+    ${blocks.map((b, bi) => `${blocks.length > 1 ? `<h4>${esc(b.basis)}（${b.peers.length} 家：${b.peers.map((p) => esc(p.ticker)).join("、")}）</h4>` : ""}
+    <div class="grid two"><div>${chartDiv(`c-radar-${bi}`, "tall")}</div>
     <div class="table-wrap"><table><thead><tr><th>维度 / 指标</th><th class="num">数值</th><th class="num">分位</th><th class="num">同行中位</th></tr></thead><tbody>
-      ${RADAR_DIMS.map(([k, name, ms]) => `<tr class="hl"><td><b>${name}</b></td><td></td><td class="num"><b>${isNum(sc[t][k]) ? Math.round(sc[t][k]) : "–"}</b></td><td class="num">${isNum(med[k]) ? Math.round(med[k]) : "–"}</td></tr>
-        ${ms.map(([mk, , label]) => `<tr><td class="muted">　${label}</td><td class="num">${fmt(mk, me[mk])}</td><td class="num">${isNum(sc[t][`p:${mk}`]) ? Math.round(sc[t][`p:${mk}`]) : "–"}</td><td class="num muted">${(() => { const v = median(peers.map((p) => p[mk])); return fmt(mk, v); })()}</td></tr>`).join("")}`).join("")}
-    </tbody></table></div></div>`;
+      ${RADAR_DIMS.map(([k, name, ms]) => `<tr class="hl"><td><b>${name}</b></td><td></td><td class="num"><b>${isNum(sc[t][k]) ? Math.round(sc[t][k]) : "–"}</b></td><td class="num">${isNum(b.med[k]) ? Math.round(b.med[k]) : "–"}</td></tr>
+        ${ms.map(([mk, , label]) => `<tr><td class="muted">　${label}</td><td class="num">${fmt(mk, me[mk])}</td><td class="num">${isNum(sc[t][`p:${mk}`]) ? Math.round(sc[t][`p:${mk}`]) : "–"}</td><td class="num muted">${fmt(mk, median(b.peers.map((p) => p[mk])))}</td></tr>`).join("")}`).join("")}
+    </tbody></table></div></div>`).join("")}`;
   const ind = RADAR_DIMS.map(([, name]) => ({ name, max: 100 }));
-  mkChart(byId("c-radar"), {
+  blocks.forEach((b, bi) => mkChart(byId(`c-radar-${bi}`), {
     tooltip: { trigger: "item" }, legend: { bottom: 0 },
     radar: { indicator: ind, radius: "62%", splitNumber: 4, axisName: { color: css("--ink-2") }, splitLine: { lineStyle: { color: css("--grid") } }, splitArea: { show: false }, axisLine: { lineStyle: { color: css("--grid") } } },
     series: [{ type: "radar", data: [
       { name: t, value: RADAR_DIMS.map(([k]) => (isNum(sc[t][k]) ? Math.round(sc[t][k]) : 0)), itemStyle: { color: palette()[0] }, areaStyle: { opacity: 0.18 }, lineStyle: { width: 2 } },
-      { name: "同主题中位数", value: RADAR_DIMS.map(([k]) => (isNum(med[k]) ? Math.round(med[k]) : 0)), itemStyle: { color: BENCH_GRAY() }, lineStyle: { type: "dashed" } },
+      { name: "同行中位数", value: RADAR_DIMS.map(([k]) => (isNum(b.med[k]) ? Math.round(b.med[k]) : 0)), itemStyle: { color: BENCH_GRAY() }, lineStyle: { type: "dashed" } },
     ] }],
-  });
+  }));
 }

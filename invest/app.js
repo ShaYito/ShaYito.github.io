@@ -1212,7 +1212,7 @@ PAGES.stock = async (r) => {
   fillRetailCard(t); // 散户热度（retail_page.js，异步加载，失败不影响个股页）
   fillSentimentProfile(t); // 新闻情绪更多维度（sentiment_page.js）
   bindStockEvents(graphData); // 相关事件折叠行（news_page.js）
-  fillHealthCard(s, t); fillPeerRadar(t); // 证据型指标（evidence_page.js）；个股体检在“现状与展望”的“逐项证据”里
+  fillHealthCard(s, t); fillPeerRadar(t, s.metrics); // 证据型指标（evidence_page.js）；个股体检在“现状与展望”的“逐项证据”里
   bindBriefRefs();
   fillBottleneckCard(t); // 相关瓶颈（bottleneck_page.js）
   const bnOv = bnStockOverlay(bnD, t, s, nearest);

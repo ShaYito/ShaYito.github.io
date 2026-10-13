@@ -807,12 +807,19 @@ function metricsCard(s) {
   const hist = metricHist(s);
   const cycStrong = s.valuation?.cyclicality?.tier === "strong";
   const OPEN_GROUPS = 3; // 估值、增长、盈利能力默认展开；其余收进“更多指标”（展开状态记在本机）
-  const groupHtml = (g) => `<div class="metric-group"><h4>${esc(g.name)}</h4><div class="table-wrap"><table class="metrics"><colgroup><col style="width:27%"><col style="width:11%"><col style="width:13%"><col style="width:15%"><col style="width:11%"><col></colgroup><thead><tr><th>指标（点击看说明）</th><th class="num">本股</th>
-      <th class="num">自身近 5 年分位</th><th class="num">同行中位数（排名）</th><th class="num">选股池中位数</th><th>比较</th></tr></thead><tbody>${g.items.map((it) => {
+  // 边界情况（config tags.alt_primary）：多一列“按另一种主要业务”的同行中位数与排名
+  const alt = !!m.alt_peers;
+  const tagShort = (k) => (META.tags?.[k]?.name || k).replace(/（.*$/, "");
+  const primName = tagShort(tagsOf(s.ticker)[0]), altName = alt ? tagShort(m.alt_primary) : "";
+  const peerHead = alt ? `<th class="num">同行中位（排名）<br><span class="muted small">按${esc(primName)}</span></th><th class="num">同行中位（排名）<br><span class="muted small">按${esc(altName)}</span></th>` : `<th class="num">同行中位数（排名）</th>`;
+  const cols = alt ? [24, 10, 12, 13, 13, 10] : [27, 11, 13, 15, 11];
+  const rankTxt = (r) => (r ? `<br><span class="muted small" title="同行中由高到低第几（不代表好坏，方向见“比较”）">第 ${r[0]} / ${r[1]}</span>` : "");
+  const groupHtml = (g) => `<div class="metric-group"><h4>${esc(g.name)}</h4><div class="table-wrap"><table class="metrics"><colgroup>${cols.map((w) => `<col style="width:${w}%">`).join("")}<col></colgroup><thead><tr><th>指标（点击看说明）</th><th class="num">本股</th>
+      <th class="num">自身近 5 年分位</th>${peerHead}<th class="num">选股池中位数</th><th>比较</th></tr></thead><tbody>${g.items.map((it) => {
       const d0 = METRIC_DEFS[it.key] || { name: it.key, fmt: "num2" };
       const d = cycStrong && CYC_NEUTRAL.includes(it.key) ? { ...d0, better: null, neutralNote: CYC_NOTE } : d0;
       return `<tr><td class="def"><details><summary><b>${esc(d.name)}</b></summary><p>${esc(d.def || "")}</p><p><b>如何理解：</b>${esc(d.read || "")}</p><p><b>如何使用：</b>${esc(d.use || "")}</p>${d.value ? `<p><b>参考价值：${esc(d.value[0])}</b>——${esc(d.value[1])}</p>` : ""}${d.caveat ? `<p class="muted">注意：${esc(d.caveat)}</p>` : ""}</details></td>
-        <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${histCell(it, hist[it.key], d, s)}</td><td class="num">${fmtMetric(it.theme_median, d.fmt)}${it.peer_rank ? `<br><span class="muted small" title="同行中由高到低第几（不代表好坏，方向见“比较”）">第 ${it.peer_rank[0]} / ${it.peer_rank[1]}</span>` : ""}</td><td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
+        <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${histCell(it, hist[it.key], d, s)}</td><td class="num">${fmtMetric(it.theme_median, d.fmt)}${rankTxt(it.peer_rank)}</td>${alt ? `<td class="num">${fmtMetric(it.alt_median, d.fmt)}${rankTxt(it.alt_rank)}</td>` : ""}<td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
     }).join("")}</tbody></table></div></div>`;
   const more = m.groups.slice(OPEN_GROUPS);
   let moreOpen = false;
@@ -820,7 +827,7 @@ function metricsCard(s) {
   const groups = m.groups.slice(0, OPEN_GROUPS).map(groupHtml).join("") + (more.length ? `<details class="metric-more" ${moreOpen ? "open" : ""} ontoggle="try{localStorage.setItem('invest.metrics.more',this.open?'1':'0')}catch(e){}"><summary>更多指标：${more.map((g) => esc(g.name)).join("、")}</summary>${more.map(groupHtml).join("")}</details>` : "");
   return `<section class="card" id="metrics-card"><h3>关键指标 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 公司数据 ${esc(m.fetched || "")}（yfinance）· 价格类按最新收盘计算</span></h3>
     ${m.fin_currency && m.fin_currency !== "USD" ? `<p class="warn">该公司财报以 ${esc(m.fin_currency)} 计、股价以美元计：P/S、自由现金流收益率、净现金占比已按最新汇率换算；P/B 与 EV/EBITDA 涉及 ADR 换股比例，无法可靠换算，不显示；P/E 沿用 yfinance 数值，每股收益口径（外币或美元）因公司而异，可能有约一成的汇率偏差。</p>` : ""}
-    <p class="muted">同行 = ${esc(m.peer_basis || `同主题且同行业${m.sector ? `（${m.sector}）` : ""}`)}：${m.peers.length >= 3 ? m.peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、") : "不足 3 只，只与选股池比较"}。${m.peer_basis?.startsWith("同主题") ? "" : " 同行只按主要业务（第一个业务标签）划分。"}${m.primary_basis ? `<br>主要业务依据：${esc(m.primary_basis)}。` : ""}</p>
+    <p class="muted">同行 = ${esc(m.peer_basis || `同主题且同行业${m.sector ? `（${m.sector}）` : ""}`)}：${m.peers.length >= 3 ? m.peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、") : "不足 3 只，只与选股池比较"}。${m.peer_basis?.startsWith("同主题") ? "" : " 同行只按主要业务（第一个业务标签）划分。"}${m.primary_basis ? `<br>主要业务依据：${esc(m.primary_basis)}。` : ""}${alt ? `<br>边界情况，另按“${esc(altName)}”算一组同行（${esc(m.alt_peer_basis)}）：${m.alt_peers.map((p) => `<a href="#/stock/${esc(p)}">${esc(p)}</a>`).join("、")}；表中多一列，“比较”一栏仍按主要业务的同行。` : ""}</p>
     ${cycStrong ? `<p class="warn">⚠ ${esc(CYC_NOTE)}；因此下表中市盈率 P/E、预期市盈率、PEG、EV/EBITDA（同样基于盈利）与同行的比较标为蓝色（不分好坏）。周期性依据见“估值与利润率”。</p>` : ""}
     <p class="muted">${rich("先看估值和增长是否匹配，再看盈利能力和财务健康是否支撑，最后看价格位置与市场预期。“比较”一栏的颜色含义见表格下方；“–”表示该行业不适用或暂无数据。")}
       点击指标名可看含义、用法与参考价值；全部指标的对照表见 <a href="#/glossary?t=metric-dict">术语与说明 → 指标词典</a>。</p>
