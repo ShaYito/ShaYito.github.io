@@ -214,9 +214,16 @@ function keepSidebarScroll() {
   const el = document.querySelector(".stock-side");
   SIDE_SCROLL = el ? { top: el.scrollTop, left: el.scrollLeft } : null;
 }
+let SIDE_CENTER = false; // 下一次渲染时把选中的股票滚到侧边栏中间（随机进入个股页时）
 function restoreSidebarScroll() {
   const el = document.querySelector(".stock-side");
   if (!el) return;
+  const on = el.querySelector("a.on");
+  if (SIDE_CENTER && on) {
+    SIDE_CENTER = false;
+    el.scrollTop += on.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 2 + on.offsetHeight / 2;
+    return;
+  }
   if (SIDE_SCROLL) { el.scrollTop = SIDE_SCROLL.top; el.scrollLeft = SIDE_SCROLL.left; }
   else el.querySelector("a.on")?.scrollIntoView({ block: "nearest", inline: "center" }); // 首次进入：滚到当前股票
 }
@@ -1071,7 +1078,7 @@ function stockSidebar(cur) {
     for (const u of list) (by[tagsOf(u.ticker)[0] || "_"] ||= []).push(u);
     const keys = Object.keys(by).sort((a, b) => (tagOrder.indexOf(a) + 1 || 999) - (tagOrder.indexOf(b) + 1 || 999));
     return `<h4>${esc(th.name)}</h4>${keys.map((k) => `<h5 class="side-sub">${esc(META.tags?.[k]?.name?.replace(/（.*$/, "") || "其他")}</h5>${sidebarOrder(by[k]).map(row).join("")}`).join("")}`;
-  }).join("");
+  });
   // 按实际持仓时：顶部加“你的持仓”一组
   let mine = "";
   if (holdingsMode() === "mine") {
@@ -1084,7 +1091,11 @@ function stockSidebar(cur) {
   const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
   const cmp = `<a href="#/compare${cur ? `?t=${cur}` : ""}" class="cmp-entry" title="勾选多只股票 / ETF，对比走势与相关性">📊 多股对比</a>${BN_COVER.size ? '<p class="muted small bn-legend"><span class="bn-cover"><b>紫色</b></span> = 价格图上有 AI 瓶颈信号</p>' : ""}`;
-  return `<aside class="stock-side" aria-label="选择股票">${cmp}${tagFilterBar()}${ft ? "" : mine}${etfs && !ft ? `<h4>ETF / 大类资产</h4>${etfs}` : ""}${groups}</aside>`;
+  // ETF / 大类资产放在 META.sidebar_etf_before 主题之前（config web.sidebar_etf_before；空或找不到 = 最上面）
+  const etfHtml = etfs && !ft ? `<h4>ETF / 大类资产</h4>${etfs}` : "";
+  let at = META.themes.findIndex((th) => th.key === META.sidebar_etf_before);
+  if (at < 0) at = 0;
+  return `<aside class="stock-side" aria-label="选择股票">${cmp}${tagFilterBar()}${ft ? "" : mine}${groups.slice(0, at).join("")}${etfHtml}${groups.slice(at).join("")}</aside>`;
 }
 // K 线价格口径：复权价（默认，含分红再投资，用于各项计算）/ 实际价格（除权不除息，与券商 K 线及你的成本同口径）
 const PRICE_MODE_KEY = "invest.price_mode";
@@ -1168,7 +1179,13 @@ function myPositionLine(t, s) {
   return parts.length ? `<p class="card" style="padding:8px 12px">💼 ${parts.join("。")}。<a href="#/holdings${planText.length ? "?tab=buyplan" : ""}">${planText.length ? "买入计划" : "我的持仓"} →</a></p>` : "";
 }
 PAGES.stock = async (r) => {
-  const t = r.arg || META.universe.find((u) => isHeld(u.ticker))?.ticker || META.universe[0].ticker;
+  // 没指定股票时每次随机选一只（2026-10-13 用户要求；此前默认第一只持仓或 NVDA），侧边栏滚到它附近
+  let t = r.arg;
+  if (!t) {
+    t = META.universe[Math.floor(Math.random() * META.universe.length)].ticker;
+    history.replaceState(null, "", `#/stock/${t}`); // 只改地址栏，不触发再次路由
+    SIDE_CENTER = true;
+  }
   if (isEtf(t)) return renderEtfPage(t); // ETF / 大类资产：专用版式（etf_page.js）
   const s = pricedView(await load(`stocks/${t}.json`));
   const seg = await load("segments.json").catch(() => null);

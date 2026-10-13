@@ -351,6 +351,7 @@ function valuationCard(s) {
     ${v.lag_note ? `<p class="muted">⏳ ${esc(v.lag_note)}。</p>` : ""}
     ${panels.length > 1 ? `<div class="row"><b>股价、估值与利润率（同一时间轴，悬停任一栏看当周全部数值）</b>
         ${modes.length ? `<span class="muted">第 ② 栏拆分口径</span><div class="seg" id="decomp-mode">${modes.map(([m, l]) => `<button type="button" data-m="${m}" class="${m === def ? "on" : ""}">${l}</button>`).join("")}</div>` : ""}</div>
+      <div class="row"><span class="muted">时间范围（与价格走势图同步；也可拖动图下方的时间轴）</span><div class="seg" id="val-per">${K_PERIODS.map(([k, , n]) => `<button type="button" data-v="${k}" class="${k === kPeriod() ? "on" : ""}">${n}</button>`).join("")}</div></div>
       <p id="decomp-sum" class="ph-verdict" data-def="${def}"></p>
       <div id="c-val-all" class="chart" style="height:${valHeight(panels)}px"></div>
       ${missing.length ? `<p class="muted">暂无：${esc(missing.join("；"))}。</p>` : ""}
@@ -370,7 +371,7 @@ function valPanels(v) {
   return [(v.pe?.px || v.ps_hist?.px) && "px", (v.pe?.base || v.ps_hist?.base) && "dec", v.pe && "pe", v.ps_hist && "ps",
     v.margins?.periods?.length && "mg", v.margins?.roic_hist && "roic", v.fcf_hist && "fcf", v.targets_hist && "tgt"].filter(Boolean);
 }
-const valHeight = (panels) => panels.reduce((a, k) => a + VAL_PANEL_H[k] + 42, 40);
+const valHeight = (panels) => panels.reduce((a, k) => a + VAL_PANEL_H[k] + 42, 40) + 34; // +34：底部时间轴
 function valReadGuide(v, panels) {
   const no = Object.fromEntries(panels.map((k, i) => [k, "①②③④⑤⑥⑦⑧"[i]]));
   const g = [];
@@ -579,7 +580,8 @@ function drawValuation(s, k) {
   };
   const chart = mkChart(el, { animation: false, title: titles, grid: grids, xAxis: xAxes, yAxis: yAxes, series, legend: { show: false },
     axisPointer: { link: [{ xAxisIndex: "all" }] }, tooltip: { trigger: "axis", formatter: tip, axisPointer: { type: "line" } },
-    dataZoom: [{ type: "inside", xAxisIndex: panels.map((_, i) => i), zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }] });
+    dataZoom: [{ type: "inside", xAxisIndex: panels.map((_, i) => i), zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false },
+      { type: "slider", xAxisIndex: panels.map((_, i) => i), height: 18, bottom: 6, labelFormatter: (i) => axis[i] ?? "" }] });
   if (!chart) return;
   // 可见区间的合计拆分（顶部一句话）
   let decMode = byId("decomp-sum")?.dataset.def || "pe";
@@ -611,9 +613,43 @@ function drawValuation(s, k) {
     document.querySelectorAll("#decomp-mode button").forEach((x) => x.classList.toggle("on", x === btn));
     setDecomp(decMode);
   }));
-  // 时间范围跟随 K 线
-  const sync = () => { const [a, b] = visible(); chart.dispatchAction({ type: "dataZoom", startValue: a, endValue: b }); summary(decMode); };
+  // 时间范围与 K 线双向同步：K 线变 → 这里跟随；拖这里的时间轴 → K 线跟随（两个标志防止来回触发）
+  let fromK = false, fromVal = false;
+  const n = s.dates.length;
+  const seg = byId("val-per");
+  const mark = () => { // 区间按钮高亮（与价格走势图的按钮同一规则）
+    if (!seg || !k) return;
+    const [a, b] = zoomRange(k, n);
+    const hit = b === n - 1 ? K_PERIODS.find(([key]) => kPeriodStart(n, key) === a)?.[0] : null;
+    seg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.v === hit));
+  };
+  const sync = () => {
+    summary(decMode);
+    mark();
+    if (fromVal) return;
+    const [a, b] = visible();
+    fromK = true;
+    chart.dispatchAction({ type: "dataZoom", startValue: a, endValue: b });
+    fromK = false;
+  };
   k?.on("datazoom", sync);
+  chart.on("datazoom", () => {
+    if (fromK || !k) return;
+    const [a, b] = zoomRange(chart, axis.length);
+    const d0 = axis[a], d1 = axis[b];
+    let ka = s.dates.findIndex((d) => d >= d0);
+    let kb = b >= axis.length - 1 ? n - 1 : s.dates.findLastIndex((d) => d <= d1);
+    if (ka < 0) ka = 0;
+    if (kb < ka) kb = ka;
+    fromVal = true;
+    k.dispatchAction({ type: "dataZoom", startValue: ka, endValue: kb });
+    fromVal = false;
+    summary(decMode);
+  });
+  seg?.querySelectorAll("button").forEach((x) => (x.onclick = () => { // 与价格走势图的区间按钮相同：缩放 K 线，这里随之同步
+    try { localStorage.setItem(K_PERIOD_KEY, x.dataset.v); } catch { /* 忽略 */ }
+    k?.dispatchAction({ type: "dataZoom", startValue: kPeriodStart(n, x.dataset.v), endValue: n - 1 });
+  }));
   sync();
 }
 
@@ -811,15 +847,16 @@ function metricsCard(s) {
   const alt = !!m.alt_peers;
   const tagShort = (k) => (META.tags?.[k]?.name || k).replace(/（.*$/, "");
   const primName = tagShort(tagsOf(s.ticker)[0]), altName = alt ? tagShort(m.alt_primary) : "";
-  const peerHead = alt ? `<th class="num">同行中位（排名）<br><span class="muted small">按${esc(primName)}</span></th><th class="num">同行中位（排名）<br><span class="muted small">按${esc(altName)}</span></th>` : `<th class="num">同行中位数（排名）</th>`;
-  const cols = alt ? [24, 10, 12, 13, 13, 10] : [27, 11, 13, 15, 11];
-  const rankTxt = (r) => (r ? `<br><span class="muted small" title="同行中由高到低第几（不代表好坏，方向见“比较”）">第 ${r[0]} / ${r[1]}</span>` : "");
+  const rankTh = `<th class="num" title="同行中由高到低第几（不代表好坏，方向见“比较”）">同行排名</th>`;
+  const peerHead = alt ? `<th class="num">同行中位<br><span class="muted small">按${esc(primName)}</span></th>${rankTh}<th class="num">同行中位<br><span class="muted small">按${esc(altName)}</span></th>${rankTh}` : `<th class="num">同行中位数</th>${rankTh}`;
+  const cols = alt ? [21, 9, 11, 10, 7, 10, 7, 9] : [25, 10, 12, 12, 8, 11];
+  const rankTd = (r) => `<td class="num muted">${r ? `${r[0]} / ${r[1]}` : "–"}</td>`;
   const groupHtml = (g) => `<div class="metric-group"><h4>${esc(g.name)}</h4><div class="table-wrap"><table class="metrics"><colgroup>${cols.map((w) => `<col style="width:${w}%">`).join("")}<col></colgroup><thead><tr><th>指标（点击看说明）</th><th class="num">本股</th>
       <th class="num">自身近 5 年分位</th>${peerHead}<th class="num">选股池中位数</th><th>比较</th></tr></thead><tbody>${g.items.map((it) => {
       const d0 = METRIC_DEFS[it.key] || { name: it.key, fmt: "num2" };
       const d = cycStrong && CYC_NEUTRAL.includes(it.key) ? { ...d0, better: null, neutralNote: CYC_NOTE } : d0;
       return `<tr><td class="def"><details><summary><b>${esc(d.name)}</b></summary><p>${esc(d.def || "")}</p><p><b>如何理解：</b>${esc(d.read || "")}</p><p><b>如何使用：</b>${esc(d.use || "")}</p>${d.value ? `<p><b>参考价值：${esc(d.value[0])}</b>——${esc(d.value[1])}</p>` : ""}${d.caveat ? `<p class="muted">注意：${esc(d.caveat)}</p>` : ""}</details></td>
-        <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${histCell(it, hist[it.key], d, s)}</td><td class="num">${fmtMetric(it.theme_median, d.fmt)}${rankTxt(it.peer_rank)}</td>${alt ? `<td class="num">${fmtMetric(it.alt_median, d.fmt)}${rankTxt(it.alt_rank)}</td>` : ""}<td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
+        <td class="num"><b>${fmtMetric(it.value, d.fmt)}</b></td><td class="num">${histCell(it, hist[it.key], d, s)}</td><td class="num">${fmtMetric(it.theme_median, d.fmt)}</td>${rankTd(it.peer_rank)}${alt ? `<td class="num">${fmtMetric(it.alt_median, d.fmt)}</td>${rankTd(it.alt_rank)}` : ""}<td class="num">${fmtMetric(it.universe_median, d.fmt)}</td><td>${metricCompare(it, d)}</td></tr>`;
     }).join("")}</tbody></table></div></div>`;
   const more = m.groups.slice(OPEN_GROUPS);
   let moreOpen = false;
@@ -867,7 +904,8 @@ function insiderCard(s, t) {
     ${list.length ? `<div class="kpis">
       <div class="kpi"><span class="muted">近 6 个月公开市场买入</span><b class="${buy.n ? "pos" : ""}">${buy.n} 笔</b><span class="muted">${money$(buy.v)}</span></div>
       <div class="kpi"><span class="muted">近 6 个月卖出</span><b>${sell.n} 笔</b><span class="muted">${money$(sell.v)}</span></div></div>
-      <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>日期</th><th>人员 / 职务</th><th>类型</th><th class="num">股数</th><th class="num">金额</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty("近 1 年没有记录（或数据源暂无）")}
+      <details class="firm-list"><summary>逐笔明细（最近 ${Math.min(list.length, 15)} 笔）</summary>
+      <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>日期</th><th>人员 / 职务</th><th>类型</th><th class="num">股数</th><th class="num">金额</th></tr></thead><tbody>${rows}</tbody></table></div></details>` : empty("近 1 年没有记录（或数据源暂无）")}
     <p class="muted">${rich("数据来自高管与董事向 SEC 提交的 Form 4（经 Yahoo 整理，申报通常在交易后 2 个工作日内）。如何理解：高管卖出很常见（分散资产、缴税、事先约定的 10b5-1 计划），单独看信息量很小；用自己的钱在公开市场买入则少见得多，多名内部人在同一时期集中买入，历史上是相对有信息量的信号。“股票授予 / 行权”是薪酬的一部分，不代表看法。")}
     ${t ? ` <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;CIK=${esc(t)}&amp;type=4" target="_blank" rel="noopener">SEC 原始申报 →</a>` : ""}</p></section>`;
 }
