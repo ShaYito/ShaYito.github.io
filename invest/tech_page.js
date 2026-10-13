@@ -32,7 +32,7 @@ function techFocus(t, key) {
   return tk && tk.length ? new Set(tk) : null;
 }
 const TK_MODES = [["index", "指数化（起点 = 100）"], ["rel", "相对本地大盘"], ["abs", "绝对价格"]];
-const TK_STARTS = ["2020-01-01", "2022-01-01", "2023-01-01", "2024-01-01", "2025-01-01"];
+const TK_STARTS = ["2017-01-01", "2020-01-01", "2022-01-01", "2023-01-01", "2024-01-01", "2025-01-01"];
 const TK_PREF = "invest.tech.view";
 let TK_DATA = null;
 
@@ -85,16 +85,19 @@ const TECH_HOWTO = [
   "卡片上的走势 = 相关公司等权指数（各公司从 2023 年初指数化后取平均，当地货币，未换汇），用来粗看这一组公司整体的方向。",
 ];
 
+// 卡片走势起点：AI 技术从 2023 年初；历史周期从第一轮紧缺所在年份的年初
+const techCardStart = (t) => (t.history ? `${t.rounds.map((r) => r.first).sort()[0].slice(0, 4)}-01-01` : "2023-01-01");
 function techCardHtml(d, t) {
-  const eq = techEqual(d, t, "index", "2023-01-01");
+  const eq = techEqual(d, t, "index", techCardStart(t));
   const last = eq.filter((p) => isNum(p[1]));
   const r3 = (() => { if (last.length < 14) return null; const a = last[last.length - 14][1], b = last[last.length - 1][1]; return b / a - 1; })();
   const sig = t.signals[t.signals.length - 1];
+  const years = t.history ? `${t.rounds.map((r) => r.first).sort()[0].slice(0, 4)}–${t.rounds.map((r) => r.last).sort().at(-1).slice(0, 4)} · ` : "";
   return `<a class="tk-card" href="#/tech/${t.id}">
     <div class="tk-card-h"><b>${esc(t.name)}</b> <span class="tk-st ${t.status}">${TK_STATUS[t.status]}</span></div>
     <div class="muted small tk-sum">${esc(t.summary.length > 60 ? `${t.summary.slice(0, 60)}…` : t.summary)}</div>
     <div class="tk-spark" id="tk-sp-${t.id}"></div>
-    <div class="small">近 3 个月等权 <b class="${cls(r3)}">${pct(r3, 1, true)}</b> · ${t.companies.length} 家公司 · ${t.signals.length} 条信号</div>
+    <div class="small">${t.history ? years : `近 3 个月等权 <b class="${cls(r3)}">${pct(r3, 1, true)}</b> · `}${t.companies.length} 家公司 · ${t.signals.length} 条信号</div>
     ${sig ? `<div class="muted small">最新信号 ${esc(sig.date)}：${esc(sig.text.length > 34 ? `${sig.text.slice(0, 34)}…` : sig.text)}</div>` : ""}</a>`;
 }
 
@@ -103,13 +106,15 @@ PAGES.tech = async (r) => {
   if (!d) { app().innerHTML = `<h2>技术</h2>${card("技术", empty("数据尚未生成（每周运行 run_bottlenecks.py）"))}`; return; }
   const ts = [...d.technologies].sort((a, b) => a.order - b.order);
   if (r.arg) { const t = ts.find((x) => x.id === r.arg); if (t) return renderTech(d, t, ts); }
+  const ai = ts.filter((t) => !t.history), hist = ts.filter((t) => t.history);
   app().innerHTML = `<h2>技术 <span class="muted">${ts.length} 项技术 · 数据截至 ${esc(d.asof || "")}</span></h2>
     ${howto(TECH_HOWTO)}
     ${card("瓶颈时间线", `${techKindLegend()}${chartDiv("c-tk-tl", "tall")}<div id="tk-tl-info" class="k-info muted">悬停或点击图上的点查看信号内容；点击左侧技术名进入该技术。</div>`, "", ["fact"])}
-    <section class="card"><h3>各项技术 ${badge("fact")}${badge("derived")}</h3><div class="tk-grid">${ts.map((t) => techCardHtml(d, t)).join("")}</div></section>`;
-  drawTechTimeline(d, ts);
+    <section class="card"><h3>各项技术 ${badge("fact")}${badge("derived")}</h3><div class="tk-grid">${ai.map((t) => techCardHtml(d, t)).join("")}</div></section>
+    ${hist.length ? `<section class="card"><h3>历史对照：非 AI 紧缺周期 ${badge("fact")}${badge("derived")}</h3><p class="muted small">AI 之前的几轮紧缺，不在上方时间线里；卡片走势从第一轮紧缺所在年份的年初开始。</p><div class="tk-grid">${hist.map((t) => techCardHtml(d, t)).join("")}</div></section>` : ""}`;
+  drawTechTimeline(d, ai);
   for (const t of ts) {
-    const eq = techEqual(d, t, "index", "2023-01-01");
+    const eq = techEqual(d, t, "index", techCardStart(t));
     mkChart(byId(`tk-sp-${t.id}`), { animation: false, grid: { left: 2, right: 2, top: 4, bottom: 2 }, xAxis: { type: "time", show: false }, yAxis: { type: "log", show: false, scale: true },
       tooltip: { show: false }, legend: { show: false },
       series: [{ type: "line", showSymbol: false, data: eq, color: t.status === "ongoing" ? "#7c5cff" : BENCH_GRAY(), lineStyle: { width: 1.6 }, areaStyle: { opacity: 0.08 } }] });
@@ -379,6 +384,8 @@ function techNewsHtml(t) {
 
 function renderTech(d, t, ts) {
   const v = techView();
+  const aiStart = v.start; // 历史周期用单独的起点（默认 2017），不影响 AI 技术记住的起点
+  if (t.history) v.start = v.hstart || "2017-01-01";
   app().innerHTML = `${techNav(ts, t.id)}
     <h2>${esc(t.name)} <span class="tk-st ${t.status}">${TK_STATUS[t.status]}</span> <span class="muted">数据截至 ${esc(d.asof || "")}</span></h2>
     <section class="card"><p>${esc(t.summary)}</p>
@@ -393,7 +400,7 @@ function renderTech(d, t, ts) {
   drawTechCombo(d, t, v);
   drawTechSmall(d, t, v);
   const redraw = () => {
-    saveTechView(v);
+    saveTechView(t.history ? { ...v, hstart: v.start, start: aiStart } : v);
     for (const c of charts) c.dispose(); // 整页重绘前释放旧图表
     charts = [];
     renderTech(d, t, ts);

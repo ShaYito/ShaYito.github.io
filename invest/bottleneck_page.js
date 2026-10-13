@@ -20,7 +20,7 @@ async function bnData() {
   const d = await load("bottlenecks.json");
   if (!d?.cases) return null;
   const back = Object.fromEntries(Object.entries(UNIVERSE_ALIAS).map(([u, k]) => [k, u]));
-  BN_COVER = new Set(d.cases.flatMap((c) => c.companies.map((p) => back[p.ticker] || p.ticker)));
+  BN_COVER = new Set(d.cases.filter((c) => c.ai !== false).flatMap((c) => c.companies.map((p) => back[p.ticker] || p.ticker)));
   return d;
 }
 // 全部 公司 × 里程碑（附公司与瓶颈）
