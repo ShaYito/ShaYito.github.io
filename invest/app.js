@@ -147,13 +147,14 @@ function howto(lines) {
   return `<details class="howto"><summary>如何阅读本页</summary>${lines.map((l) => `<p>${rich(l)}</p>`).join("")}
     <p class="muted">标签说明：${badges(["fact", "derived", "model", "simulated"])} —— 点击标签或带下划虚线的术语可查看解释。</p></details>`;
 }
-// 重点：{level: high|medium|good|info, text, kind?, target?}；按严重度排序，同一严重度内事实 / 计算优先于模型 / 模拟，最多 max 条
+// 重点：{level: high|medium|good|info, text, kind?, target?, star?}；star（特别值得一看）排最前并加 🌟，
+// 其余按严重度排序，同一严重度内事实 / 计算优先于模型 / 模拟，最多 max 条
 function insightBox(list, max = 5) {
   const order = { high: 0, medium: 1, good: 2, info: 3 };
   const conf = { fact: 0, derived: 1, model: 2, simulated: 3 };
-  const items = list.filter(Boolean).sort((a, b) => order[a.level] - order[b.level] || (conf[a.kind] ?? 2) - (conf[b.kind] ?? 2)).slice(0, max);
+  const items = list.filter(Boolean).sort((a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0) || order[a.level] - order[b.level] || (conf[a.kind] ?? 2) - (conf[b.kind] ?? 2)).slice(0, max);
   if (!items.length) return "";
-  return `<section class="insights"><h3>本页重点</h3><ul>${items.map((x) => `<li class="${x.level}">${rich(x.text)}${x.kind ? badge(x.kind) : ""}${
+  return `<section class="insights"><h3>本页重点</h3><ul>${items.map((x) => `<li class="${x.level}">${x.star ? "🌟 " : ""}${rich(x.text)}${x.kind ? badge(x.kind) : ""}${
     x.target ? `<a class="goto" href="#" data-goto="${x.target}">查看图表 ↓</a>` : ""}</li>`).join("")}</ul></section>`;
 }
 function bindGoto() {

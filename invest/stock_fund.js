@@ -251,8 +251,28 @@ function valuationInsights(s) {
   if (v.fcf_hist && isNum(v.fcf_hist.capex_share) && v.fcf_hist.capex_share >= 0.5) out.push({ level: "info", kind: "derived", target: "val-card",
     text: `FCF 收益率 ${pct(v.fcf_hist.now, 1)}（中位数 ${pct(v.fcf_hist.median, 1)}）：资本支出占经营现金流的 ${pct(v.fcf_hist.capex_share, 0)}，现金正大量投入未来，FCF 收益率偏低不等于变贵。` });
   const m = v.margins;
-  for (const [h, name] of [[m?.net_margin_hist, "净利润率（近 4 季）"], [m?.roic_hist, "ROIC（近 4 季）"]]) {
-    if (!h || (h.pct < 0.85 && h.pct > 0.15)) continue;
+  // 🌟 特别值得一看（M50）：净利润率 / ROIC 的组合信号
+  const nh = m?.net_margin_hist, rh = m?.roic_hist, P = (h) => `第 ${Math.round(h.pct * 100)} 百分位`;
+  const covered = new Set();
+  if (nh && rh && nh.pct >= 0.8 && rh.pct <= 0.2) {
+    covered.add("nm").add("roic");
+    out.push({ star: true, level: "medium", kind: "derived", target: "val-card",
+      text: `净利润率处于自身近 5 年高位（${pct(nh.now, 1)}，${P(nh)}），ROIC 却在低位（${pct(rh.now, 1)}，${P(rh)}）：赚钱能力没变差，是投入资本扩张得更快（大规模资本开支或并购）——这些投资几年后能否把 ROIC 拉回来，是判断它值不值这个估值的关键。` });
+  }
+  const cyc = v.cyclicality?.tier;
+  if (nh && rh && nh.pct >= 0.85 && rh.pct >= 0.85 && (cyc === "strong" || cyc === "medium")) {
+    covered.add("nm").add("roic");
+    out.push({ star: true, level: "medium", kind: "derived", target: "val-card",
+      text: `净利润率（${pct(nh.now, 1)}）与 ROIC（${pct(rh.now, 1)}）都在自身近 5 年最高附近，而这是一只${cyc === "strong" ? "强" : "中等"}周期股：盈利可能接近景气高点，此时 P/E 看起来最低，反而要小心周期回落。` });
+  }
+  const nT = m?.net_margin_ttm?.at(-1), oT = m?.op_margin_ttm?.at(-1);
+  if (isNum(nT) && isNum(oT) && Math.abs(nT - oT) >= 0.15) {
+    covered.add("nm");
+    out.push({ star: true, level: "medium", kind: "fact", target: "val-card",
+      text: `近 4 季净利润率 ${pct(nT, 1)}，营业利润率 ${pct(oT, 1)}，相差 ${Math.abs((nT - oT) * 100).toFixed(0)} 个百分点：净利润含大额${nT < oT ? "一次性损失（如资产减值、可转债 / 投资的公允价值变动）" : "一次性收益（如出售资产、投资收益、税收利益）"}，判断经营情况以营业利润率为准，P/E 也会因此失真。` });
+  }
+  for (const [h, name, key] of [[nh, "净利润率（近 4 季）", "nm"], [rh, "ROIC（近 4 季）", "roic"]]) {
+    if (!h || covered.has(key) || (h.pct < 0.85 && h.pct > 0.15)) continue;
     const hi = h.pct >= 0.85;
     out.push({ level: hi ? "good" : "medium", kind: "derived", target: "val-card",
       text: `${name} ${pct(h.now, 1)}，处于自身近 ${h.years} 年的第 ${Math.round(h.pct * 100)} 百分位（中位数 ${pct(h.median, 1)}）：${hi ? "盈利能力接近自己的历史高位——强周期股要留意这可能是景气高点" : "盈利能力处于自己的历史低位——看是周期低谷、一次性因素，还是竞争力在下降"}。` });
@@ -317,6 +337,12 @@ function valuationCard(s) {
   const rank = (h) => (h ? `近 ${h.years} 年第 ${Math.round(h.pct * 100)} 百分位` : "");
   const lastP = v.margins?.periods?.at(-1);
   const stale = (h) => (h?.end && lastP && h.end < lastP ? `，截至 ${h.end}` : "");
+  // 同行分位：同行与关键指标相同（按业务标签）；悬停列出各家最新值
+  const peerTxt = (p) => {
+    if (!p) return "";
+    const list = p.peers.map(([t, x, e]) => `${t === s.ticker ? "▶ " : ""}${t} ${pct(x, 1)}${e ? `（${e}）` : ""}`).join("\n");
+    return `<br><span class="peer-rank" title="${esc(`同行：${p.basis}\n${list}`)}">同行第 ${p.rank} / ${p.n}（中位 ${pct(p.median, 1)}）</span>`;
+  };
   const hints = valuationHints(v);
   const panels = valPanels(v);
   const def = !v.pe?.base || v.cyclicality?.tier === "strong" ? "ps" : "pe";
@@ -332,9 +358,9 @@ function valuationCard(s) {
       ${kpi("市销率 P/S", num(v.ps_hist?.now ?? v.ps, 1), v.ps_hist ? rank(v.ps_hist) : "按过去 12 个月收入")}
       ${kpi("FCF 收益率", v.fcf_hist ? pct(v.fcf_hist.now, 1) : "–", v.fcf_hist ? `${rank(v.fcf_hist)}（越高越便宜）` : "")}
       ${kpi("PEG", num(v.peg, 2), "市盈率 ÷ 盈利增速；约 1 为合理")}
-      ${kpi("净利润率（近 4 季）", v.margins?.net_margin_hist ? pct(v.margins.net_margin_hist.now, 1) : "–", v.margins?.net_margin_hist ? rank(v.margins.net_margin_hist) + stale(v.margins.net_margin_hist) : "")}
+      ${kpi("净利润率（近 4 季）", v.margins?.net_margin_hist ? pct(v.margins.net_margin_hist.now, 1) : "–", v.margins?.net_margin_hist ? rank(v.margins.net_margin_hist) + stale(v.margins.net_margin_hist) + peerTxt(v.margins.peer?.net_margin) : "")}
       ${kpi("ROIC（近 4 季）", v.margins?.roic_hist ? pct(v.margins.roic_hist.now, 1) : v.margins?.roic_na ? "不适用" : "–",
-        v.margins?.roic_hist ? rank(v.margins.roic_hist) + stale(v.margins.roic_hist) + (v.margins.roic_basis === "pretax" ? "（用税前利润近似）" : "") : esc(v.margins?.roic_na || ""))}
+        v.margins?.roic_hist ? rank(v.margins.roic_hist) + stale(v.margins.roic_hist) + (v.margins.roic_basis === "pretax" ? "（用税前利润近似）" : "") + peerTxt(v.margins.peer?.roic) : esc(v.margins?.roic_na || ""))}
     </div>
     ${hints.length ? `<div class="warn-box">${hints.map((h) => `<p>💡 ${esc(h)}</p>`).join("")}</div>` : ""}
     ${v.lag_note ? `<p class="muted">⏳ ${esc(v.lag_note)}。</p>` : ""}
