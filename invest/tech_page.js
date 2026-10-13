@@ -135,14 +135,23 @@ function drawTechTimeline(d, ts) {
     ],
   });
   const info = byId("tk-tl-info");
+  // 悬停只更新信息栏；点击左侧技术名才进入该技术（此前悬停与点击共用同一处理函数，鼠标经过技术名就会跳转）
   const show = (p) => {
-    if (p.componentType === "yAxis") { const t = ts.find((x) => x.name === p.value); if (t) location.hash = `#/tech/${t.id}`; return; }
+    if (p.componentType === "yAxis") {
+      info.classList.remove("muted");
+      info.innerHTML = `点击「${esc(p.value)}」进入该技术的页面`;
+      return;
+    }
     const x = p.data;
     if (!x) return;
     info.classList.remove("muted");
     info.innerHTML = x.m ? `<b>${esc(x.t.name)}</b> · ${techSignalHtml(x.m, x.n)}` : `<b>${esc(x.t.name)}</b> · ${esc(x.r.name)}：${esc(x.r.first)} → ${x.r.status === "ongoing" ? "至今仍紧缺" : esc(x.r.last)}`;
   };
-  ch?.on("mouseover", show); ch?.on("click", show);
+  ch?.on("mouseover", show);
+  ch?.on("click", (p) => {
+    if (p.componentType === "yAxis") { const t = ts.find((x) => x.name === p.value); if (t) location.hash = `#/tech/${t.id}`; return; }
+    show(p);
+  });
 }
 
 function techKindLegend() {
