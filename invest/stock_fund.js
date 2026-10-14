@@ -370,7 +370,7 @@ function fcfTip(week, upd, yPts, yNow) {
   let t = "";
   if (u) t += `🔄 FCF 更新：${esc(u.day)}（${esc(u.period)} 季度财报 ${esc(u.filed)} 提交 SEC），近 4 季 FCF <b>${usdB(u.fcf)}</b>${isNum(u.chg) ? `（${pct(u.chg, 0, true)}）` : ""}<br>`;
   if (p) t += `◆ Yahoo 现金流量表（${FCF_KIND[p.kind]}，期末 ${esc(p.period)}）<b>${pct(p.yahoo, 2)}</b>，SEC 同期 ${pct(p.sec, 2)}<br>`;
-  if (yNow && isNum(yNow.yahoo_info)) t += `▲ Yahoo 汇总页 freeCashflow <b>${pct(yNow.yahoo_info, 2)}</b>（网站其他地方的“当前值”用它）<br>`;
+  if (yNow && isNum(yNow.yahoo_info)) t += `▲ Yahoo 汇总页 freeCashflow <b>${pct(yNow.yahoo_info, 2)}</b>（不同口径，仅供对比）<br>`;
   return t;
 }
 function fcfSourceNote(fh) {
@@ -389,7 +389,7 @@ function fcfSourceNote(fh) {
     <div class="table-wrap"><table><thead><tr><th>口径</th><th>期末</th><th>SEC FCF</th><th>Yahoo FCF</th><th>差异</th><th>经营现金流 SEC / Yahoo</th><th>资本支出 SEC / Yahoo</th></tr></thead><tbody>
     ${rows.map((r) => `<tr><td>${FCF_KIND[r.kind]}</td><td>${esc(r.period)}</td>${cell(r.sec)}${cell(r.yahoo)}<td class="num ${Math.abs(r.diff ?? 0) >= 0.05 ? "neg" : ""}">${isNum(r.diff) ? (Math.sign(r.sec) !== Math.sign(r.yahoo) ? "正负相反" : pct(r.diff, 1, true)) : "–"}</td><td class="num">${usdB(r.s_ocf)} / ${usdB(r.y_ocf)}</td><td class="num">${usdB(r.s_capex)} / ${usdB(r.y_capex)}</td></tr>`).join("")}
     </tbody></table></div>
-    <p class="muted">SEC 列 = 当期财报首次提交的数值（之后的重述不改写过去，回测不会提前用到信息）；Yahoo 列 = Yahoo 现金流量表，通常是最新（可能重述后）的数值，只提供近 5 个季度和近 4 个财年。Yahoo 汇总页的 freeCashflow 是 Yahoo 另外算的“杠杆自由现金流”（扣除利息等），和现金流量表的“经营现金流 − 资本支出”不是一个口径，常常相差很大。差异超过 5% 标红。</p></details>`;
+    <p class="muted">SEC 列 = 当期财报首次提交的数值（之后的重述不改写过去，回测不会提前用到信息）；Yahoo 列 = Yahoo 现金流量表，通常是最新（可能重述后）的数值，只提供近 5 个季度和近 4 个财年。Yahoo 汇总页的 freeCashflow 是 Yahoo 另外算的“杠杆自由现金流”（扣除利息等），和现金流量表的“经营现金流 − 资本支出”不是一个口径，常常相差很大（2026-10-14 起网站已不用它）。差异超过 5% 标红。</p></details>`;
 }
 // 多栏图包含哪些栏（只放有数据的）
 const VAL_PANEL_H = { px: 130, dec: 110, pe: 105, ps: 105, mg: 95, roic: 90, fcf: 95 };
@@ -747,7 +747,7 @@ const METRIC_DEFS = {
   pb: { name: "市净率 P/B", value: ["低（科技）/ 中（银行）", "对银行、保险等资产型公司是核心估值指标；对科技公司意义很小（价值主要在无形资产）。"], fmt: "x", better: "low", def: "股价 ÷ 每股净资产（账面价值）。",
     read: "对银行、保险等资产型公司最有意义（JPM、BRK-B）；科技公司的价值主要不在账面资产，市净率普遍很高。",
     use: "银行股市净率显著低于同行且 ROE 不差，常被视为便宜；同时看资产质量。" },
-  fcf_yield: { name: "自由现金流收益率", value: ["中–高", "用真金白银而非会计利润衡量估值，较难被粉饰；资本开支周期（如 AI 数据中心投入）会让它短期失真。"], fmt: "pct", better: "high", def: "过去 12 个月自由现金流 ÷ 总市值（市盈率倒过来、但用现金而非会计利润）。",
+  fcf_yield: { name: "自由现金流收益率", value: ["中–高", "用真金白银而非会计利润衡量估值，较难被粉饰；资本开支周期（如 AI 数据中心投入）会让它短期失真。"], fmt: "pct", better: "high", def: "过去 12 个月自由现金流 ÷ 总市值（市盈率倒过来、但用现金而非会计利润）。自由现金流 = 经营现金流 − 资本支出：美国公司用 SEC 季度财报（与下方估值历史同一口径），外国公司用 Yahoo 现金流量表；银行 / 保险不适用。",
     read: "高于国债利率较多，说明以现金回报衡量估值不贵；为负说明公司还在“烧钱”。",
     use: "与市盈率交叉验证：利润高但自由现金流很低，要留意应收账款、存货或资本开支是否大增。" },
   op_leverage: { name: "经营杠杆", value: ["中–高", "决定财报季的风险：杠杆高的公司收入稍有放缓，利润就会大幅下滑，“不及预期”时跌得更狠；对周期股尤其重要。"], fmt: "num1", better: null,
