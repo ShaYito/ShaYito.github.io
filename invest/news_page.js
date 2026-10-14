@@ -154,11 +154,14 @@ function newsItems(recs, digest, week) {
     for (const e of rec.events || []) {
       const comps = (e.direct_impacts || []).map((d) => ({ t: d.node, dir: d.direction }));
       for (const t of e.tickers || []) if (!comps.some((c) => c.t === t)) comps.push({ t, dir: null });
+      for (const c of comps) if ((e.privates || []).includes(c.t)) c.priv = true;
+      for (const t of e.privates || []) if (!comps.some((c) => c.t === t)) comps.push({ t, dir: null, priv: true });
       out.push({ kind: "deep", id: e.event_id, date: rec.date, title: e.headline, dir: overallDirection(e), type: e.event_type, ...fromSources(e.sources, idx), companies: comps, raw: e, importance: e.importance || 0 });
     }
     for (const b of rec.briefs || []) {
       out.push({ kind: "brief", id: b.event_id, date: rec.date, title: b.text, dir: sentDir(b.sentiment), type: b.event_type, ...fromSources(b.sources, idx),
-        companies: (b.tickers || []).map((t) => ({ t, dir: sentDir(b.sentiment) })), raw: b, importance: 0 });
+        companies: (b.tickers || []).map((t) => ({ t, dir: sentDir(b.sentiment) }))
+          .concat((b.privates || []).map((t) => ({ t, dir: sentDir(b.sentiment), priv: true }))), raw: b, importance: 0 });
     }
   }
   for (const e of digest?.events || []) {
@@ -185,6 +188,8 @@ function itemMatches(it, q, ticker, held) {
 }
 
 function companyChip(c, held) {
+  // 未上市公司（M58）：链接到“未上市”页面（id = 公司名小写）
+  if (c.priv) return `<a class="ctag ${c.dir || ""}" href="#/private/${esc(c.t.toLowerCase())}" title="${esc(`${c.t} · 未上市${c.dir ? ` · ${DIR_ZH[c.dir]}` : ""}`)}">${esc(c.t)}</a>`;
   const name = META.names_zh?.[c.t] || "";
   return `<a class="ctag ${c.dir || ""} ${held.has(c.t) ? "held" : ""}" href="#/stock/${esc(c.t)}" title="${esc(`${c.t} ${name}${c.dir ? ` · ${DIR_ZH[c.dir]}` : ""}${held.has(c.t) ? " · 持仓" : ""}`)}">${held.has(c.t) ? "● " : ""}${esc(c.t)}</a>`;
 }

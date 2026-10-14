@@ -36,7 +36,7 @@ const REL_ZH = { supplier: "上游供应商", customer: "下游客户", competit
   investor: "股东", holding: "持股对象", industry: "行业层面" };
 const EVENT_ZH = { earnings: "财报", guidance: "业绩指引", regulation_export: "监管/出口管制", m_and_a: "并购",
   product: "产品发布", legal: "诉讼/法律", analyst: "分析师评级", macro: "宏观", other: "其他" };
-const PRIORITY_ZH = { holding: "持仓", planned: "计划买入", related: "持仓相关", watchlist: "关注列表", other: "其他" };
+const PRIORITY_ZH = { holding: "持仓", planned: "计划买入", related: "持仓相关", watchlist: "关注列表", private: "未上市", other: "其他" };
 // 事件标签：按本机实际持仓 / 计划重新判断（旧存档中的“持仓”标签按系统建议配置，M43 起不再使用）
 function eventPriority(e) {
   const ts = e.tickers || [];
@@ -44,7 +44,8 @@ function eventPriority(e) {
   if (ts.some((t) => isHeld(t))) return "holding";
   if (ts.some((t) => isPlanned(t))) return "planned";
   if (ts.some((t) => isRelated(t))) return "related";
-  return ts.some((t) => META.universe.find((u) => u.ticker === t)?.watchlist) ? "watchlist" : "other";
+  if (ts.some((t) => META.universe.find((u) => u.ticker === t)?.watchlist)) return "watchlist";
+  return (e.privates || []).length ? "private" : "other";
 }
 const TIER_ZH = { gemini: "Gemini", groq: "Groq", rule: "规则降级", extractive: "标题摘录" };
 
