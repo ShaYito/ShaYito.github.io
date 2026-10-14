@@ -301,7 +301,7 @@ const VAL_GUIDE = [
   ]],
   ["自由现金流收益率 FCF yield", "= 近 4 季（经营现金流 − 资本支出）÷ 市值，最贴近“这家公司每年实际能拿回多少现金”，适合成熟公司（如 AAPL、MSFT、COST）。越高越便宜。资本支出大的公司（如正在大建 AI 数据中心的 AMZN、ORCL）会骤降甚至为负——这本身是有用的信息（现金在投入未来），但不能简单理解为“变贵了”。", [
     "方向与前两个相反：曲线越高越便宜，高于灰色带 = 比自身历史便宜。",
-    "上升有两种来源：现金流增加（好）或股价下跌（要分辨是不是价值陷阱）——下一张“FCF 收益率上升期”卡片把两者拆开了，回测显示前者（A 类）之后 1–3 个月明显好于后者（B 类）。",
+    "上升有两种来源：现金流增加（好）或股价下跌（要分辨是不是价值陷阱）——下一张“FCF 收益率上升期”卡片把两者拆开了，回测显示前者（A 类）之后 1–3 个月平均好于后者（B 类），但差异不大、也不是每段时间都成立。",
     "单季大幅下降先看资本支出是否在增加（估值栏提示“FCF 被资本支出压低”）：投资驱动的下降与经营恶化含义完全不同。",
   ]],
 ];
@@ -1042,6 +1042,15 @@ function phaseVerdict(p, t) {
   if (p.stage === "见顶回落") return `${esc(t)} 的 FCF 收益率<b>刚从上升期的高点回落</b>（已比近 ${p.window} 周最高点低 ${pct(p.off_high, 0)}），${k ? `此前的上升属于 <b>${k[0]} 类（${k[1]}）</b>` : "此前处于上升期"}。${why}。`;
   return `${esc(t)} 的 FCF 收益率处于<b>${esc(p.stage)}</b>，属于 <b>${k[0]} 类（${k[1]}）</b>：${why}。`;
 }
+// A / B 类差异的可靠程度（按回测数字判断，2026-10-14 新口径重跑后证据变弱，不再写死“有参考价值”）
+function phaseAbVerdict(b) {
+  const ab = b?.h13?.ab, h = b?.ab_halves || [];
+  if (!ab || ab.mean <= 0) return "类型（A / B）没有显示出差异";
+  const halves = h.length === 2 && h.every((x) => x.mean > 0 && x.t >= 1.5);
+  if (ab.t >= 2 && halves) return "类型对 1–3 个月有参考价值";
+  if (ab.t >= 1.5) return "类型对 1–3 个月有一定参考价值，但不稳定";
+  return "类型（A / B）的差异不显著";
+}
 // 回测结论（web_data/fcf_phase_backtest_themes.json 中与当前窗口相同的一组，建站时附在 p.backtest）
 function phaseBacktest(p) {
   const b = p.backtest;
@@ -1050,13 +1059,13 @@ function phaseBacktest(p) {
   const yr = (d) => String(d || "").slice(0, 4);
   return `<div class="ph-bt"><b>历史回测怎么说</b> <span class="muted">（${yr(b.period?.[0])}–${yr(b.period?.[1])} 年，选股池及同行业 ${b.tested} 只，每周只用当时的数据判定；收益为相对同期全部股票平均的超额）</span><ul>
     <li><b>阶段只作描述参考</b>：之后 3 个月，上升期比非上升期 ${f(b.h13.rising)}，“接近高点”比“上升中段” ${f(b.h13.near)}，“见顶回落”比非上升期 ${f(b.h13.off)}，都没有稳定差异。</li>
-    <li><b>类型对 1–3 个月有参考价值</b>：上升期内 A 类之后 3 个月比 B 类 ${f(b.h13.ab)}${b.ab_halves?.length === 2 ? `，前后两段时间分别 ${b.ab_halves.map(f).join("、")}` : ""}；B 类本身之后 3 个月 ${f(b.h13.b)}，偏向“价值陷阱”。</li>
+    <li><b>${phaseAbVerdict(b)}</b>：上升期内 A 类之后 3 个月比 B 类 ${f(b.h13.ab)}${b.ab_halves?.length === 2 ? `，前后两段时间分别 ${b.ab_halves.map(f).join("、")}` : ""}；B 类本身之后 3 个月 ${f(b.h13.b)}，偏向“价值陷阱”。</li>
     <li><b>不能预测一周涨跌</b>：之后 1 周，上升期比非上升期 ${f(b.h1.rising)}，A 类比 B 类 ${f(b.h1.ab)}；“上升中段”的股票下一周跑赢平均的比例约 ${pct(b.h1.hit, 0)}，接近抛硬币。</li></ul>
     <p class="muted">t 的绝对值 ≥ 2 才算统计上比较可靠。股票池来自现在仍上市的公司（结果偏乐观）；同时比较了多种窗口与分组，单个显著结果也可能是偶然。</p></div>`;
 }
 function phaseCard(s) {
   const p = s.fcf_phase;
-  const head = `<h3>FCF 收益率上升期（只和自身历史比）${badge("derived")}<span class="chip" title="已用选股池及同行业股票的历史数据回测：阶段只作描述，类型（A / B）对 1–3 个月有参考价值">已回测</span></h3>`;
+  const head = `<h3>FCF 收益率上升期（只和自身历史比）${badge("derived")}<span class="chip" title="已用选股池及同行业股票的历史数据回测：阶段只作描述；${esc(p?.backtest ? phaseAbVerdict(p.backtest) : "类型（A / B）见卡片内回测结论")}">已回测</span></h3>`;
   if (!p) return `<section class="card" id="phase-card">${head}${empty("暂无数据：缺少 FCF 收益率历史（外国公司只有年报且涉及外币 / ADR 口径；银行、保险不适用；或 SEC 数据不足）")}</section>`;
   if (p.status !== "ok") return `<section class="card" id="phase-card">${head}${empty(`${p.status}：${p.reason}`)}</section>`;
   const cur = PHASE_STAGES.findIndex(([n]) => n === p.stage);
@@ -1086,7 +1095,7 @@ function phaseCard(s) {
       <li><b>只和自己比</b>：不看收益率高低，也不和别的公司比；“高位”指在这只股票自己近 5 年历史中的百分位 ≥ 70%。</li>
       <li><b>上升期</b>：近 ${p.window} 周收益率上升，且上升强度 ≥ 0.5（同样上升 20%，对平时很平稳的股票是更强的信号）。</li>
       <li><b>阶段</b>：自身百分位 &lt; 70% 为早期；≥ 70% 为中段；≥ 70% 且近 ${p.short} 周的上升速度不到近 ${p.window} 周平均的一半、离近 ${p.window} 周最高点 ≤ 5% 为“接近高点”；从上升期的高点回落 ≥ 10% 为“见顶回落”。</li>
-      <li><b>怎么用</b>：重点看类型而不是阶段。A 类（现金流在增长）之后 1–3 个月平均好于 B 类；B 类（只是股价跌）要先用辅助检查排除价值陷阱。阶段只说明收益率走到了哪里，回测中对之后的涨跌没有稳定的预测力。</li>
+      <li><b>怎么用</b>：重点看类型而不是阶段。A 类（现金流在增长）之后 1–3 个月平均略好于 B 类（证据偏弱，见上方回测）；B 类（只是股价跌）要先用辅助检查排除价值陷阱。阶段只说明收益率走到了哪里，回测中对之后的涨跌没有稳定的预测力。</li>
       <li><b>无前视</b>：图中每一周的底色都只用当时已披露的财报与当时的价格判定，可以直接对照判定之后股价怎么走。</li>
       <li><b>局限</b>：① 每股 FCF 只在交 10-Q / 10-K 后更新，两次财报之间收益率的变化全部来自股价，所以它不适合预测一周内的涨跌，更适合 1–3 个月；② “接近高点”只能事后确认，这里是估计，可能减速后再加速；③ 强周期股的收益率高点常出现在景气顶部；④ 回测见上方“历史回测怎么说”，判定窗口 ${p.window} / ${p.short} 周是据此选定的（同时比较过 26 / 8、52 / 13 周）。</li></ul></details></section>`;
 }
