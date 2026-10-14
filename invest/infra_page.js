@@ -9,7 +9,8 @@ const IF_DIR = { raise: "上调", cut: "下调", maintain: "维持", initial: "�
 const IF_DEAL_KINDS = new Set(["cloud", "compute", "datacenter"]);
 const ifB = (v, d = 1) => (isNum(v) ? `${v < 0 ? "−" : ""}$${num(Math.abs(v) / 1e9, Math.abs(v) >= 1e11 ? 0 : d)}B` : "–");
 const ifLast = (arr) => { for (let i = (arr || []).length - 1; i >= 0; i--) if (isNum(arr[i])) return [arr[i], i]; return [null, -1]; };
-const ifColor = (i) => palette()[i % palette().length];
+const IF_EXTRA_COLORS = ["#8c6d31", "#17becf", "#7f7f7f"]; // 调色板只有 8 色：第 9 家起用这些
+const ifColor = (i) => (i < palette().length ? palette()[i] : IF_EXTRA_COLORS[(i - palette().length) % IF_EXTRA_COLORS.length]);
 let IF_DATA = null;
 async function ifData() {
   if (!IF_DATA) IF_DATA = await load("ai_infra.json").catch(() => null);
@@ -21,14 +22,15 @@ const IF_HOWTO = [
   "资本支出 = 现金购买的固定资产（服务器、数据中心建筑与设备）+ 新增融资租赁资产。微软、甲骨文有大量数据中心以融资租赁方式取得，不计入现金资本支出，只看现金部分会低估。经营租赁（如租用的数据中心）另列，不计入。",
   "各公司财年不同，图上按季度末所在的日历季度对齐（如甲骨文截至 8 月 31 日的季度算作第三季度）。“近 4 季”= 最近 4 个季度合计，同比 = 与一年前的近 4 季合计相比。",
   "资本支出指引、积压订单、AI 收入是 AI 从财报前后的新闻标题中提取的：每条都附原标题，金额必须出现在标题中，但 AI 仍可能把期间或口径弄错，以原文为准。",
+  "数据中心项目与电力合同：每天从新闻标题中提取（2024 年起回溯），同一项目的后续报道会合并；有 2 家以上不同媒体报道的自动通过，其余标“待审核”，可在明细表中点“通过 / 拒绝”。已通过的项目出现新的建设状态、容量、金额时先记为“待确认的更新”。审核按钮使用“我的持仓 → 同步设置”里的 GitHub token。",
 ];
 
 PAGES.infra = async () => {
   const d = await ifData();
-  if (!d) { app().innerHTML = `<h2>AI 基础设施</h2>${card("AI 基础设施", empty("数据尚未生成"))}`; return; }
+  if (!d) { app().innerHTML = `<h2>基建</h2>${card("AI 基础设施", empty("数据尚未生成"))}`; return; }
   const pv = await load("private_cos.json").catch(() => null);
   const cos = d.companies;
-  app().innerHTML = `<h2>AI 基础设施 <span class="muted">${cos.length} 家公司 + 需求方 · SEC 数据截至 ${esc(d.asof)}</span></h2>
+  app().innerHTML = `<h2>基建 <span class="muted">AI 基础设施 · ${cos.length} 家公司 + 需求方 · SEC 数据截至 ${esc(d.asof)}</span></h2>
     ${howto(IF_HOWTO)}
     <section class="card" id="if-sum"><h3>一览 ${badge("fact")}${badge("derived")}</h3>${ifSummary(d)}</section>
     <section class="card"><h3>资本支出（含融资租赁） ${badge("fact")}</h3>
@@ -49,6 +51,8 @@ PAGES.infra = async () => {
       ${chartDiv("c-if-bs")}
       <p class="muted small" id="if-bs-note"></p></section>
     <section class="card" id="if-guide"><h3>资本支出指引、积压订单与 AI 收入 ${badge("fact")}${badge("model")}</h3>${ifGuideHtml(d, cos)}</section>
+    ${ifProjectsHtml(d)}
+    ${ifPowerHtml(d)}
     <section class="card"><h3>需求方：OpenAI / Anthropic 的算力合同 ${badge("fact")}</h3>${ifDemandHtml(d, pv, cos)}</section>
     <section class="card"><h3>说明与局限</h3><ul>${ifNotes(cos).map((x) => `<li>${x}</li>`).join("")}</ul></section>`;
   drawIfCapex(cos, "q");
@@ -57,6 +61,7 @@ PAGES.infra = async () => {
   segBind("if-int-mode", (m) => drawIfIntensity(cos, m));
   drawIfReturn(cos); drawIfDna(cos);
   drawIfBs(cos, "rpo"); drawIfGuide(d, cos);
+  ifDrawProjects(d, cos); ifBindReview();
   segBind("if-bs-mode", (m) => drawIfBs(cos, m));
 };
 function segBind(id, fn) {
@@ -228,7 +233,8 @@ function ifNotes(cos) {
   return [...out,
     "数据用各公司最新报告的数值（含重述）；季度值缺失时由累计值相减推出（如第四季度 = 全年 − 前三季）。",
     "云业务收入用各公司分业务披露（见个股页“分业务收入”），微软“服务器与云”包含 Azure 以外的服务器产品；营业利润分部的口径更宽（如微软“智能云”、甲骨文“云与软件”）。",
-    "第二步（项目地图、电力合同）与第三步（供应商关系网络）尚未完成。"];
+    "数据中心项目与电力合同由 AI 从新闻标题提取：容量、金额、合同年限必须出现在引用的标题中，地点只保留标题中出现的部分；有 2 家以上不同媒体报道的自动通过，其余等你审核。标题常写“最多”“计划”，以原文为准。",
+    "第三步（供应商关系网络）尚未完成。"];
 }
 
 // 个股页卡片：这几家公司显示 AI 基础设施的关键数字
@@ -246,4 +252,170 @@ async function fillInfraCard(t) {
     占经营现金流 <b>${pct(v("capex_to_ocf"), 0)}</b>，近 4 季 FCF <b class="${cls(v("fcf_ttm"))}">${ifB(v("fcf_ttm"))}</b>${isNum(rpo) ? `；未履约合同 <b>${ifB(rpo, 0)}</b>（${esc(c.cq[ri])}）` : ""}${isNum(ifLast(s.cloud_rev_yoy)[0]) ? `；云业务收入同比 <b>${pct(ifLast(s.cloud_rev_yoy)[0], 0, true)}</b>` : ""}。</p>
     ${g ? `<p>最新资本支出指引（${esc(g.earnings)} 财报）：${esc(g.period)} <b>${ifRange(g)}</b>${IF_DIR[g.direction] ? `，${IF_DIR[g.direction]}` : ""}。<span class="muted small">AI 从新闻标题提取</span></p>` : ""}
     <p><a href="#/infra">查看 AI 基础设施页面（与其他公司对比）→</a></p>`;
+}
+
+// ---------------- 第二步（M61b）：数据中心项目与电力合同 ----------------
+const IF_STATUS = { announced: "已宣布", under_construction: "在建", operational: "已投产", paused: "暂停", cancelled: "取消", unknown: "未说明" };
+const IF_POWER = { nuclear_existing: "核电（现有电站）", nuclear_restart: "核电（重启）", smr: "小型模块堆 / 先进核能", gas: "天然气", renewables: "风电 / 光伏",
+  geothermal: "地热", fuel_cell: "燃料电池", storage: "储能", other: "其他" };
+const IF_REVIEW = { candidate: "待审核", approved: "已通过", rejected: "已拒绝" };
+const IF_PRIV = { openai: "OpenAI", anthropic: "Anthropic" };
+const ifWho = (k) => IF_PRIV[k] || k;
+const ifMw = (v) => (isNum(v) ? (v >= 1000 ? `${num(v / 1000, v % 1000 ? 1 : 0)} GW` : `${num(v, 0)} MW`) : "–");
+const ifBn = (v) => (isNum(v) ? `$${num(v, v < 10 ? 1 : 0)}B` : "–");
+const ifYear = (s) => (String(s || "").match(/20\d\d/) || [null])[0];
+function ifCoKeys(d, cos) { return [...cos.map((c) => c.ticker), ...(d.demand || [])]; }
+function ifCoColor(d, cos, k) { return ifColor(ifCoKeys(d, cos).indexOf(k)); }
+function ifSrc(ev) {
+  return (ev || []).slice(-3).reverse().map((e) => `<a href="${esc(e.url)}" target="_blank" rel="noopener" title="${esc(e.date)} ${esc(e.title)}">${esc(e.publisher || "来源")}</a>`).join(" · ");
+}
+function ifBtns(r) {
+  const b = (a, t, c = "ghost") => `<button type="button" class="${c}" data-ifrev="${esc(r.id)}" data-act="${a}">${t}</button>`;
+  const main = r.status === "candidate" ? `${b("approve", "通过", "primary")} ${b("reject", "拒绝")}` : r.status === "approved" ? b("revoke", "撤销") : b("revoke", "恢复为待审核");
+  return `${main}${r.pending ? ` ${b("apply", "采用更新", "primary")} ${b("discard", "放弃更新")}` : ""}`;
+}
+function ifPendingText(r) {
+  if (!r.pending) return "";
+  const f = { build_status: (v) => IF_STATUS[v] || v, capacity_mw: ifMw, investment_b: ifBn, amount_b: ifBn, online: (v) => v, term_years: (v) => `${v} 年` };
+  const lab = { build_status: "建设状态", capacity_mw: "容量", investment_b: "投资", amount_b: "金额", online: "投产", term_years: "年限" };
+  return `<div class="warn-box small">待确认的更新：${Object.entries(r.pending).map(([k, v]) => `${lab[k] || k} ${esc((f[k] || String)(r[k] ?? "–"))} → <b>${esc((f[k] || String)(v))}</b>`).join("；")}（${esc(r.pending_text || "")}，${ifSrc(r.pending_evidence)}）</div>`;
+}
+function ifProjectsHtml(d) {
+  const P = d.projects?.projects || [];
+  if (!P.length) return `<section class="card"><h3>数据中心项目 ${badge("fact")}${badge("model")}</h3>${empty("尚未生成（run_ai_infra.py projects 每天运行）")}</section>`;
+  const live = P.filter((r) => r.status !== "rejected");
+  const nCand = live.filter((r) => r.status === "candidate" || r.pending).length;
+  return `<section class="card" id="if-dc"><h3>数据中心项目 ${badge("fact")}${badge("model")}<span class="muted" style="font-weight:400"> ${live.filter((r) => r.status === "approved").length} 个已通过 · 待处理 ${nCand} 个 · 截至 ${esc(d.projects.asof || "–")}</span></h3>
+    <div class="row"><label><input type="checkbox" id="if-show-cand"> 地图与统计也显示待审核的</label></div>
+    <div id="if-map" style="height:440px;border-radius:8px"></div>
+    <p class="muted small">圆圈大小 = 容量（未披露容量的画成小点），实心 = 在建 / 已投产，空心 = 已宣布，灰色 = 暂停 / 取消。地点只精确到新闻标题中出现的一级（州 / 省时画在其中心）。底图 © OpenStreetMap。</p>
+    ${chartDiv("c-if-online")}
+    <p class="muted small">已披露容量的项目按预计投产年份统计（“未说明”= 标题中没有投产时间）。同一园区分期建设时，新闻里的容量常是规划总量。</p>
+    <div id="if-dc-sum"></div>
+    <details class="howto"><summary>项目明细（${live.length}）</summary><div id="if-dc-table"></div></details></section>`;
+}
+function ifPowerHtml(d) {
+  const W = d.projects?.power || [];
+  if (!W.length) return "";
+  const live = W.filter((r) => r.status !== "rejected");
+  return `<section class="card" id="if-pw"><h3>电力合同 ${badge("fact")}${badge("model")}<span class="muted" style="font-weight:400"> ${live.filter((r) => r.status === "approved").length} 份已通过 · 待处理 ${live.filter((r) => r.status === "candidate" || r.pending).length} 份</span></h3>
+    ${chartDiv("c-if-power")}
+    <p class="muted small">各公司作为买方签的电力合同容量（MW，按电源类型堆叠；只统计已通过、且标题中有容量的）。核电与小型模块堆多为长期协议，投产在 2028 年以后。</p>
+    <details class="howto"><summary>合同明细（${live.length}）</summary><div id="if-pw-table"></div></details></section>`;
+}
+// 统计与地图：已通过（可选含待审核）；跨公司的同一项目（dup_of）只算一次
+function ifShown(list) { const cand = byId("if-show-cand")?.checked; return list.filter((r) => !r.dup_of && (r.status === "approved" || (cand && r.status === "candidate"))); }
+function ifDrawProjects(d, cos) {
+  const P = (d.projects?.projects || []).filter((r) => r.status !== "rejected"), W = (d.projects?.power || []).filter((r) => r.status !== "rejected");
+  const keys = ifCoKeys(d, cos);
+  const redraw = () => { ifMap(d, cos, ifShown(P)); ifOnline(d, cos, ifShown(P)); ifDcSummary(d, cos, ifShown(P)); };
+  if (P.length) {
+    byId("if-show-cand").onchange = redraw;
+    redraw();
+    byId("if-dc-table").innerHTML = ifTable(P, keys, "project");
+  }
+  if (W.length) { ifPowerChart(d, cos, W.filter((r) => r.status === "approved")); byId("if-pw-table").innerHTML = ifTable(W, keys, "power"); }
+}
+function ifTable(list, keys, kind) {
+  const rows = [...list].sort((a, b) => keys.indexOf(a.company) - keys.indexOf(b.company) || (b.first_seen || "").localeCompare(a.first_seen || ""));
+  const head = kind === "project"
+    ? "<th>公司</th><th>项目 / 地点</th><th>建设状态</th><th class=\"num\">容量</th><th class=\"num\">投资</th><th>预计投产</th><th>说明与来源</th><th>审核</th>"
+    : "<th>买方</th><th>供电方</th><th>电源</th><th class=\"num\">容量</th><th class=\"num\">年限</th><th>开始</th><th>说明与来源</th><th>审核</th>";
+  const tk = (t) => (META.universe.some((u) => u.ticker === t) ? `<a href="#/stock/${esc(t)}"><b>${esc(t)}</b></a>` : `<b>${esc(t)}</b>`);
+  const body = rows.map((r) => {
+    const mid = kind === "project"
+      ? `<td>${esc(r.name || "")}${r.name && r.location ? "<br>" : ""}<span class="muted">${esc(r.location || "")}</span></td><td>${IF_STATUS[r.build_status] || ""}</td>
+        <td class="num">${ifMw(r.capacity_mw)}</td><td class="num">${ifBn(r.investment_b)}</td><td>${esc(r.online || "–")}</td>`
+      : `<td>${esc(r.seller)}${r.seller_ticker ? ` ${tk(r.seller_ticker)}` : ""}<div class="muted small">${esc(r.location || "")}</div></td><td>${IF_POWER[r.kind] || r.kind}</td>
+        <td class="num">${ifMw(r.capacity_mw)}</td><td class="num">${isNum(r.term_years) ? `${num(r.term_years, 0)} 年` : "–"}</td><td>${esc(r.start || "–")}</td>`;
+    return `<tr class="${r.status === "candidate" ? "muted-row" : ""}"><td>${IF_PRIV[r.company] ? `<a href="#/private/${esc(r.company)}"><b>${esc(ifWho(r.company))}</b></a>` : tk(r.company)}</td>${mid}
+      <td class="wrap small">${esc(r.text || "")}${r.dup_of ? `<div class="muted">与 ${esc(r.dup_of)} 是同一项目（统计只算一次）</div>` : ""}<div class="muted">首次报道 ${esc(r.first_seen || "–")} · ${ifSrc(r.evidence)}</div>${ifPendingText(r)}</td>
+      <td class="small">${IF_REVIEW[r.status]}${r.approved_by === "auto" ? "（自动）" : r.approved_by === "user" ? "（你审核）" : ""}<div class="if-rev">${ifBtns(r)}</div></td></tr>`;
+  }).join("");
+  return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function ifMap(d, cos, list) {
+  const el = byId("if-map");
+  if (!el) return;
+  const pts = list.filter((r) => Array.isArray(r.latlon));
+  const draw = () => {
+    if (el._map) { el._map.remove(); el._map = null; }
+    const map = L.map(el, { scrollWheelZoom: false, worldCopyJump: true, minZoom: 2 });
+    el._map = map;
+    // OpenStreetMap 标准瓦片（免费，需署名；CARTO 免费底图已改为需要 API key）；深色模式用滤镜压暗
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap contributors", maxZoom: 12, className: isDark() ? "if-tiles-dark" : "" }).addTo(map);
+    pts.forEach((r) => {
+      const st = r.build_status, color = ["paused", "cancelled"].includes(st) ? "#999" : ifCoColor(d, cos, r.company);
+      const rad = isNum(r.capacity_mw) ? Math.max(5, Math.sqrt(r.capacity_mw) / 1.6) : 4;
+      const solid = ["under_construction", "operational"].includes(st);
+      L.circleMarker(r.latlon, { radius: rad, color, weight: 2, fillColor: color, fillOpacity: solid ? 0.55 : 0.08, dashArray: r.status === "candidate" ? "3 3" : null })
+        .bindPopup(`<b>${esc(ifWho(r.company))}</b> ${esc(r.name || "")}<br>${esc(r.location || "")}<br>${IF_STATUS[st] || ""} · ${ifMw(r.capacity_mw)} · ${ifBn(r.investment_b)}${r.online ? ` · 预计 ${esc(r.online)}` : ""}<br>${esc(r.text || "")}<br>${ifSrc(r.evidence)}${r.status === "candidate" ? "<br><i>待审核</i>" : ""}`)
+        .addTo(map);
+    });
+    map.setView([38.5, -96], 4); // 默认美国本土（大部分项目在这里），可缩小看其他国家
+    const abroad = pts.filter((r) => !(r.latlon[0] > 24 && r.latlon[0] < 50 && r.latlon[1] > -125 && r.latlon[1] < -66)).length;
+    if (abroad) L.control.attribution({ prefix: false, position: "bottomleft" }).addAttribution(`美国以外 ${abroad} 个项目：缩小地图查看`).addTo(map);
+  };
+  if (window.L) draw();
+  else {
+    if (!document.getElementById("leaflet-css")) {
+      const c = document.createElement("link"); c.id = "leaflet-css"; c.rel = "stylesheet"; c.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(c);
+    }
+    const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+    sc.onload = draw; sc.onerror = () => { el.innerHTML = empty("地图库加载失败（需要访问 cdn.jsdelivr.net）"); };
+    document.head.appendChild(sc);
+  }
+}
+function ifOnline(d, cos, list) {
+  const el = byId("c-if-online");
+  if (!el) return;
+  const withMw = list.filter((r) => isNum(r.capacity_mw) && !["cancelled"].includes(r.build_status));
+  const yrs = [...new Set(withMw.map((r) => ifYear(r.online) || "未说明"))].sort((a, b) => (a === "未说明") - (b === "未说明") || a.localeCompare(b));
+  const keys = ifCoKeys(d, cos).filter((k) => withMw.some((r) => r.company === k));
+  echarts.getInstanceByDom(el)?.dispose();
+  mkChart(el, { legend: { top: 0 }, grid: { left: 60, right: 20, top: 36, bottom: 30 }, xAxis: { type: "category", data: yrs },
+    yAxis: { type: "value", axisLabel: { formatter: (x) => `${x / 1000} GW` } },
+    series: keys.map((k) => ({ name: ifWho(k), type: "bar", stack: "mw", color: ifCoColor(d, cos, k),
+      data: yrs.map((y) => withMw.filter((r) => r.company === k && (ifYear(r.online) || "未说明") === y).reduce((a, r) => a + r.capacity_mw, 0) || null) })),
+    tooltip: { trigger: "axis", valueFormatter: (x) => ifMw(x) } });
+}
+function ifDcSummary(d, cos, list) {
+  const el = byId("if-dc-sum");
+  if (!el) return;
+  const keys = ifCoKeys(d, cos).filter((k) => list.some((r) => r.company === k));
+  const sum = (xs, f) => xs.reduce((a, r) => a + (isNum(r[f]) ? r[f] : 0), 0);
+  el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>公司</th><th class="num">项目数</th><th class="num">已披露容量合计</th><th class="num">已披露投资合计</th><th class="num">在建 / 已投产</th></tr></thead><tbody>
+    ${keys.map((k) => { const xs = list.filter((r) => r.company === k); return `<tr><td><b>${esc(ifWho(k))}</b></td><td class="num">${xs.length}</td><td class="num">${ifMw(sum(xs, "capacity_mw") || null)}</td><td class="num">${ifBn(sum(xs, "investment_b") || null)}</td><td class="num">${xs.filter((r) => ["under_construction", "operational"].includes(r.build_status)).length}</td></tr>`; }).join("")}
+    </tbody></table></div><p class="muted small">合计只含标题中披露了数字的项目，未披露的不计入；不同报道的口径（规划总量 / 首期）可能不同。</p>`;
+}
+function ifPowerChart(d, cos, list) {
+  const el = byId("c-if-power");
+  if (!el) return;
+  const xs = list.filter((r) => isNum(r.capacity_mw));
+  const keys = ifCoKeys(d, cos).filter((k) => xs.some((r) => r.company === k));
+  const kinds = Object.keys(IF_POWER).filter((k) => xs.some((r) => r.kind === k));
+  const col = { nuclear_existing: "#4a3aa7", nuclear_restart: "#7c5cff", smr: "#b39cff", gas: "#eb6834", renewables: "#1baf7a", geothermal: "#a0522d", fuel_cell: "#2a78d6", storage: "#eda100", other: "#999" };
+  mkChart(el, { legend: { top: 0 }, grid: { left: 60, right: 20, top: 36, bottom: 30 }, xAxis: { type: "category", data: keys.map(ifWho) },
+    yAxis: { type: "value", axisLabel: { formatter: (x) => `${x / 1000} GW` } },
+    series: kinds.map((k) => ({ name: IF_POWER[k], type: "bar", stack: "pw", color: col[k], data: keys.map((c) => xs.filter((r) => r.company === c && r.kind === k).reduce((a, r) => a + r.capacity_mw, 0) || null) })),
+    tooltip: { trigger: "axis", valueFormatter: (x) => ifMw(x) } });
+}
+function ifBindReview() {
+  document.querySelectorAll("[data-ifrev]").forEach((b) => (b.onclick = async () => {
+    const box = b.parentElement;
+    const say = (t, c = "muted") => { box.innerHTML = `<span class="${c}">${esc(t)}</span>`; };
+    let token = ""; try { token = localStorage.getItem(TOKEN_KEY) || ""; } catch { /* 忽略 */ }
+    if (!token) { alert("请先在“我的持仓 → 持仓 → 同步设置”中保存 GitHub token（只需 Actions 写权限）"); return; }
+    const act = { approve: "通过", reject: "拒绝", revoke: "撤销", apply: "采用更新", discard: "放弃更新" }[b.dataset.act];
+    if (!confirm(`确认${act}：${b.dataset.ifrev}？`)) return;
+    box.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+    try {
+      const resp = await fetch(`https://api.github.com/repos/${META.github_repo}/actions/workflows/review-infra.yml/dispatches`, {
+        method: "POST", headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" },
+        body: JSON.stringify({ ref: "main", inputs: { id: b.dataset.ifrev, action: b.dataset.act } }),
+      });
+      if (resp.status === 204) say(`✓ 已提交${act}；约 2–3 分钟后网页更新`, "pos");
+      else say(`提交失败：HTTP ${resp.status}${resp.status === 401 || resp.status === 403 ? "（token 无效或缺少 Actions 写权限）" : ""}`, "neg");
+    } catch (e) { say(`提交失败：${e.message}`, "neg"); }
+  }));
 }
