@@ -350,6 +350,7 @@ function valuationCard(s) {
       <div class="row"><span class="muted">时间范围（与价格走势图同步；也可拖动图下方的时间轴）</span><div class="seg" id="val-per">${K_PERIODS.map(([k, , n]) => `<button type="button" data-v="${k}" class="${k === kPeriod() ? "on" : ""}">${n}</button>`).join("")}</div></div>
       <p id="decomp-sum" class="ph-verdict" data-def="${def}"></p>
       <div id="c-val-all" class="chart" style="height:${valHeight(panels)}px"></div>
+      ${v.fcf_hist ? fcfSourceNote(v.fcf_hist) : ""}
       ${missing.length ? `<p class="muted">暂无：${esc(missing.join("；"))}。</p>` : ""}
       <details class="val-guide"><summary><b>怎么读这张图</b>（各栏含义、灰色带与标记）</summary><ul>${valReadGuide(v, panels).map((t) => `<li>${t}</li>`).join("")}</ul></details>`
       : empty("暂无估值历史（外国公司只有年报且涉及外币 / ADR 口径，或数据不足）")}
@@ -360,6 +361,35 @@ function valuationCard(s) {
       <ul>${MARGIN_GUIDE.items.map(([n, t]) => `<li><b>${n}</b>：${esc(t)}</li>`).join("")}</ul>
       <p class="muted">另外：公司业务转型后（如英伟达从游戏显卡转向数据中心、西部数据分拆闪迪后），过去几年的估值区间可比性会变差。</p></div></details>
     <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && peCap(v.pe) ? `；市盈率栏纵轴截断在 ${num(peCap(v.pe), 0)}（历史最高 ${num(v.pe.max, 0)}，出现在盈利接近 0 的时期；悬停可看真实值）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率、ROIC 来自 SEC 财报（公司合计，按季末后约 45 天、即财报公布时计入；用最新报告的数据，含重述）；净利润率、ROIC 的分位 = 当前值在自身近 5 年各季中的百分位（与 P/E、P/S 一致）；ROIC 的税率取近 4 季实际税率（限 0–35%，税前亏损时按 21%），没有营业利润科目的公司用税前利润近似。股价为实际价格（不含分红）。${v.targets_hist ? `机构目标价历史由 yfinance 逐机构评级记录重建（每周取各机构近 ${v.targets_hist.window_days} 天内最新的目标价，按拆股换算到当前口径；同时有效不足 ${v.targets_hist.min_firms} 家的时期不画），记录覆盖不如付费数据全；最新重建中位数 ${num(v.targets_hist.median.filter(isNum).at(-1), 2)} 与 Yahoo 共识中位数 ${num(v.targets_hist.yahoo_median, 2)} 相差 ${pct(v.targets_hist.diff, 0, true)}。` : ""}</p></section>`;
+}
+// FCF 栏辅助：金额（美元）、悬停文字、SEC 与 Yahoo 对比表（2026-10-14）
+const usdB = (x) => (!isNum(x) ? "–" : Math.abs(x) >= 1e9 ? `${x < 0 ? "−" : ""}$${num(Math.abs(x) / 1e9, 2)}B` : `${x < 0 ? "−" : ""}$${num(Math.abs(x) / 1e6, 0)}M`);
+const FCF_KIND = { q: "单季", ttm: "近 4 季", fy: "财年" };
+function fcfTip(week, upd, yPts, yNow) {
+  const u = upd[week], p = yPts[week];
+  let t = "";
+  if (u) t += `🔄 FCF 更新：${esc(u.day)}（${esc(u.period)} 季度财报 ${esc(u.filed)} 提交 SEC），近 4 季 FCF <b>${usdB(u.fcf)}</b>${isNum(u.chg) ? `（${pct(u.chg, 0, true)}）` : ""}<br>`;
+  if (p) t += `◆ Yahoo 现金流量表（${FCF_KIND[p.kind]}，期末 ${esc(p.period)}）<b>${pct(p.yahoo, 2)}</b>，SEC 同期 ${pct(p.sec, 2)}<br>`;
+  if (yNow && isNum(yNow.yahoo_info)) t += `▲ Yahoo 汇总页 freeCashflow <b>${pct(yNow.yahoo_info, 2)}</b>（网站其他地方的“当前值”用它）<br>`;
+  return t;
+}
+function fcfSourceNote(fh) {
+  const y = fh.yahoo, n = y?.now || {}, upd = fh.updates || [];
+  const last = upd.at(-1);
+  const head = `<p class="muted">FCF 收益率栏：竖虚线是近 4 季 FCF 的更新时间（财报提交 SEC 后的第一个交易日起生效，图上共 ${upd.length} 次${last ? `，最近一次 ${esc(last.day)}，对应 ${esc(last.period)} 季度` : ""}），两次更新之间的变化全部来自股价。${y ? "◆ 为 Yahoo 现金流量表同一期的 FCF 收益率（市值统一用 SEC 口径，只比较 FCF 本身），▲ 为 Yahoo 汇总页的 freeCashflow。" : ""}</p>`;
+  if (!y) return head;
+  const d = (a, b) => (isNum(a) && isNum(b) && b !== 0 ? pct(a / b - 1, 0, true) : "–");
+  const cur = [isNum(n.sec) && `SEC（${esc(n.sec_period)} 为止近 4 季）<b>${pct(n.sec, 2)}</b>，FCF ${usdB(n.sec_fcf)}`,
+    isNum(n.yahoo_stmt) && `Yahoo 现金流量表（${esc(n.yahoo_stmt_period)} 为止近 4 季）<b>${pct(n.yahoo_stmt, 2)}</b>，FCF ${usdB(n.yahoo_stmt_fcf)}，与 SEC 差 ${d(n.yahoo_stmt_fcf, n.sec_fcf)}`,
+    isNum(n.yahoo_info) && `Yahoo 汇总页 freeCashflow <b>${pct(n.yahoo_info, 2)}</b>，FCF ${usdB(n.yahoo_info_fcf)}，与 SEC 差 ${d(n.yahoo_info_fcf, n.sec_fcf)}`].filter(Boolean);
+  const rows = [...y.rows].sort((a, b) => (a.kind === b.kind ? b.period.localeCompare(a.period) : "q ttm fy".indexOf(a.kind) - "q ttm fy".indexOf(b.kind)));
+  const cell = (x) => `<td class="num">${usdB(x)}</td>`;
+  return `${head}<details class="val-guide"><summary><b>SEC 与 Yahoo 的 FCF 差多少</b>（${y.rows.length} 期对比）</summary>
+    <ul>${cur.map((c) => `<li>${c}</li>`).join("")}</ul>
+    <div class="table-wrap"><table><thead><tr><th>口径</th><th>期末</th><th>SEC FCF</th><th>Yahoo FCF</th><th>差异</th><th>经营现金流 SEC / Yahoo</th><th>资本支出 SEC / Yahoo</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td>${FCF_KIND[r.kind]}</td><td>${esc(r.period)}</td>${cell(r.sec)}${cell(r.yahoo)}<td class="num ${Math.abs(r.diff ?? 0) >= 0.05 ? "neg" : ""}">${isNum(r.diff) ? (Math.sign(r.sec) !== Math.sign(r.yahoo) ? "正负相反" : pct(r.diff, 1, true)) : "–"}</td><td class="num">${usdB(r.s_ocf)} / ${usdB(r.y_ocf)}</td><td class="num">${usdB(r.s_capex)} / ${usdB(r.y_capex)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <p class="muted">SEC 列 = 当期财报首次提交的数值（之后的重述不改写过去，回测不会提前用到信息）；Yahoo 列 = Yahoo 现金流量表，通常是最新（可能重述后）的数值，只提供近 5 个季度和近 4 个财年。Yahoo 汇总页的 freeCashflow 是 Yahoo 另外算的“杠杆自由现金流”（扣除利息等），和现金流量表的“经营现金流 − 资本支出”不是一个口径，常常相差很大。差异超过 5% 标红。</p></details>`;
 }
 // 多栏图包含哪些栏（只放有数据的）
 const VAL_PANEL_H = { px: 130, dec: 110, pe: 105, ps: 105, mg: 95, roic: 90, fcf: 95 };
@@ -527,7 +557,19 @@ function drawValuation(s, k) {
     if (m?.net_margin_ttm) series.push(line("mg", "净利润率（近 4 季）", nm, C.nm, { step: "end", lineStyle: { width: 1.6, type: "dashed" } }));
   }
   if (gi("roic") >= 0) series.push(line("roic", "ROIC", roic, C.roic, { step: "end", lineStyle: { width: 2 }, ...band(m.roic_hist, (x) => pct(x, 0)) }));
-  if (gi("fcf") >= 0) series.push(line("fcf", "FCF 收益率", fcf, C.fcf, band(v.fcf_hist, (x) => pct(x, 1))));
+  // FCF 栏：竖虚线 = 近 4 季 FCF 更新（财报提交 SEC 后的第一个交易日）；◆ = 同一期 Yahoo 现金流量表的 FCF；▲ = 网站当前值用的 Yahoo 汇总页 freeCashflow
+  const fh = v.fcf_hist, upd = Object.fromEntries((fh?.updates || []).map((u) => [u.week, u]));
+  const yPts = Object.fromEntries((fh?.yahoo?.points || []).map((p) => [p.week, p]));
+  const yNow = fh?.yahoo?.now || {};
+  const yStmt = axis.map((d) => yPts[d]?.yahoo ?? null), yInfo = axis.map((_, i) => (i === axis.length - 1 && isNum(yNow.yahoo_info) ? yNow.yahoo_info : null));
+  if (gi("fcf") >= 0) {
+    const b = band(fh, (x) => pct(x, 1));
+    const ul = Object.keys(upd).filter((w) => axis.includes(w)).map((w) => ({ xAxis: w, lineStyle: { color: C.fcf, type: "dotted", opacity: 0.55 }, label: { show: false } }));
+    if (ul.length) b.markLine = { ...(b.markLine || { symbol: "none", silent: true }), data: [...(b.markLine?.data || []), ...ul] };
+    series.push(line("fcf", "FCF 收益率", fcf, C.fcf, b));
+    if (yStmt.some(isNum)) series.push({ name: "Yahoo 现金流量表", type: "scatter", xAxisIndex: gi("fcf"), yAxisIndex: gi("fcf"), data: yStmt, symbol: "diamond", symbolSize: 8, itemStyle: { color: "#d6336c" }, z: 4 });
+    if (yInfo.some(isNum)) series.push({ name: "Yahoo 汇总页", type: "scatter", xAxisIndex: gi("fcf"), yAxisIndex: gi("fcf"), data: yInfo, symbol: "triangle", symbolSize: 9, itemStyle: { color: "#e0a419" }, z: 4 });
+  }
   // 第 ② 栏：自定义矩形（横跨整个季度）
   let quarters = [];
   const decIdx = series.length;
@@ -566,7 +608,7 @@ function drawValuation(s, k) {
     const row = (name, val, f) => (isNum(val) ? `${name} <b>${f(val)}</b><br>` : "");
     const q = qAt(i);
     const qtxt = !q ? "" : q.na ? `${q.q}：亏损或数据缺口，无法拆分<br>` : `${q.q} 股价 <b>${pct(Math.expm1(q.dp), 0, true)}</b> = ${den()} ${pct(Math.expm1(q.db), 0, true)} × ${mul()} ${pct(Math.expm1(q.dm), 0, true)}<br>`;
-    return `${esc(axis[i])}<br>${row("股价", px[i], (x) => num(x, 2))}${qtxt}${row("P/E", pe[i], (x) => num(x, 1))}${row("P/S", ps[i], (x) => num(x, 1))}${row("毛利率", gm[i], (x) => pct(x, 1))}${row("营业利润率", om[i], (x) => pct(x, 1))}${row("净利润率（近 4 季）", nm[i], (x) => pct(x, 1))}${row("ROIC（近 4 季）", roic[i], (x) => pct(x, 1))}${row("FCF 收益率", fcf[i], (x) => pct(x, 2))}${isNum(tMed[i]) ? `目标价中位 <b>${num(tMed[i], 2)}</b>（${tN[i]} 家，25%–75%：${num(tQ25[i], 0)}–${num(tQ75[i], 0)}）<br>` : ""}`;
+    return `${esc(axis[i])}<br>${row("股价", px[i], (x) => num(x, 2))}${qtxt}${row("P/E", pe[i], (x) => num(x, 1))}${row("P/S", ps[i], (x) => num(x, 1))}${row("毛利率", gm[i], (x) => pct(x, 1))}${row("营业利润率", om[i], (x) => pct(x, 1))}${row("净利润率（近 4 季）", nm[i], (x) => pct(x, 1))}${row("ROIC（近 4 季）", roic[i], (x) => pct(x, 1))}${row("FCF 收益率", fcf[i], (x) => pct(x, 2))}${fcfTip(axis[i], upd, yPts, i === axis.length - 1 ? yNow : null)}${isNum(tMed[i]) ? `目标价中位 <b>${num(tMed[i], 2)}</b>（${tN[i]} 家，25%–75%：${num(tQ25[i], 0)}–${num(tQ75[i], 0)}）<br>` : ""}`;
   };
   const chart = mkChart(el, { animation: false, title: titles, grid: grids, xAxis: xAxes, yAxis: yAxes, series, legend: { show: false },
     axisPointer: { link: [{ xAxisIndex: "all" }] }, tooltip: { trigger: "axis", formatter: tip, axisPointer: { type: "line" } },
