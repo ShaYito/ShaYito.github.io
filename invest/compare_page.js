@@ -167,6 +167,7 @@ PAGES.compare = async (r) => {
   byId("cmp-log")?.addEventListener("change", (e) => apply({ log: e.target.checked }));
   if (sel.length >= 2) cmpDraw(st, raw, sel, i0, end, color, apply);
   cmpAllTable(sel);
+  cmpFillFcf().catch((e) => console.error(e));
   cmpCycle(sel, color).catch((e) => console.error(e)); // 不依赖选择：默认显示全部股票
 };
 
@@ -248,6 +249,22 @@ function cmpFmt(v, f) {
   if (f === "fcfstage") return isNum(v) ? FCF_STAGE_ZH[v] : "–";
   if (f === "fcfkind") return isNum(v) ? FCF_KIND_ZH[v] : "–";
   return fmtMetric(v, f);
+}
+// 汇总表的“FCF 收益率上升期”一栏（compare_metrics.json；与个股页卡片同一份数据）
+function fcfPhaseText(r) {
+  if (!r || !isNum(r.fcf_stage_code)) return `<span class="muted" title="缺少 FCF 收益率历史（ETF、银行保险不适用；外国公司只有年报）">–</span>`;
+  const st = r.fcf_stage_code, kind = isNum(r.fcf_kind_code) ? FCF_KIND_ZH[r.fcf_kind_code] : "";
+  const tip = `上升强度 ${isNum(r.fcf_z) ? num(r.fcf_z, 2) : "–"}（≥ 0.5 算上升期）；收益率近 13 周 ${isNum(r.fcf_y_chg) ? pct(r.fcf_y_chg, 1, true) : "–"}；自身近 5 年分位 ${isNum(r.fcf_y_pct) ? pct(r.fcf_y_pct, 0) : "–"}`;
+  const body = st === 0 ? "否" : st === 4 ? `否 · 见顶回落${kind ? ` <span class="muted">（此前 ${esc(kind)}）</span>` : ""}`
+    : `<b>是</b> · ${FCF_STAGE_ZH[st]}${kind ? ` <span class="muted">（${esc(kind)}）</span>` : ""}`;
+  return `<span title="${esc(tip)}">${body}</span>`;
+}
+async function cmpFillFcf() {
+  const cells = document.querySelectorAll(".cmp-fcf");
+  if (!cells.length) return;
+  const data = await load("compare_metrics.json").catch(() => null);
+  const by = Object.fromEntries((data?.rows || []).map((r) => [r.ticker, r]));
+  cells.forEach((c) => (c.innerHTML = fcfPhaseText(by[c.dataset.t])));
 }
 async function cmpAllTable(sel) {
   const host = byId("cmp-all-body");
@@ -332,10 +349,11 @@ function cmpBody(st, raw, sel, i0, end, color, myW) {
         <p class="muted">近 3 年，每周取一个点。线往上 = 两者走得越来越像；往下 = 开始分化。</p></section></div>
 `, summary: `
     <section class="card"><h3>汇总：收益与风险（${esc(CMP_PERIODS.find(([k]) => k === st.p)[2])}）${valueChip("中")}${badge("derived")}</h3><div class="table-wrap"><table>
-      <thead><tr><th>标的</th><th class="num">区间收益</th><th class="num">年化波动</th><th class="num">最大回撤</th><th class="num">Beta（vs SPY）</th><th class="num">与 SPY 相关</th><th class="num">相对基准</th><th class="num">剔除 β 后</th>${myW ? `<th class="num">占你账户</th>` : ""}</tr></thead>
+      <thead><tr><th>标的</th><th class="num">区间收益</th><th class="num">年化波动</th><th class="num">最大回撤</th><th class="num">Beta（vs SPY）</th><th class="num">与 SPY 相关</th><th class="num">相对基准</th><th class="num">剔除 β 后</th><th title="FCF 收益率是否处于上升期、在哪个阶段（只和自身历史比；详见个股页“FCF 收益率上升期”卡片）。括号内为上升来源：A 基本面领先 / B 价格驱动 / C 双降">FCF 收益率上升期</th>${myW ? `<th class="num">占你账户</th>` : ""}</tr></thead>
       <tbody>${sel.map((t) => { const s = stats[t]; return `<tr><td><span class="dot" style="background:${color[t]}"></span><a href="#/stock/${t}"><b>${esc(t)}</b></a> <span class="muted">${esc(META.names_zh?.[t] || (META.etfs || []).find((e) => e.ticker === t)?.name_zh || "")}</span></td>
         ${s ? `<td class="num ${cls(s.ret)}">${pct(s.ret, 1, true)}</td><td class="num">${pct(s.vol, 0)}</td><td class="num neg">${pct(s.mdd, 1)}</td><td class="num">${num(s.beta, 2)}</td><td class="num">${num(s.corr, 2)}</td>
           <td class="num ${cls(relS[t].rel)}" title="相对 ${esc(relS[t].bench)}">${pct(relS[t].rel, 1, true)}${relS[t].bench !== "SPY" ? ` <span class="muted">vs ${esc(relS[t].bench)}</span>` : ""}</td><td class="num ${cls(relS[t].resid)}">${pct(relS[t].resid, 1, true)}</td>` : `<td colspan="7" class="muted">区间内无数据</td>`}
+        <td class="nowrap cmp-fcf" data-t="${esc(t)}"><span class="muted">…</span></td>
         ${myW ? `<td class="num">${myW[t] ? pct(myW[t], 1) : "–"}</td>` : ""}</tr>`; }).join("")}</tbody></table></div></section>` };
 }
 
