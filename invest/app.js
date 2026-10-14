@@ -1205,6 +1205,7 @@ PAGES.stock = async (r) => {
     ${relCard()}${metricsCard(s)}${valuationCard(s)}${phaseCard(s)}
     <section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}
     ${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${segSection(sc, t, "geography")}${segGraphCard(t, graphData)}
+    <section class="card" id="infra-card" data-nav="AI 基础设施" hidden></section>
     <section class="card" id="bn-card" data-nav="相关瓶颈" hidden></section>
     ${insiderCard(s, t)}
     <section class="card" id="sp-card" data-nav="情绪维度" hidden></section>
@@ -1233,6 +1234,7 @@ PAGES.stock = async (r) => {
   fillHealthCard(s, t); fillPeerRadar(t, s.metrics); // 证据型指标（evidence_page.js）；个股体检在“现状与展望”的“逐项证据”里
   bindBriefRefs();
   fillBottleneckCard(t); // 相关瓶颈（bottleneck_page.js）
+  fillInfraCard(t); // AI 基础设施（infra_page.js，M61）
   const bnOv = bnStockOverlay(bnD, t, s, nearest);
   const bnShow = { sig: true, leg: true };
   try { const v = JSON.parse(localStorage.getItem("invest.k.bn") || "null"); if (v) Object.assign(bnShow, v); } catch { /* 忽略 */ }
