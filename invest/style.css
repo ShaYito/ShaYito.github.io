@@ -488,3 +488,4 @@ details.metric-more > summary { cursor: pointer; margin: 10px 0 4px; font-weight
 .more-btn { margin: 6px 0; border: 1px solid var(--grid); background: var(--surface); color: var(--accent); border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
 details.firm-list > summary { cursor: pointer; margin: 8px 0; font-weight: 600; }
 .side-sub { margin: 6px 0 2px 4px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.digest { border-top: 1px solid var(--grid); margin-top: 10px; padding-top: 8px; } .digest h4 { margin: 4px 0 6px; } .digest ul { margin: 4px 0 8px; padding-left: 18px; }
