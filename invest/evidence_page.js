@@ -235,7 +235,8 @@ async function fillPeerRadar(t, m) {
   el.hidden = false;
   el.innerHTML = `<h3>同行对比雷达${blocks.length > 1 ? "（边界情况：按两种主要业务各画一份）" : `（${esc(blocks[0].basis)}，${blocks[0].peers.length} 家同行）`}${badge("derived")}</h3>
     <p class="muted">每个维度是几项指标在选股池 ${rows.length} 只股票中的分位（0–100，越靠外越好；“估值便宜度”越靠外 = 越便宜，亏损公司的估值倍数不参与）。实线 = ${esc(t)}，虚线 = 同行中位数（同行与“关键指标”相同，按主要业务划分）。分位只说明相对位置，选股池整体偏贵或偏好时，50 分也不代表绝对水平。</p>
-    ${blocks.map((b, bi) => `${blocks.length > 1 ? `<h4>${esc(b.basis)}（${b.peers.length} 家：${b.peers.map((p) => esc(p.ticker)).join("、")}）</h4>` : ""}
+    ${blocks.map((b, bi) => `${blocks.length > 1 ? `<h4>${esc(b.basis)}（${b.peers.length} 家）</h4>` : ""}
+    <p class="small">同行：${b.peers.length ? b.peers.map((p) => `<a class="chip" href="#/stock/${esc(p.ticker)}" title="${esc(META.names_zh?.[p.ticker] || "")}">${esc(p.ticker)}${META.names_zh?.[p.ticker] ? ` <span class="muted">${esc(META.names_zh[p.ticker])}</span>` : ""}</a>`).join(" ") : `<span class="muted">无（选股池中没有同类公司）</span>`}</p>
     <div class="grid two"><div>${chartDiv(`c-radar-${bi}`, "tall")}</div>
     <div class="table-wrap"><table><thead><tr><th>维度 / 指标</th><th class="num">数值</th><th class="num">分位</th><th class="num">同行中位</th></tr></thead><tbody>
       ${RADAR_DIMS.map(([k, name, ms]) => `<tr class="hl"><td><b>${name}</b></td><td></td><td class="num"><b>${isNum(sc[t][k]) ? Math.round(sc[t][k]) : "–"}</b></td><td class="num">${isNum(b.med[k]) ? Math.round(b.med[k]) : "–"}</td></tr>
