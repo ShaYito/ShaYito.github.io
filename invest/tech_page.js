@@ -392,6 +392,7 @@ function renderTech(d, t, ts) {
       <div class="tk-chain"><div><span class="muted small">上游</span><br>${esc(t.chain.up)}</div><div class="tk-arrow">→</div><div class="tk-self"><b>${esc(t.name)}</b></div><div class="tk-arrow">→</div><div><span class="muted small">下游</span><br>${esc(t.chain.down)}</div></div>
       <p class="muted small">包含的瓶颈轮次：${t.rounds.map((r) => `${esc(r.name)}（${esc(r.first.slice(0, 7))} 起，${TK_STATUS[r.status]}）`).join("；")}</p></section>
     ${techIndustryHtml(t)}
+    <section class="card" id="tk-chips" data-nav="财报披露" hidden></section>
     <section class="card" id="tk-infra" hidden></section>
     ${techComboHtml(t, v)}
     ${techSmallHtml(t)}
@@ -399,6 +400,7 @@ function renderTech(d, t, ts) {
     ${techNewsHtml(t)}`;
   drawTechIndustry(t);
   if (!t.history) fillTechInfra(t); // 大公司投入（infra_tech_page.js，M61c）
+  fillTechChips(t); // 财报披露的 AI 收入与指引（chip_page.js，M62；目前只有 AI 加速芯片）
   drawTechCombo(d, t, v);
   drawTechSmall(d, t, v);
   const redraw = () => {

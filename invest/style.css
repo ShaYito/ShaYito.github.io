@@ -511,3 +511,6 @@ tr.muted-row td { opacity: 0.78; }
 .it-list li { margin: 6px 0; line-height: 1.45; }
 .it-co { margin: 6px 0; }
 .it-co summary { cursor: pointer; }
+
+/* 技术页 AI 加速芯片：财报披露（M62）——提示框中的原文引用 */
+.tip-quote { max-width: 360px; white-space: normal; font-size: 11px; color: var(--muted); margin-top: 4px; }
