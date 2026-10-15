@@ -105,8 +105,9 @@ function compareSidebar(sel) {
   const item = (t, name, color) => `<label class="cmp-item ${on.has(t) ? "on" : ""}"><input type="checkbox" data-t="${t}" ${on.has(t) ? "checked" : ""} ${!on.has(t) && sel.length >= CMP_MAX ? "disabled" : ""}>
     <span class="nm"><span class="dot" style="background:${color}"></span>${isHeld(t) ? "● " : isPlanned(t) ? "◇ " : ""}<b>${esc(t)}</b>${esc(name || "")}</span><span class="tgs">${tagChips(t)}</span></label>`;
   const etfs = (META.etfs || []).map((x) => item(x.ticker, x.name_zh, BENCH_GRAY())).join("");
-  const groups = META.themes.map((th) => `<h4>${esc(th.name)}</h4>${sidebarOrder(META.universe.filter((u) => u.theme === th.key)).map((u) => item(u.ticker, u.name_zh, themeColor(th.key))).join("")}`).join("");
-  return `<aside class="stock-side" aria-label="选择对比的股票"><a href="#/stock">← 返回个股</a><h4>ETF / 大类资产</h4>${etfs}${groups}</aside>`;
+  const groups = sideThemeGroups(() => true, (u, th) => item(u.ticker, u.name_zh, themeColor(th.key))); // 与个股页同样的分类与子分类
+  const at = sideEtfAt();
+  return `<aside class="stock-side" aria-label="选择对比的股票"><a href="#/stock">← 返回个股</a>${groups.slice(0, at).join("")}<h4>ETF / 大类资产</h4>${etfs}${groups.slice(at).join("")}</aside>`;
 }
 
 PAGES.compare = async (r) => {

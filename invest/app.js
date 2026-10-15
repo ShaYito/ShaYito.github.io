@@ -1069,24 +1069,33 @@ document.addEventListener("click", (e) => {
   e.preventDefault();
   setSideTag(b.dataset.tag);
 });
+// 侧边栏按主题分组（个股页与多股对比共用）：大主题（≥ SUB_MIN 只）在主题下按主要业务（第一个标签）再分子分类（2026-10-13 用户要求）
+// pass(ticker) 过滤；row(u, th) 生成一行；flat = 不分子分类（如按标签筛选时）；返回每个主题一段 HTML
+function sideThemeGroups(pass, row, flat = false) {
+  const SUB_MIN = 8;
+  const tagOrder = Object.keys(META.tags || {});
+  return META.themes.map((th) => {
+    const list = META.universe.filter((u) => u.theme === th.key && pass(u.ticker));
+    if (!list.length) return "";
+    if (list.length < SUB_MIN || flat) return `<h4>${esc(th.name)}</h4>${sidebarOrder(list).map((u) => row(u, th)).join("")}`;
+    const by = {};
+    for (const u of list) (by[tagsOf(u.ticker)[0] || "_"] ||= []).push(u);
+    const keys = Object.keys(by).sort((a, b) => (tagOrder.indexOf(a) + 1 || 999) - (tagOrder.indexOf(b) + 1 || 999));
+    return `<h4>${esc(th.name)}</h4>${keys.map((k) => `<h5 class="side-sub">${esc(META.tags?.[k]?.name?.replace(/（.*$/, "") || "其他")}</h5>${sidebarOrder(by[k]).map((u) => row(u, th)).join("")}`).join("")}`;
+  });
+}
+// ETF / 大类资产放在 META.sidebar_etf_before 主题之前（config web.sidebar_etf_before；空或找不到 = 最上面）
+function sideEtfAt() {
+  const at = META.themes.findIndex((th) => th.key === META.sidebar_etf_before);
+  return at < 0 ? 0 : at;
+}
 function stockSidebar(cur) {
   SIDE_CUR = cur;
   const ft = sideTag();
   const pass = (t) => !ft || tagsOf(t).includes(ft);
-  // 大主题（≥ SUB_MIN 只）在主题下按主要业务（第一个标签）再分子分类（2026-10-13 用户要求）
-  const SUB_MIN = 8;
-  const tagOrder = Object.keys(META.tags || {});
-  const groups = META.themes.map((th) => {
-    const list = META.universe.filter((u) => u.theme === th.key && pass(u.ticker));
-    const row = (u) => `<a href="#/stock/${u.ticker}" class="side-item ${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}${(u.tags || []).length ? ` · ${u.tags.map((k) => META.tags?.[k]?.name).filter(Boolean).join(" / ")}` : ""}`)}">
-      <span class="nm ${BN_COVER.has(u.ticker) ? "bn-cover" : ""}"><span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</span><span class="tgs">${tagChips(u.ticker)}</span></a>`;
-    if (!list.length) return "";
-    if (list.length < SUB_MIN || ft) return `<h4>${esc(th.name)}</h4>${sidebarOrder(list).map(row).join("")}`;
-    const by = {};
-    for (const u of list) (by[tagsOf(u.ticker)[0] || "_"] ||= []).push(u);
-    const keys = Object.keys(by).sort((a, b) => (tagOrder.indexOf(a) + 1 || 999) - (tagOrder.indexOf(b) + 1 || 999));
-    return `<h4>${esc(th.name)}</h4>${keys.map((k) => `<h5 class="side-sub">${esc(META.tags?.[k]?.name?.replace(/（.*$/, "") || "其他")}</h5>${sidebarOrder(by[k]).map(row).join("")}`).join("")}`;
-  });
+  const row = (u, th) => `<a href="#/stock/${u.ticker}" class="side-item ${u.ticker === cur ? "on" : ""}" title="${esc(`${u.ticker} ${u.name_zh || ""}${(u.tags || []).length ? ` · ${u.tags.map((k) => META.tags?.[k]?.name).filter(Boolean).join(" / ")}` : ""}`)}">
+    <span class="nm ${BN_COVER.has(u.ticker) ? "bn-cover" : ""}"><span class="dot" style="background:${themeColor(th.key)}"></span>${isHeld(u.ticker) ? "● " : isPlanned(u.ticker) ? "◇ " : ""}<b>${esc(u.ticker)}</b>${esc(u.name_zh || "")}${u.watchlist ? " ★" : ""}</span><span class="tgs">${tagChips(u.ticker)}</span></a>`;
+  const groups = sideThemeGroups(pass, row, !!ft);
   // 按实际持仓时：顶部加“你的持仓”一组
   let mine = "";
   if (holdingsMode() === "mine") {
@@ -1099,10 +1108,8 @@ function stockSidebar(cur) {
   const etfs = (META.etfs || []).map((x) => `<a href="#/stock/${x.ticker}" class="${x.ticker === cur ? "on" : ""}" title="${esc(`${x.ticker} ${x.name_zh}`)}">
     <span class="dot" style="background:${BENCH_GRAY()}"></span>${isHeld(x.ticker) ? "● " : ""}<b>${esc(x.ticker)}</b>${esc(x.name_zh)}</a>`).join("");
   const cmp = `<a href="#/compare${cur ? `?t=${cur}` : ""}" class="cmp-entry" title="勾选多只股票 / ETF，对比走势与相关性">📊 多股对比</a>${BN_COVER.size ? '<p class="muted small bn-legend"><span class="bn-cover"><b>紫色</b></span> = 价格图上有 AI 瓶颈信号</p>' : ""}`;
-  // ETF / 大类资产放在 META.sidebar_etf_before 主题之前（config web.sidebar_etf_before；空或找不到 = 最上面）
   const etfHtml = etfs && !ft ? `<h4>ETF / 大类资产</h4>${etfs}` : "";
-  let at = META.themes.findIndex((th) => th.key === META.sidebar_etf_before);
-  if (at < 0) at = 0;
+  const at = sideEtfAt();
   return `<aside class="stock-side" aria-label="选择股票">${cmp}${tagFilterBar()}${ft ? "" : mine}${groups.slice(0, at).join("")}${etfHtml}${groups.slice(at).join("")}</aside>`;
 }
 // K 线价格口径：复权价（默认，含分红再投资，用于各项计算）/ 实际价格（除权不除息，与券商 K 线及你的成本同口径）
