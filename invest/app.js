@@ -230,13 +230,19 @@ function restoreSidebarScroll() {
   else el.querySelector("a.on")?.scrollIntoView({ block: "nearest", inline: "center" }); // 首次进入：滚到当前股票
 }
 // 右侧栏目导航：扫描 .stock-main 中的卡片标题，生成可点击跳转、随滚动高亮的目录（个股 / ETF；多股对比不显示）
-let SEC_SCROLL = null;
+let SEC_SCROLL = null, SEC_OBS = null;
 function buildSectionNav() {
   if (SEC_SCROLL) window.removeEventListener("scroll", SEC_SCROLL);
   SEC_SCROLL = null;
+  SEC_OBS?.disconnect();
+  SEC_OBS = null;
   const layout = document.querySelector(".stock-layout");
   const main = layout?.querySelector(".stock-main");
   if (!main) return;
+  // 异步填充的卡片（情绪、散户、瓶颈、AI 基础设施等）可能在导航生成后才显示 → 卡片显隐变化时重建导航
+  let pend = 0;
+  SEC_OBS = new MutationObserver(() => { clearTimeout(pend); pend = setTimeout(buildSectionNav, 50); });
+  SEC_OBS.observe(main, { attributes: true, attributeFilter: ["hidden"], subtree: true });
   const label = (h) => {
     const c = h.cloneNode(true);
     c.querySelectorAll(".badge, .muted, span").forEach((x) => x.remove());
@@ -1209,7 +1215,7 @@ PAGES.stock = async (r) => {
     <section class="card" id="infra-card" data-nav="AI 基础设施" hidden></section>
     <section class="card" id="bn-card" data-nav="相关瓶颈" hidden></section>
     ${insiderCard(s, t)}
-    <section class="card" id="sp-card" data-nav="情绪维度" hidden></section>
+    <section class="card" id="sp-card" data-nav="新闻情绪" hidden></section>
     <section class="card" id="retail-card" data-nav="散户热度" hidden></section>
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid" data-nav-skip>
