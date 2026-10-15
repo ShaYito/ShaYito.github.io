@@ -76,6 +76,12 @@ tr.hl td, th.hl { background: color-mix(in srgb, var(--accent, #2a78d6) 8%, tran
   background: var(--chip); color: var(--ink-2); }
 .sched.earnings { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
 .sched.fomc, .sched.cpi, .sched.nfp { background: var(--mid); color: var(--ink); }
+.sched.high { background: var(--mid); color: var(--ink); font-weight: 600; }
+.sched.holiday { background: var(--warn-bg); color: var(--warn); }
+.sched.kr_export, .sched.tw_rev, .sched.conf { background: var(--accent); color: #fff; opacity: .85; }
+.sched-card:not(.show-low) .sched-low { display: none; }
+.sched-card:not(.show-low) td > .sched-low + br { display: none; }
+.sched-card h3 button { margin-left: 8px; font-weight: 400; }
 .sched-table td { vertical-align: top; padding: 4px 8px; }
 .nowrap { white-space: nowrap; }
 ul.headlines { padding-left: 0; list-style: none; margin: 0; }

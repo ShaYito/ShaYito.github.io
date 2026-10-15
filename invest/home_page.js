@@ -6,7 +6,9 @@ const HOME_HOWTO = [
   "首页只放[[fact|事实]]与高置信度的信息：你的账户与持仓（由你的交易记录推算）、未来几周的财报 / 除息 / 宏观日程、市场行情，以及最近的新闻。",
   "“持仓走势与成本价”每张小图是一只持仓近 6 个月的实际价格，横线是你的[[avg_cost|平均成本]]：价格在线上方 = 浮盈。",
 ];
-const SCHED_ZH = { earnings: "财报", ex_dividend: "除息", fomc: "FOMC", cpi: "CPI", nfp: "非农", ppi: "PPI", pce: "PCE" };
+const SCHED_ZH = { earnings: "财报", ex_dividend: "除息", fomc: "FOMC", cpi: "CPI", nfp: "非农", ppi: "PPI", pce: "PCE", gdp: "GDP",
+  jolts: "就业", retail: "消费", umich: "信心", claims: "就业", ism: "PMI", minutes: "FOMC", opex: "期权", holiday: "休市", kr_export: "产业", tw_rev: "产业", conf: "大会" };
+const SCHED_LOW_KEY = "invest.sched_low"; // 是否显示次要日程（每周初请失业金、月度期权到期等）
 
 // 当前账本：本机账本优先，否则个人数据包里的账本（只读，不写入本机）
 function currentLedger() {
@@ -42,6 +44,12 @@ PAGES.overview = async () => {
     </div>`;
   if (mine?.book) drawHomeHoldings(mine);
   drawSparks(h);
+  byId("sched-low-btn")?.addEventListener("click", (ev) => {
+    const on = byId("sched-card").classList.toggle("show-low");
+    try { localStorage.setItem(SCHED_LOW_KEY, on ? "1" : "0"); } catch { /* 无存储时只本次生效 */ }
+    const n = document.querySelectorAll("#sched-card span.sched-low").length;
+    ev.target.textContent = on ? "收起次要事件" : `显示次要事件（${n}）`;
+  });
 };
 
 function homeInsights(h, mine, held) {
@@ -140,17 +148,27 @@ function homeSchedule(h, held, watch) {
   const ev = h.schedule || [];
   const mineFirst = held.size > 0;
   const tag = (e) => (e.ticker ? holdChip(e.ticker, held, watch).trim() : "");
-  const show = ev.filter((e) => !e.ticker || held.has(e.ticker) || isPlanned(e.ticker) || watch.has(e.ticker) || e.kind === "earnings");
+  // 除息只列持有 / 计划 / 关注的；财报与宏观、行业事件都列
+  const show = ev.filter((e) => e.kind !== "ex_dividend" || held.has(e.ticker) || isPlanned(e.ticker) || watch.has(e.ticker));
   const byDate = {};
   for (const e of show) (byDate[e.date] ||= []).push(e);
   const wd = (d) => "日一二三四五六"[new Date(`${d}T12:00:00Z`).getUTCDay()];
-  const line = (e) => `<span class="sched ${e.kind}">${esc(SCHED_ZH[e.kind] || e.kind)}</span> ${e.ticker ? `<a href="#/stock/${esc(e.ticker)}"><b>${esc(e.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[e.ticker] || "")}</span>` : esc(e.name)} ${tag(e)}`;
+  const low = (e) => e.tier === "low";
+  const tick = (e) => `<a href="#/stock/${esc(e.ticker)}"><b>${esc(e.ticker)}</b></a>`;
+  const what = (e) => (e.kind === "earnings" || e.kind === "ex_dividend"
+    ? `${tick(e)} <span class="muted">${esc(META.names_zh?.[e.ticker] || "")}</span>`
+    : `${e.tier === "high" ? `<b>${esc(e.name)}</b>` : esc(e.name)}${e.ticker ? ` ${tick(e)}` : ""}`);
+  const line = (e) => `<span class="${low(e) ? "sched-low" : ""}"><span class="sched ${e.kind} ${e.tier || ""}">${esc(SCHED_ZH[e.kind] || e.kind)}</span> ${what(e)}${e.est ? ' <span class="muted small">（预估）</span>' : ""} ${tag(e)}</span>`;
+  const nLow = show.filter(low).length;
   const body = Object.keys(byDate).length
-    ? `<div class="table-wrap"><table class="sched-table"><tbody>${Object.entries(byDate).map(([d, list]) => `<tr><td class="nowrap"><b>${esc(d.slice(5))}</b> <span class="muted">周${wd(d)}</span></td>
-        <td>${list.sort((a, b) => (held.has(b.ticker) ? 1 : 0) - (held.has(a.ticker) ? 1 : 0)).map(line).join("<br>")}</td></tr>`).join("")}</tbody></table></div>`
+    ? `<div class="table-wrap"><table class="sched-table"><tbody>${Object.entries(byDate).map(([d, list]) => `<tr class="${list.every(low) ? "sched-low" : ""}"><td class="nowrap"><b>${esc(d.slice(5))}</b> <span class="muted">周${wd(d)}</span></td>
+        <td>${list.sort((a, b) => (held.has(b.ticker) ? 1 : 0) - (held.has(a.ticker) ? 1 : 0) || (low(a) ? 1 : 0) - (low(b) ? 1 : 0)).map(line).join("<br>")}</td></tr>`).join("")}</tbody></table></div>`
     : empty(`未来 ${h.schedule_days} 天没有相关日程`);
-  return `<section class="card"><h3>近期日程（未来 ${h.schedule_days} 天）${badge("fact")}</h3>${body}
-    <p class="muted">${rich(`财报日来自 yfinance（公司未正式公布前可能是预估日期）；除息日只列已公布的；FOMC 与 CPI / 非农来自美联储与美国劳工统计局官方日历。${mineFirst ? "“持有”按你的账本。" : ""}除息日前一天收盘持有才能拿到这次分红；除息当天股价会扣除分红金额，属于正常现象。`)}</p></section>`;
+  let showLow = false;
+  try { showLow = localStorage.getItem(SCHED_LOW_KEY) === "1"; } catch { /* 无存储时默认收起 */ }
+  const lowBtn = nLow ? `<button type="button" class="ghost small" id="sched-low-btn">${showLow ? "收起次要事件" : `显示次要事件（${nLow}）`}</button>` : "";
+  return `<section class="card sched-card ${showLow ? "show-low" : ""}" id="sched-card"><h3>近期日程（未来 ${h.schedule_days} 天）${badge("fact")} ${lowBtn}</h3>${body}
+    <p class="muted">${rich(`<b>加粗</b> = 对大盘影响最大的事件（FOMC、CPI、非农、PCE、GDP 初值等）；次要事件（每周初请失业金、月度期权到期）默认收起。财报日来自 yfinance（公司未正式公布前可能是预估日期）；除息日只列已公布的且与你相关的；FOMC、CPI / 非农 / PPI / JOLTS、GDP / PCE 来自美联储、美国劳工统计局、经济分析局官方日历，零售销售 / 消费者信心 / 初请失业金来自 FRED 发布日程；标“预估”的是按惯例推算（ISM PMI = 当月第 1 / 3 个交易日，FOMC 纪要 = 决议后 3 周，台积电月营收 = 10 日前，韩国出口 = 每月 1 日）；四巫日为季度期权与期货同日到期、标普指数季度调整生效，收盘前后成交量常放大。${mineFirst ? "“持有”按你的账本。" : ""}除息日前一天收盘持有才能拿到这次分红；除息当天股价会扣除分红金额，属于正常现象。`)}</p></section>`;
 }
 
 // ---------- 市场 ----------
