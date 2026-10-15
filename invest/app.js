@@ -198,6 +198,7 @@ const NAV_GROUPS = {
   market: [["performance", "相对表现"], ["risk", "风险与集中度"]],
   news: [["news", "新闻"], ["macro", "宏观与异动"], ["retail", "散户热度"], ["sentiment", "情绪维度"]],
   chain: [],
+  infra: [["infra", "总览"], ["infra-tech", "按技术"]],
 };
 // M43：系统模型（配置建议 / 评分矩阵 / 信号 × 新闻 / 回测 / 模型说明 / 模拟经营）已停用，旧链接回到总览
 const RETIRED_PAGES = new Set(["lab", "advice", "matrix", "signal-news", "backtest", "model", "sim"]);

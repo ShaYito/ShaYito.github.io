@@ -495,3 +495,13 @@ tr.muted-row td { opacity: 0.78; }
 .if-rev button { padding: 2px 8px; font-size: 12px; }
 #if-map { background: var(--chip); }
 .if-tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9); }
+/* 基建 · 按技术（M61c） */
+#it-tech { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+#it-tech a { padding: 4px 10px; border-radius: 14px; background: var(--chip); color: var(--ink-2); text-decoration: none; font-size: 13px; }
+#it-tech a.on { background: var(--ink); color: var(--page); }
+.it-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 8px 0; }
+.it-dim { border: 1px solid var(--line, #e5e5e5); border-radius: 8px; padding: 8px 10px; }
+.it-list { margin: 6px 0 0; padding-left: 0; list-style: none; }
+.it-list li { margin: 6px 0; line-height: 1.45; }
+.it-co { margin: 6px 0; }
+.it-co summary { cursor: pointer; }

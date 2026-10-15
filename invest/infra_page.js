@@ -32,28 +32,30 @@ PAGES.infra = async () => {
   const cos = d.companies;
   app().innerHTML = `<h2>基建 <span class="muted">AI 基础设施 · ${cos.length} 家公司 + 需求方 · SEC 数据截至 ${esc(d.asof)}</span></h2>
     ${howto(IF_HOWTO)}
+    <section class="card" id="if-key"><h3>要点 ${badge("fact")}${badge("derived")}</h3><ul class="insights-list">${ifKeyPoints(d).map((x) => `<li class="${x[0]}">${x[1]}</li>`).join("")}</ul>
+      <p class="muted small">由下方 SEC 财报数据自动计算（指引一条来自新闻标题）。按技术看各公司向谁买、花多少：<a href="#/infra-tech">基建 · 按技术 →</a></p></section>
     <section class="card" id="if-sum"><h3>一览 ${badge("fact")}${badge("derived")}</h3>${ifSummary(d)}</section>
     <section class="card"><h3>资本支出（含融资租赁） ${badge("fact")}</h3>
       <div class="row"><div class="seg" id="if-capex-mode"><button type="button" data-m="q" class="on">每季</button><button type="button" data-m="ttm">近 4 季合计</button></div></div>
       ${chartDiv("c-if-capex", "tall")}
       <p class="muted small">按日历季度堆叠；悬停看每家的现金资本支出与新增融资租赁。甲骨文财年比其他公司早一个月结束，最近一个季度常常只有它已公布（悬停可见“已公布几家”）。新型云厂商的数字较小，在下方强度图中更容易比较。</p></section>
-    <section class="card"><h3>资本支出强度 ${badge("derived")}</h3>
-      <div class="row"><div class="seg" id="if-int-mode"><button type="button" data-m="capex_to_ocf" class="on">÷ 经营现金流</button><button type="button" data-m="capex_to_rev">÷ 收入</button><button type="button" data-m="fcf_ttm">近 4 季 FCF</button></div></div>
-      ${chartDiv("c-if-int")}
-      <p class="muted small" id="if-int-note"></p></section>
     <section class="card"><h3>花钱与赚钱 ${badge("derived")}</h3>
       ${chartDiv("c-if-ret", "tall")}
       <p class="muted small">横轴 = 资本支出（近 4 季合计）同比，纵轴 = 云业务收入（单季）同比；每家公司画最近 8 个季度的轨迹，大圆点是最新一季。落在对角线右下方 = 花钱增速快于云收入增速。Meta 没有对外出售的云业务，不在图中。云业务口径：微软“服务器与云”、谷歌 Google Cloud、亚马逊 AWS、甲骨文 OCI、Nebius AI 云（年度）、CoreWeave 公司总收入。</p>
       ${chartDiv("c-if-dna")}
       <p class="muted small">折旧（近 4 季合计）同比 vs 收入（近 4 季合计）同比：资本支出会在之后几年变成折旧；折旧增速持续高于收入增速，利润率就会被压低。微软 2025 财年起才在 XBRL 中单独标注折旧，同比要再等几个季度。</p></section>
+    <section class="card"><h3>资本支出强度 ${badge("derived")}</h3>
+      <div class="row"><div class="seg" id="if-int-mode"><button type="button" data-m="capex_to_ocf" class="on">÷ 经营现金流</button><button type="button" data-m="capex_to_rev">÷ 收入</button><button type="button" data-m="fcf_ttm">近 4 季 FCF</button></div></div>
+      ${chartDiv("c-if-int")}
+      <p class="muted small" id="if-int-note"></p></section>
     <section class="card"><h3>未履约合同、资产与债务 ${badge("fact")}</h3>
       <div class="row"><div class="seg" id="if-bs-mode"><button type="button" data-m="rpo" class="on">未履约合同余额</button><button type="button" data-m="ppe">固定资产净值</button><button type="button" data-m="debt">债务（不含租赁）</button><button type="button" data-m="fin_lease_liab">融资租赁负债</button><button type="button" data-m="op_lease_liab">经营租赁负债</button></div></div>
       ${chartDiv("c-if-bs")}
       <p class="muted small" id="if-bs-note"></p></section>
-    <section class="card" id="if-guide"><h3>资本支出指引、积压订单与 AI 收入 ${badge("fact")}${badge("model")}</h3>${ifGuideHtml(d, cos)}</section>
-    ${ifProjectsHtml(d)}
-    ${ifPowerHtml(d)}
     <section class="card"><h3>需求方：OpenAI / Anthropic 的算力合同 ${badge("fact")}</h3>${ifDemandHtml(d, pv, cos)}</section>
+    <section class="card" id="if-guide"><h3>资本支出指引、积压订单与 AI 收入 ${badge("fact")}${badge("model")}</h3>${ifGuideHtml(d, cos)}</section>
+    ${ifPowerHtml(d)}
+    ${ifProjectsHtml(d)}
     <section class="card"><h3>说明与局限</h3><ul>${ifNotes(cos).map((x) => `<li>${x}</li>`).join("")}</ul></section>`;
   drawIfCapex(cos, "q");
   segBind("if-capex-mode", (m) => drawIfCapex(cos, m));
@@ -78,6 +80,27 @@ function ifLatestGuide(d, t) {
 const ifAmt = (v) => num(v, v < 10 ? 1 : 0);
 const ifRange = (x) => (x.upto ? `最多 $${ifAmt(x.high)}B` : x.low === x.high ? `$${ifAmt(x.low)}B` : `$${ifAmt(x.low)}–${ifAmt(x.high)}B`);
 
+// 要点（只用 SEC 数据计算；最后一条来自指引）
+function ifKeyPoints(d) {
+  const cos = d.companies, big = cos.filter((c) => c.role === "hyperscaler");
+  const last = (c, k) => ifLast(c.series[k]);
+  const out = [];
+  const tot = big.reduce((a, c) => a + (last(c, "capex_total_ttm")[0] || 0), 0);
+  const prev = big.reduce((a, c) => { const [v, i] = last(c, "capex_total_ttm"); const y = c.series.capex_ttm_yoy[i]; return a + (isNum(v) && isNum(y) ? v / (1 + y) : 0); }, 0);
+  if (tot) out.push(["info", `5 家大公司近 4 季资本支出（含融资租赁）合计 <b>${ifB(tot, 0)}</b>${prev ? `，一年前约 ${ifB(prev, 0)}（<b class="pos">${pct(tot / prev - 1, 0, true)}</b>）` : ""}。`]);
+  const over = cos.filter((c) => (last(c, "capex_to_ocf")[0] || 0) > 1);
+  if (over.length) out.push(["high", `资本支出已超过经营现金流：${over.map((c) => `${esc(c.ticker)} ${pct(last(c, "capex_to_ocf")[0], 0)}`).join("、")}——差额靠现金储备、发债或租赁。`]);
+  const neg = cos.filter((c) => (last(c, "fcf_ttm")[0] ?? 0) < 0);
+  if (neg.length) out.push(["medium", `近 4 季 FCF 为负：${neg.map((c) => `${esc(c.ticker)} ${ifB(last(c, "fcf_ttm")[0])}`).join("、")}。`]);
+  const rpo = cos.map((c) => [c, last(c, "rpo")[0]]).filter(([, v]) => isNum(v)).sort((a, b) => b[1] - a[1]);
+  if (rpo.length) out.push(["good", `未履约合同余额：${rpo.map(([c, v]) => `${esc(c.ticker)} ${ifB(v, 0)}`).join("、")}（已签、尚未确认为收入；含 OpenAI 等大额长期合同）。`]);
+  const gap = cos.filter((c) => { const a = last(c, "capex_ttm_yoy")[0], b = last(c, "cloud_rev_yoy")[0]; return isNum(a) && isNum(b) && a - b > 0.3; });
+  if (gap.length) out.push(["medium", `资本支出增速明显快于云业务收入增速（差 30 个百分点以上）：${gap.map((c) => `${esc(c.ticker)}（${pct(last(c, "capex_ttm_yoy")[0], 0, true)} vs ${pct(last(c, "cloud_rev_yoy")[0], 0, true)}）`).join("、")}。`]);
+  const yr = String(new Date().getFullYear());
+  const g = big.map((c) => [c, ifLatestGuide(d, c.ticker)]).filter(([, x]) => x && x.period.includes(yr));
+  if (g.length) out.push(["info", `${yr} 年资本支出指引（最新一次）：${g.map(([c, x]) => `${esc(c.ticker)} ${ifRange(x)}`).join("、")}<span class="muted small">（AI 从新闻标题提取）</span>。`]);
+  return out;
+}
 function ifSummary(d) {
   const rows = d.companies.map((c) => {
     const s = c.series, [cap, i] = ifLast(s.capex_total_ttm), g = ifLatestGuide(d, c.ticker);
