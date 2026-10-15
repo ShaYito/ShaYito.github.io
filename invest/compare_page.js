@@ -339,7 +339,9 @@ function cmpBody(st, raw, sel, i0, end, color, myW) {
   const late = sel.filter((t) => stats[t]?.late);
   const pair = st.pair.length === 2 && sel.includes(st.pair[0]) && sel.includes(st.pair[1]) ? st.pair : ok.length ? ok[0].slice(0, 2) : sel.slice(0, 2);
   return { ins: insightBox(ins, 6), trend: `
-    <section class="card"><h3>走势对比（${st.m === "raw" ? "起点 = 100" : `${st.m === "rel" ? "相对" : "剔除 β 后，相对"}${st.b === "theme" ? "各自主题基准" : " SPY"}，区间累计`}）${valueChip("低–中")}${badge("fact")}${badge("derived")}</h3>${chartDiv("c-cmp", "tall")}
+    <section class="card"><h3>走势对比（${st.m === "raw" ? "起点 = 100" : `${st.m === "rel" ? "相对" : "剔除 β 后，相对"}${st.b === "theme" ? "各自主题基准" : " SPY"}，区间累计`}）${valueChip("低–中")}${badge("fact")}${badge("derived")}</h3>
+      <div class="row"><span class="muted">时间</span><div class="seg" id="cmp-tz">${CMP_TZ.map(([k, , n]) => `<button type="button" data-v="${k}">${n}</button>`).join("")}</div><span class="muted" id="cmp-tz-range"></span></div>
+      ${chartDiv("c-cmp", "tall")}<p class="muted">拖动图下方的时间轴（或在图上滚轮缩放）调节区间，各线从区间起点重新归一；上方“区间”同时决定汇总表与本图的初始区间。</p>
       ${st.m !== "raw" ? `<p class="muted">${st.m === "rel" ? "每天的涨跌减去基准涨跌后从区间起点累计：线在 0 以上 = 区间内跑赢基准。" : "每天的涨跌减去 β × 基准涨跌（β 用此前一年日收益估计，不用未来数据）后累计，去掉大盘 / 板块带动的部分，剩下公司自身因素：高 β 股票在牛市里“相对大盘”会显得偏强，这里不会。"}${st.b === "theme" ? "主题基准：每只股票用所属主题的行业 ETF（ETF 用 SPY）。" : ""}读法与局限见个股页“相对大盘走势”。</p>` : ""}
       ${late.length ? `<p class="muted">${late.map((t) => `${t} 从 ${raw.dates[stats[t].late]} 才有数据，从该日起归一。`).join("")}</p>` : ""}</section>
 `, corr: `
@@ -414,36 +416,64 @@ async function cmpCycle(sel, color) {
     series: ser.map((x, i) => (i ? x : { ...x, markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }] } })) });
 }
 
+// 走势对比自带的区间按钮（时间轴可在此基础上拖动微调）
+const CMP_TZ = [["6M", 126, "半年"], ["1Y", 252, "1 年"], ["3Y", 756, "3 年"], ["5Y", 1260, "5 年"], ["ALL", Infinity, "全部"]];
+
 function cmpDraw(st, raw, sel, i0, end, color, apply) {
-  const dates = raw.dates.slice(i0, end + 1);
   const relMode = st.m !== "raw";
-  const series = sel.map((t) => {
+  const N = raw.dates.length;
+  const daily = Object.fromEntries(sel.filter(() => relMode).map((t) => {
+    const d = RelStr.daily(raw.close[t], raw.close[cmpBench(t, st.b, raw)]);
+    return [t, st.m === "rel" ? d.rel : d.resid];
+  }));
+  // 区间 [a, b]：从 a 起重新归一（原始 = 100；相对 = 0%），区间外不画（x 轴始终是全部日期，供时间轴拖动）
+  const build = (a, b) => sel.map((t) => {
     const c = raw.close[t];
+    const data = new Array(N).fill(null);
     if (relMode) {
-      const bt = cmpBench(t, st.b, raw);
-      const d = RelStr.daily(c, raw.close[bt]);
-      const data = RelStr.cum(st.m === "rel" ? d.rel : d.resid, c, i0, end).map((v) => (v == null ? null : +(v * 100).toFixed(2)));
+      RelStr.cum(daily[t], c, a, b).forEach((v, k) => { data[a + k] = v == null ? null : +(v * 100).toFixed(2); });
       return { name: t, type: "line", showSymbol: false, color: color[t], lineStyle: { width: 2 }, data,
         endLabel: { show: true, formatter: (p) => `${t} ${p.value > 0 ? "+" : ""}${num(p.value, 0)}%`, color: css("--ink-2"), fontSize: 11 }, labelLayout: { moveOverlap: "shiftY" } };
     }
-    let b = i0; while (b <= end && c[b] == null) b++;
-    const data = dates.map((_, k) => {
-      const i = i0 + k;
-      if (i < b || c[i] == null) return null;
-      const v = (c[i] / c[b]) * 100;
-      return +v.toFixed(2);
-    });
+    let s0 = a; while (s0 <= b && c[s0] == null) s0++;
+    for (let i = s0; i <= b; i++) if (c[i] != null) data[i] = +((c[i] / c[s0]) * 100).toFixed(2);
     return { name: t, type: "line", showSymbol: false, color: color[t], lineStyle: { width: t === "SPY" ? 1.4 : 2, type: t === "SPY" ? "dashed" : "solid" },
       data, endLabel: { show: true, formatter: (p) => `${t} ${num(p.value, 0)}`, color: css("--ink-2"), fontSize: 11 }, labelLayout: { moveOverlap: "shiftY" } };
   });
-  mkChart(byId("c-cmp"), { tooltip: { trigger: "axis", valueFormatter: (v) => (!isNum(v) ? "–" : relMode ? `${v > 0 ? "+" : ""}${num(v, 1)}%` : `${num(v, 1)}（${pct(v / 100 - 1, 1, true)}）`) },
-    legend: { top: 0 }, grid: { left: 56, right: 90, top: 36, bottom: 30 },
-    xAxis: { type: "category", data: dates, boundaryGap: false },
+  const withMark = (series) => series.map((x, i) => (i ? x : { ...x, markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: relMode ? 0 : 100 }] } }));
+  const tz = byId("cmp-tz");
+  const mark = (a, b) => tz?.querySelectorAll("button").forEach((x) => {
+    const n = CMP_TZ.find(([k]) => k === x.dataset.v)[1];
+    x.classList.toggle("on", b === N - 1 && a === Math.max(0, N - 1 - n));
+  });
+  const ch = mkChart(byId("c-cmp"), { tooltip: { trigger: "axis", valueFormatter: (v) => (!isNum(v) ? "–" : relMode ? `${v > 0 ? "+" : ""}${num(v, 1)}%` : `${num(v, 1)}（${pct(v / 100 - 1, 1, true)}）`) },
+    legend: { top: 0 }, grid: { left: 56, right: 90, top: 36, bottom: 72 },
+    xAxis: { type: "category", data: raw.dates, boundaryGap: false },
     yAxis: relMode ? { type: "value", scale: true, axisLabel: { formatter: (v) => `${v}%` } } : st.log
       ? { type: "log", logBase: 2, min: (v) => v.min * 0.95, max: (v) => v.max * 1.05, axisLabel: { formatter: (v) => num(v, 0), showMinLabel: false, showMaxLabel: false },
           minorTick: { show: true }, minorSplitLine: { show: true, lineStyle: { color: css("--grid"), opacity: 0.5 } } }
       : { type: "value", scale: true },
-    series: series.map((x, i) => (i ? x : { ...x, markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: relMode ? 0 : 100 }] } })) });
+    dataZoom: [{ type: "slider", startValue: i0, endValue: end, bottom: 8, height: 22, showDataShadow: false, brushSelect: false },
+      { type: "inside", startValue: i0, endValue: end }],
+    series: withMark(build(i0, end)) });
+  mark(i0, end);
+  // 拖动时间轴 / 区间按钮：按新的起点重新归一
+  let tmr = 0;
+  const redraw = () => {
+    if (!ch) return;
+    const z = ch.getOption().dataZoom[0];
+    const a = Math.max(0, Math.round(z.startValue)), b = Math.min(N - 1, Math.round(z.endValue));
+    ch.setOption({ series: withMark(build(a, b)) });
+    mark(a, b);
+    const lab = byId("cmp-tz-range");
+    if (lab) lab.textContent = `${raw.dates[a]} ~ ${raw.dates[b]}`;
+  };
+  ch?.on("datazoom", () => { clearTimeout(tmr); tmr = setTimeout(redraw, 60); });
+  tz?.querySelectorAll("button").forEach((x) => (x.onclick = () => {
+    const n = CMP_TZ.find(([k]) => k === x.dataset.v)[1];
+    ch.dispatchAction({ type: "dataZoom", startValue: Math.max(0, N - 1 - n), endValue: N - 1 });
+  }));
+  redraw();
   // 相关性矩阵
   const w0 = Math.max(1, end - st.w);
   const R = Object.fromEntries(sel.map((t) => [t, cmpReturns(raw.close[t], w0, end)]));
