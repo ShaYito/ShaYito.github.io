@@ -564,7 +564,7 @@ function drawValuation(s, k) {
   const yStmt = axis.map((d) => yPts[d]?.yahoo ?? null), yInfo = axis.map((_, i) => (i === axis.length - 1 && isNum(yNow.yahoo_info) ? yNow.yahoo_info : null));
   if (gi("fcf") >= 0) {
     const b = band(fh, (x) => pct(x, 1));
-    const ul = Object.keys(upd).filter((w) => axis.includes(w)).map((w) => ({ xAxis: w, lineStyle: { color: C.fcf, type: "dotted", opacity: 0.55 }, label: { show: false } }));
+    const ul = Object.keys(upd).filter((w) => axis.includes(w)).map((w) => ({ xAxis: w, lineStyle: { color: C.fcf, type: "dashed", width: 1, opacity: 0.8 }, label: { show: false } }));
     if (ul.length) b.markLine = { ...(b.markLine || { symbol: "none", silent: true }), data: [...(b.markLine?.data || []), ...ul] };
     series.push(line("fcf", "FCF 收益率", fcf, C.fcf, b));
     if (yStmt.some(isNum)) series.push({ name: "Yahoo 现金流量表", type: "scatter", xAxisIndex: gi("fcf"), yAxisIndex: gi("fcf"), data: yStmt, symbol: "diamond", symbolSize: 8, itemStyle: { color: "#d6336c" }, z: 4 });
@@ -1089,7 +1089,7 @@ function phaseCard(s) {
     </div>
     ${p.checks?.length ? `<p><b>辅助检查</b> <span class="muted">（不进主信号；用于判断 B 类是不是价值陷阱、A 类的现金流增长是否可靠）</span></p>
       <ul class="ph-checks">${p.checks.map((c) => `<li><span class="${c.ok === false ? "neg" : c.ok ? "pos" : "muted"}">${c.ok === false ? "⚠" : c.ok ? "✓" : "…"}</span> <b>${esc(c.name)}</b>：${esc(c.text)}</li>`).join("")}</ul>` : ""}
-    <div class="ph-legend"><b>图中底色</b>：${PHASE_STAGES.slice(1).map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join("")}<span class="muted">蓝线 = FCF 收益率（左轴），灰线 = 股价（右轴）；鼠标悬停显示当周的阶段与类型</span></div>
+    <div class="ph-legend"><b>图中底色</b>：${PHASE_STAGES.slice(1).map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join("")}<span class="muted">蓝线 = FCF 收益率（左轴），灰线 = 股价（右轴），竖虚线 = 每股 FCF 更新（财报提交 SEC 后的第一个交易日起生效，两次更新之间收益率的变化全部来自股价）；鼠标悬停显示当周的阶段与类型</span></div>
     ${chartDiv("c-phase")}
     <details class="howto"><summary>怎么判定、怎么用、有哪些局限</summary><ul>
       <li><b>只和自己比</b>：不看收益率高低，也不和别的公司比；“高位”指在这只股票自己近 5 年历史中的百分位 ≥ 70%。</li>
@@ -1122,11 +1122,17 @@ function drawPhase(s, k) {
     if (cur) cur.to = (p.history[i + 1] || h).date;
   });
   if (cur) areas.push(cur);
+  // 每股 FCF 更新（近 4 季 FCF 随 10-Q / 10-K 更新）：竖虚线；悬停在更新当天及之后 4 个交易日内显示
+  const updDay = {};
+  (s.valuation?.fcf_hist?.updates || []).forEach((u) => { const d = near(u.day); if (d) updDay[d] = u; });
+  const updNear = (d) => { const i = idx[d]; for (let j = i; j >= 0 && j > i - 5; j--) if (updDay[s.dates[j]]) return updDay[s.dates[j]]; return null; };
+  const updTip = (u) => `<br>🔄 每股 FCF 更新：${esc(u.day)}（${esc(u.period)} 季度财报 ${esc(u.filed)} 提交 SEC），近 4 季 FCF <b>${usdB(u.fcf)}</b>${isNum(u.chg) ? `（${pct(u.chg, 0, true)}）` : ""}`;
   const n = s.dates.length;
   const c = mkChart(byId("c-phase"), {
     tooltip: { trigger: "axis", formatter: (ps) => {
       const d = ps[0]?.axisValue, w = wkOf[d], yv = ps.find((x) => x.seriesName === "FCF 收益率")?.value, pv = ps.find((x) => x.seriesName === "股价")?.value;
-      return `${d}<br>FCF 收益率 ${isNum(yv) ? pct(yv, 2) : "–"} · 股价 ${num(pv, 2)}${w ? `<br>阶段：<b>${esc(w.stage || "数据不足")}</b>${w.kind ? ` · 类型 <b>${w.kind}</b>（${PHASE_KINDS[w.kind][1]}）` : ""}` : ""}`;
+      const u = updNear(d);
+      return `${d}<br>FCF 收益率 ${isNum(yv) ? pct(yv, 2) : "–"} · 股价 ${num(pv, 2)}${w ? `<br>阶段：<b>${esc(w.stage || "数据不足")}</b>${w.kind ? ` · 类型 <b>${w.kind}</b>（${PHASE_KINDS[w.kind][1]}）` : ""}` : ""}${u ? updTip(u) : ""}`;
     } },
     legend: { show: false }, grid: { left: 52, right: 60, top: 16, bottom: 24 },
     xAxis: { type: "category", data: s.dates, boundaryGap: false },
@@ -1134,7 +1140,8 @@ function drawPhase(s, k) {
     dataZoom: [{ type: "inside", zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
     series: [
       { name: "FCF 收益率", type: "line", showSymbol: false, connectNulls: true, color: palette()[0], lineStyle: { width: 2 }, data: s.dates.map((d) => at[d] ?? null),
-        markArea: { silent: true, data: areas.map((a) => [{ xAxis: near(a.from), itemStyle: { color: PHASE_COLOR[a.stage] } }, { xAxis: near(a.to) }]).filter((x) => x[0].xAxis && x[1].xAxis) } },
+        markArea: { silent: true, data: areas.map((a) => [{ xAxis: near(a.from), itemStyle: { color: PHASE_COLOR[a.stage] } }, { xAxis: near(a.to) }]).filter((x) => x[0].xAxis && x[1].xAxis) },
+        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--ink"), type: "dashed", width: 1, opacity: 0.45 }, data: Object.keys(updDay).map((d) => ({ xAxis: d })) } },
       { name: "股价", type: "line", yAxisIndex: 1, showSymbol: false, color: css("--muted"), lineStyle: { width: 1.2 }, data: s.ohlc.map((x) => x[1]) },
     ],
   });
