@@ -520,3 +520,7 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .md-report h4, .md-report h5 { margin: 16px 0 6px; }
 .md-report blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid var(--border); }
 .md-report li { margin: 3px 0; }
+/* 现金跑道（M67）状态标签 */
+#runway-card .chip.pos { background: rgba(12, 163, 12, 0.12); color: var(--good); }
+#runway-card .chip.neg { background: rgba(208, 59, 59, 0.12); color: var(--bad); }
+#runway-card .chip.warn { background: var(--warn-bg); color: var(--warn); }

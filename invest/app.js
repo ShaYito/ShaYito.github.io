@@ -1217,7 +1217,7 @@ PAGES.stock = async (r) => {
     ${myPositionLine(t, s)}
     ${howto(STOCK_HOWTO)}${briefCard(t, briefRow, [...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], reports)}
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}<div id="k-info" class="k-info muted">把鼠标移到图上的标记（📍 新闻、◆▲○ 转折点、紫色瓶颈信号、你的交易）上，或点击标记，这里显示详细内容。</div></section>
-    ${relCard()}${metricsCard(s)}${valuationCard(s)}${phaseCard(s)}
+    ${relCard()}${metricsCard(s)}${valuationCard(s)}${phaseCard(s)}${runwayCard(s)}
     <section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}
     ${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${segSection(sc, t, "geography")}${segGraphCard(t, graphData)}
     <section class="card" id="infra-card" data-nav="AI 基础设施" hidden></section>
@@ -1300,6 +1300,7 @@ PAGES.stock = async (r) => {
   for (const id of ["k-bn-sig", "k-bn-leg"]) byId(id)?.addEventListener("change", bnToggle);
   drawValuation(s, k); // 估值历史图的显示范围跟随 K 线
   drawPhase(s, k); // FCF 收益率上升期图同样跟随 K 线
+  drawRunway(s); // 现金跑道与股本稀释（M67）
   // 显示范围较长（> 约 1.2 年）时财报竖线不显示文字，避免挤在一起
   const earnLabels = () => { const [a, b] = zoomRange(k, nK); k?.setOption({ series: [{ markLine: { label: { show: b - a <= 300 } } }] }); };
   if (k) { earnLabels(); k.on("datazoom", earnLabels); }

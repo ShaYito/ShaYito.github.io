@@ -1147,3 +1147,87 @@ function drawPhase(s, k) {
   });
   followKZoom(k, n, c);
 }
+
+// ---------------- 现金跑道与股本稀释（M67，SEC 现金流量表 + 封面流通股 + 增发相关文件）----------------
+const rwMoney = (v) => (!isNum(v) ? "–" : v === 0 ? "0" : `${v < 0 ? "−" : ""}${Math.abs(v) >= 1e8 ? `${num(Math.abs(v) / 1e8, Math.abs(v) >= 1e10 ? 0 : 1)} 亿美元` : `${num(Math.abs(v) / 1e4, 0)} 万美元`}`);
+const RW_STATUS = {
+  self_funded: ["自给", "pos", "近几季自由现金流为正，经营不消耗现金"],
+  capex: ["扩张靠融资", "warn", "经营现金流为正，但资本支出更大，缺口靠发债 / 增发 / 客户预付"],
+  burning: ["消耗现金", "neg", "经营本身在花钱，靠账上现金与融资维持"],
+};
+function runwayVerdict(r) {
+  const n = r.burn_quarters, liq = r.liquidity.total;
+  const yrs = isNum(r.runway_q) ? r.runway_q / 4 : null;
+  if (r.status === "self_funded") return `近 ${n} 季自由现金流季均 <b class="pos">${rwMoney(r.fcf_avg)}</b>，经营不消耗现金，不需要靠增发维持；现金及投资 ${rwMoney(liq)}。`;
+  if (r.status === "capex") return `经营现金流季均 <b class="pos">${rwMoney(r.ocf_avg)}</b>，但资本支出更大，近 ${n} 季自由现金流季均 <b class="neg">${rwMoney(r.fcf_avg)}</b>：处在扩张期，缺口靠发债、增发或客户预付补上。现金及投资 ${rwMoney(liq)} 只够约 ${num(r.runway_q, 1)} 个季度的缺口——这类公司要看融资渠道、合同与资本支出计划，“跑道”只作参考。`;
+  if (r.status === "burning") {
+    const warn = isNum(r.runway_q) && r.runway_q < r.warn_quarters;
+    return `经营本身在消耗现金：近 ${n} 季自由现金流季均 <b class="neg">${rwMoney(r.fcf_avg)}</b>。现金及投资 ${rwMoney(liq)} 按此速度可支撑约 <b class="${warn ? "neg" : ""}">${num(r.runway_q, 1)} 个季度（约 ${num(yrs, 1)} 年）</b>${warn ? `，<b class="neg">不到 ${r.warn_quarters / 4} 年，大概率需要再融资</b>（增发会稀释现有股东）` : ""}。`;
+  }
+  return "现金流数据不足近 4 个季度，无法判断。";
+}
+function runwayCard(s) {
+  const r = s.runway;
+  const head = `<h3>现金跑道与股本稀释 ${badge("fact")}${badge("derived")}</h3>`;
+  if (!r) return `<section class="card" id="runway-card">${head}${empty("暂无数据：SEC 没有该公司的现金流量表 XBRL 数据（如只报 20-F / 40-F 的外国公司）")}</section>`;
+  const st = RW_STATUS[r.status];
+  const sh = r.shares || {};
+  const n = r.burn_quarters;
+  const sum = (k) => (r[k] || []).slice(-n).reduce((a, v) => a + (isNum(v) ? v : 0), 0);
+  const eqRaised = sum("equity") + sum("warrants"), debtRaised = sum("debt"), buyback = sum("buyback");
+  const n424 = (r.filings || []).filter((f) => f.form.startsWith("424B5") || f.form === "424B2").length;
+  const kpi = (label, val, note = "") => `<div class="kpi"><span class="muted">${label}</span><b>${val}</b><span class="muted small">${note}</span></div>`;
+  const dil = (v) => (isNum(v) ? `<span class="${v > 0.05 ? "neg" : v < -0.005 ? "pos" : ""}">${pct(v, 1, true)}</span>` : "–");
+  const L = r.liquidity;
+  const parts = [["现金", L.cash], ["短期投资", L.st], ["长期证券投资", L.lt]].filter(([, v]) => isNum(v) && v > 0).map(([k, v]) => `${k} ${rwMoney(v)}`).join(" + ");
+  const shText = !sh.dates?.length ? "SEC 封面没有可用的流通股数据（多类股公司常见），股本变化未计算。"
+    : `流通股 ${num(sh.values.at(-1) / 1e6, 0)} 百万股（${esc(sh.dates.at(-1))}）：近 1 年 ${dil(sh.yoy)}，近 3 年年化 ${dil(sh.cagr3)}${isNum(sh.yoy) ? (sh.yoy > 0.05 ? "——明显稀释：同样的公司价值分给更多股份，每股价值被摊薄。" : sh.yoy < -0.005 ? "——股本在减少（回购）。" : isNum(sh.cagr3) && sh.cagr3 > 0.1 ? "——近 1 年基本稳定，但此前稀释明显。" : "——基本稳定。") : ""}`;
+  const splitNote = (sh.splits || []).length ? `已按拆股 / 并股调整到最新口径（${sh.splits.map((x) => `${esc(x.date)} ${x.ratio >= 1 ? `每 1 股拆为 ${num(x.ratio, 0)} 股` : `每 ${num(1 / x.ratio, 0)} 股合并为 1 股`}`).join("、")}${(sh.notes || []).length ? `；${sh.notes.map(esc).join("；")}` : ""}）。` : "";
+  const rows = (r.filings || []).map((f) => `<tr><td class="nowrap">${esc(f.date)}</td><td>${esc(f.form)}</td><td>${esc(f.kind)}</td><td><a href="${esc(f.url)}" target="_blank" rel="noopener">原文</a></td></tr>`).join("");
+  return `<section class="card" id="runway-card">${head}
+    <p>${st ? `<span class="chip ${st[1]}" title="${esc(st[2])}">${st[0]}</span> ` : ""}${runwayVerdict(r)}</p>
+    <div class="kpis">
+      ${kpi(`现金及投资（${esc(r.asof)}）`, rwMoney(L.total), esc(parts))}
+      ${kpi(`季均自由现金流（近 ${n} 季）`, `<span class="${cls(r.fcf_avg)}">${rwMoney(r.fcf_avg)}</span>`, `经营现金流季均 ${rwMoney(r.ocf_avg)}`)}
+      ${kpi("现金跑道", isNum(r.runway_q) ? `${num(r.runway_q, 1)} 季` : "不消耗现金", isNum(r.runway_q) ? `约 ${num(r.runway_q / 4, 1)} 年（不计新融资）` : "")}
+      ${kpi("股本变化（近 1 年 / 3 年年化）", `${dil(sh.yoy)} / ${dil(sh.cagr3)}`, esc(sh.source || ""))}
+      ${kpi(`近 ${n} 季融资流入`, rwMoney(eqRaised + debtRaised), `股票与认股权证 ${rwMoney(eqRaised)} · 发债 ${rwMoney(debtRaised)}${buyback > 0 ? ` · 回购 ${rwMoney(buyback)}` : ""}`)}
+      ${kpi(`近 ${r.filing_years} 年增发相关文件`, `${(r.filings || []).length} 份`, `其中招股补充书（424B5 / 424B2，增发 / ATM / 发债）${n424} 份`)}
+    </div>
+    <p class="muted">${shText}${splitNote}</p>
+    <div class="grid two"><div>${chartDiv("c-rw-cash", "short")}</div><div>${chartDiv("c-rw-sh", "short")}</div></div>
+    ${rows ? `<details><summary>增发相关文件（近 ${r.filing_years} 年，${(r.filings || []).length} 份）</summary><table class="tbl small"><thead><tr><th>日期</th><th>类型</th><th>说明</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="muted small">424B5 / 424B2 多为增发或 ATM（按市价随时卖股）计划的招股补充书，也可能是发债；S-3 / S-3ASR 是储架注册（登记一个额度，之后可随时增发）；424B3 / S-4 常见于收购换股或股东转售。具体金额与用途见原文。</p></details>` : ""}
+    <details class="howto"><summary>怎么算、怎么读、有哪些局限</summary><ul>
+      <li><b>自由现金流</b> = 经营现金流 − 资本支出（SEC 现金流量表；季报是年初至今累计值，单季由相邻累计值相减）。<b>季均现金消耗</b>取近 ${n} 季平均。</li>
+      <li><b>现金跑道</b> = 现金及投资 ÷ 季均现金消耗：不再融资、消耗速度不变时，账上的钱还能撑几个季度。短于 ${r.warn_quarters} 个季度（2 年）时提示再融资风险。</li>
+      <li><b>怎么读</b>：尚未盈利的公司（如纯量子公司），跑道越长越不急于增发；股本增长率反映已经发生的稀释——收入增长要快于股本增长，每股价值才在变大。</li>
+      <li><b>局限</b>：① 只用最新资产负债表日的余额，之后的增发、收购付款（如收购用掉的现金）未计入，最新情况见上方增发相关文件与新闻；② 长期投资可能含战略股权，不一定能随时变现；③ 未计入尚未行权的认股权证与可转债（潜在稀释）；④ 部分公司用自定义科目报告融资，融资流入可能偏低。</li></ul></details></section>`;
+}
+function drawRunway(s) {
+  const r = s.runway;
+  if (!r || !byId("c-rw-cash")) return;
+  const lbl = r.quarters.map((d) => d.slice(0, 7));
+  const B = (v) => (isNum(v) ? v / 1e8 : null);
+  const eq = r.quarters.map((_, i) => (isNum(r.equity?.[i]) || isNum(r.warrants?.[i]) ? (r.equity?.[i] || 0) + (r.warrants?.[i] || 0) : null));
+  mkChart(byId("c-rw-cash"), {
+    title: { text: "每季自由现金流与股票融资（亿美元）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    tooltip: { trigger: "axis", formatter: (ps) => { const i = ps[0].dataIndex; return `${r.quarters[i]}<br>自由现金流 ${rwMoney(r.fcf[i])}（经营 ${rwMoney(r.ocf[i])}，资本支出 ${rwMoney(r.capex[i])}）<br>股票与认股权证融资 ${rwMoney(eq[i])}${isNum(r.debt?.[i]) && r.debt[i] ? `<br>发债 ${rwMoney(r.debt[i])}` : ""}`; } },
+    legend: { top: 0, right: 0, textStyle: { fontSize: 11 } }, grid: { left: 48, right: 10, top: 34, bottom: 24 },
+    xAxis: { type: "category", data: lbl, axisLabel: { fontSize: 10 } }, yAxis: { type: "value", axisLabel: { fontSize: 10 } },
+    series: [
+      { name: "自由现金流", type: "bar", barMaxWidth: 16, data: r.fcf.map((v) => ({ value: B(v), itemStyle: { color: isNum(v) && v < 0 ? css("--neg") : css("--pos"), borderRadius: 2 } })) },
+      { name: "股票融资", type: "bar", barMaxWidth: 16, data: eq.map(B), itemStyle: { color: "#7c5cff", borderRadius: 2 } },
+    ],
+  });
+  const sh = r.shares || {};
+  if (!sh.dates?.length || !byId("c-rw-sh")) return;
+  mkChart(byId("c-rw-sh"), {
+    title: { text: `流通股（百万股${(sh.splits || []).length ? "，已按拆股 / 并股调整" : ""}）`, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    tooltip: { trigger: "axis", formatter: (ps) => `${sh.dates[ps[0].dataIndex]}：${num(sh.values[ps[0].dataIndex] / 1e6, 1)} 百万股` },
+    legend: { show: false }, grid: { left: 52, right: 10, top: 34, bottom: 24 },
+    xAxis: { type: "category", data: sh.dates.map((d) => d.slice(0, 7)), axisLabel: { fontSize: 10 } },
+    yAxis: { type: "value", scale: true, axisLabel: { fontSize: 10, formatter: (v) => num(v / 1e6, 0) } },
+    series: [{ type: "line", step: "end", showSymbol: true, symbolSize: 4, data: sh.values, color: palette()[0], lineStyle: { width: 2 } }],
+  });
+}
