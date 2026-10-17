@@ -538,6 +538,7 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .rm-shift { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .rm-shift > summary { cursor: pointer; line-height: 1.8; }
 .rm-body p { margin: 6px 0; }
+.rm-grp td { background: var(--chip); }
 .rm-pool { color: var(--accent); font-size: 10px; }
 .rm-mini li { margin: 6px 0; line-height: 1.6; }
 .rm-entry { border-left: 3px solid #7c5cff; }

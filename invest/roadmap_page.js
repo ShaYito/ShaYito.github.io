@@ -36,6 +36,12 @@ function rmCoLink(tk, q) {
   const label = `${esc(name)} <span class="muted small">${esc(tk)}</span>`;
   return q?.in_pool ? `<a href="#/stock/${esc(q.pool_ticker)}">${label}</a> <span class="rm-pool" title="已在你的选股池">●</span>` : label;
 }
+// 按产业链位置分组（保持 YAML 中的顺序）；没有分组的公司归入 "" 组
+function rmGroups(ws) {
+  const m = new Map();
+  for (const w of ws) { if (!m.has(w.group || "")) m.set(w.group || "", []); m.get(w.group || "").push(w); }
+  return [...m.entries()];
+}
 function rmMedian(xs) {
   const v = xs.filter(isNum).sort((a, b) => a - b);
   if (!v.length) return null;
@@ -58,7 +64,7 @@ async function renderRoadmap(ts, query) {
     <h2>技术路线图 <span class="muted">整理于 ${esc(d.asof)} · 行情截至 ${esc(d.quotes_asof || "–")}</span></h2>
     ${howto(RM_HOWTO)}
     <section class="card"><h3>参数变化 → 需求变化：总表 ${badge("fact")}${badge("derived")}</h3>
-      <p class="muted small">点击一行展开下方详情。“受益公司近 6 月相对大盘（中位数）”= 列出的受益公司各自相对本地大盘的涨跌取中位数，粗看市场是否已经押注；不是收益预测。</p>
+      <p class="muted small">点击一行展开下方详情。最后一列 = 列出的受益公司各自相对本地大盘的近 6 月涨跌：粗体为中位数，下方为家数与范围；有产业链位置分组时再列各组中位数——同一变化里，处在紧缺环节的公司与被紧缺卡住的公司结果可能相反（如液冷：冷板厂与集成商），不要只看中位数。粗看市场是否已经押注，不是收益预测。</p>
       ${rmSummaryTable(d)}</section>
     <section class="card"><h3>代际时间轴 ${badge("fact")}</h3>
       <div class="row"><div class="seg" id="rm-metric">${RM_METRICS.map(([k, n]) => `<button type="button" data-v="${k}" class="${k === v.metric ? "on" : ""}">${n}</button>`).join("")}</div></div>
@@ -89,12 +95,15 @@ function rmOpen(id) {
 }
 
 function rmSummaryTable(d) {
-  return `<div class="table-wrap"><table class="rm-sum"><thead><tr><th>变化</th><th>时点</th><th>确定性</th><th>供给</th><th>涉及技术</th><th class="num">受益公司近 6 月<br>相对大盘（中位数）</th></tr></thead><tbody>
+  return `<div class="table-wrap"><table class="rm-sum"><thead><tr><th>变化</th><th>时点</th><th>确定性</th><th>供给</th><th>涉及技术</th><th class="num">受益公司近 6 月<br>相对大盘</th></tr></thead><tbody>
     ${d.shifts.map((s) => {
-      const m6 = rmMedian(s.winners.map((w) => w.quote?.rel?.["6m"]));
+      const xs = s.winners.map((w) => w.quote?.rel?.["6m"]).filter(isNum);
+      const m6 = rmMedian(xs);
+      const groups = rmGroups(s.winners).filter(([g]) => g);
+      const byGroup = groups.length > 1 ? groups.map(([g, ws]) => { const m = rmMedian(ws.map((w) => w.quote?.rel?.["6m"])); return `${esc(g)} <span class="${cls(m)}">${pct(m, 0, true)}</span>`; }).join("<br>") : "";
       return `<tr class="rm-row" data-id="${esc(s.id)}"><td><b>${esc(s.title)}</b></td><td class="wrap small">${esc(s.when)}</td>
         <td>${rmChip(RM_CERT[s.certainty])}</td><td>${rmChip(RM_SUPPLY[s.supply_state])}</td><td>${rmTechLinks(s)}</td>
-        <td class="num ${cls(m6)}">${pct(m6, 0, true)}<br><span class="muted small">${s.winners.filter((w) => isNum(w.quote?.rel?.["6m"])).length} 家</span></td></tr>`;
+        <td class="num"><b class="${cls(m6)}">${pct(m6, 0, true)}</b><br><span class="muted small">${xs.length} 家 · ${xs.length ? `${pct(Math.min(...xs), 0, true)} ~ ${pct(Math.max(...xs), 0, true)}` : "–"}</span>${byGroup ? `<br><span class="small">${byGroup}</span>` : ""}</td></tr>`;
     }).join("")}</tbody></table></div>`;
 }
 
@@ -147,9 +156,10 @@ function rmShiftHtml(s) {
       <p><b>时点</b>：${esc(s.when)}　<b>涉及技术</b>：${rmTechLinks(s)}</p>
       <p><b>为什么带来需求变化</b>：${esc(s.why)}</p>
       <div class="table-wrap"><table><thead><tr><th>可能受益</th><th>原因</th><th class="num">近 6 月<br>相对大盘</th><th class="num">近 1 年<br>相对大盘</th><th class="num">距 52 周高点</th><th class="num">预期 P/E</th></tr></thead><tbody>
-        ${s.winners.map((w) => `<tr><td>${rmCoLink(w.ticker, w.quote)}</td><td class="wrap small">${esc(w.why)}</td>${rmQuoteCells(w.quote)}</tr>`).join("")}
+        ${rmGroups(s.winners).map(([g, ws]) => `${g ? `<tr class="rm-grp"><td colspan="6"><b>${esc(g)}</b> <span class="muted small">近 6 月相对大盘中位数 <span class="${cls(rmMedian(ws.map((w) => w.quote?.rel?.["6m"])))}">${pct(rmMedian(ws.map((w) => w.quote?.rel?.["6m"])), 0, true)}</span></span></td></tr>` : ""}
+          ${ws.map((w) => `<tr><td>${rmCoLink(w.ticker, w.quote)}</td><td class="wrap small">${esc(w.why)}</td>${rmQuoteCells(w.quote)}</tr>`).join("")}`).join("")}
       </tbody></table></div>
-      ${s.losers.length ? `<p><b>可能受损</b>：</p><ul class="small">${s.losers.map((x) => `<li>${x.ticker ? rmCoLink(x.ticker, x.quote) : esc(x.name)}${x.ticker ? `（${esc(x.name)}）` : ""}：${esc(x.why)}</li>`).join("")}</ul>` : ""}
+      ${s.losers.length ? `<p><b>可能受损</b>：</p><ul class="small">${s.losers.map((x) => `<li>${x.ticker ? rmCoLink(x.ticker, x.quote) : esc(x.name)}${x.ticker ? `（${esc(x.name)}${isNum(x.quote?.rel?.["6m"]) ? `，近 6 月相对大盘 <span class="${cls(x.quote.rel["6m"])}">${pct(x.quote.rel["6m"], 0, true)}</span>` : ""}）` : ""}：${esc(x.why)}</li>`).join("")}</ul>` : ""}
       <p><b>供给准备情况</b>：${esc(s.supply)}</p>
       <p><b>可验证的观察点</b>：</p><ul class="small">${s.watch.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>
       <p class="muted small">受益 / 受损公司为人工判断（这项变化与公司业务的关系），不代表公司一定拿到订单；相对大盘为当地货币、相对本地大盘指数。</p>
