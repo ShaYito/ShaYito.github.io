@@ -1,5 +1,5 @@
 /* 总览（首页）：只放事实与高置信信息。
-   顺序：我的持仓（账户曲线 + 各持仓走势与成本价）→ 近期日程 → 市场 → 本周涨跌 → 近期要闻（M43 起不再显示系统模型建议）。
+   顺序：市场现状（M70，AI 每日归纳）→ 我的持仓（账户曲线 + 各持仓走势与成本价）→ 近期日程 → 市场 → 本周涨跌 → 近期要闻（M43 起不再显示系统模型建议）。
    持仓数据只在本机计算：本机账本优先，否则用个人数据包里的账本（解锁后），都没有时提示录入。 */
 
 const HOME_HOWTO = [
@@ -27,11 +27,12 @@ async function currentBook() {
 }
 
 PAGES.overview = async () => {
-  const [h, mine] = await Promise.all([load("home.json"), currentBook()]);
+  const [h, mine, mb] = await Promise.all([load("home.json"), currentBook(), load("market_brief.json").catch(() => null)]);
   const held = new Set((mine?.book?.rows || []).map((r) => r.ticker));
   const watch = new Set(META.universe.filter((u) => u.watchlist).map((u) => u.ticker));
   app().innerHTML = `
     <h2>总览 <span class="muted">行情截至 ${esc(h.asof)} 收盘</span></h2>
+    ${marketBriefCard(mb, h.asof)}
     ${howto(HOME_HOWTO)}${insightBox(homeInsights(h, mine, held), 6)}
     ${homeHoldings(mine)}
     ${homeSchedule(h, held, watch)}

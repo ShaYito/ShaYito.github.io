@@ -543,3 +543,8 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .rm-mini li { margin: 6px 0; line-height: 1.6; }
 .rm-entry { border-left: 3px solid #7c5cff; }
 .rm-sum td:first-child { min-width: 220px; }
+/* 总览首页“市场现状”（M70） */
+.mb-card { border-left: 3px solid var(--accent); }
+.mb-head { font-size: 15px; margin: 4px 0 6px; }
+.mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 10px; margin: 8px 0; }
+.mb-card .warn { color: var(--warn); }
