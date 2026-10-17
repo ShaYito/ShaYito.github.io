@@ -105,14 +105,17 @@ PAGES.tech = async (r) => {
   const d = await techData();
   if (!d) { app().innerHTML = `<h2>技术</h2>${card("技术", empty("数据尚未生成（每周运行 run_bottlenecks.py）"))}`; return; }
   const ts = [...d.technologies].sort((a, b) => a.order - b.order);
+  if (r.arg === "roadmap") return renderRoadmap(ts, r.query); // 技术路线图（roadmap_page.js，M68）
   if (r.arg) { const t = ts.find((x) => x.id === r.arg); if (t) return renderTech(d, t, ts); }
   const ai = ts.filter((t) => !t.history), hist = ts.filter((t) => t.history);
   app().innerHTML = `<h2>技术 <span class="muted">${ts.length} 项技术 · 数据截至 ${esc(d.asof || "")}</span></h2>
     ${howto(TECH_HOWTO)}
+    <div id="rm-entry"></div>
     ${card("瓶颈时间线", `${techKindLegend()}${chartDiv("c-tk-tl", "tall")}<div id="tk-tl-info" class="k-info muted">悬停或点击图上的点查看信号内容；点击左侧技术名进入该技术。</div>`, "", ["fact"])}
     <section class="card"><h3>各项技术 ${badge("fact")}${badge("derived")}</h3><div class="tk-grid">${ai.map((t) => techCardHtml(d, t)).join("")}</div></section>
     ${hist.length ? `<section class="card"><h3>历史对照：非 AI 紧缺周期 ${badge("fact")}${badge("derived")}</h3><p class="muted small">AI 之前的几轮紧缺，不在上方时间线里；卡片走势从第一轮紧缺所在年份的年初开始。</p><div class="tk-grid">${hist.map((t) => techCardHtml(d, t)).join("")}</div></section>` : ""}`;
   drawTechTimeline(d, ai);
+  roadmapEntryHtml().then((h) => { const el = byId("rm-entry"); if (el) el.innerHTML = h; });
   for (const t of ts) {
     const eq = techEqual(d, t, "index", techCardStart(t));
     mkChart(byId(`tk-sp-${t.id}`), { animation: false, grid: { left: 2, right: 2, top: 4, bottom: 2 }, xAxis: { type: "time", show: false }, yAxis: { type: "log", show: false, scale: true },
@@ -165,7 +168,7 @@ function techKindLegend() {
 
 // ---------------- 单项技术 ----------------
 function techNav(ts, cur) {
-  return `<div class="tk-nav">${ts.map((t) => `<a href="#/tech/${t.id}" class="chip ${t.id === cur ? "on" : ""}">${esc(t.name)}</a>`).join("")}</div>`;
+  return `<div class="tk-nav"><a href="#/tech/roadmap" class="chip ${cur === "roadmap" ? "on" : ""}">技术路线图</a>${ts.map((t) => `<a href="#/tech/${t.id}" class="chip ${t.id === cur ? "on" : ""}">${esc(t.name)}</a>`).join("")}</div>`;
 }
 function srcLink(x) { return `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="small">${esc(x.source)}（${esc(x.date)}）</a>`; }
 
@@ -394,6 +397,7 @@ function renderTech(d, t, ts) {
       <div class="tk-chain"><div><span class="muted small">上游</span><br>${esc(t.chain.up)}</div><div class="tk-arrow">→</div><div class="tk-self"><b>${esc(t.name)}</b></div><div class="tk-arrow">→</div><div><span class="muted small">下游</span><br>${esc(t.chain.down)}</div></div>
       <p class="muted small">包含的瓶颈轮次：${t.rounds.map((r) => `${esc(r.name)}（${esc(r.first.slice(0, 7))} 起，${TK_STATUS[r.status]}）`).join("；")}</p></section>
     ${techIndustryHtml(t)}
+    <section class="card" id="tk-roadmap" hidden></section>
     <section class="card" id="tk-chips" data-nav="财报披露" hidden></section>
     <section class="card" id="tk-products" hidden></section>
     <section class="card" id="tk-supply" hidden></section>
@@ -405,6 +409,7 @@ function renderTech(d, t, ts) {
     ${techNewsHtml(t)}`;
   drawTechIndustry(t);
   if (!t.history) fillTechInfra(t); // 大公司投入（infra_tech_page.js，M61c）
+  fillTechRoadmap(t); // 路线图带来的需求变化（roadmap_page.js，M68）
   fillTechChips(t); // 财报披露的 AI 收入与指引（chip_page.js，M62；目前只有 AI 加速芯片）
   fillAccelResearch(t); // 产品与路线图、供给分配、需求方（accel_page.js，M63；只有 AI 加速芯片）
   drawTechCombo(d, t, v);
