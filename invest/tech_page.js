@@ -237,7 +237,7 @@ function techComboHtml(t, v) {
     }).join("")}</div>
     <div class="row tk-kinds"><span class="muted">信号类型（点击开关）</span>${kinds}${plan}</div>
     <p class="muted small">${v.mode === "index" ? "各公司股价（当地货币，周收盘）以起点为 100；粗黑线 = 等权指数。" : v.mode === "rel" ? "公司 ÷ 本地大盘（美股 SPY、台股加权、日经、KOSPI、沪深 300 ETF、恒生、DAX 等），起点为 100：线往上 = 跑赢本地大盘；粗黑线 = 等权平均。" : "当地货币的周收盘价（不同货币不可直接比较，建议配合对数刻度）。"}
-      顶部信号带：点越大 = 影响力越大（信号前后 3 个交易日，相关公司相对本地大盘的平均涨跌是平时波动的几倍；同日的其他消息也会混在里面，只作参考）；空心 = 日期只精确到月。点击图例可隐藏 / 显示公司；“突出显示”把其余公司调淡，并加一条所选公司的等权线（虚线）。</p>
+      顶部信号带：点越大 = 影响力越大（信号前后 3 个交易日，相关公司相对本地大盘的平均涨跌是平时波动的几倍；同日的其他消息也会混在里面，只作参考）；空心 = 日期只精确到月。点击图例可隐藏 / 显示公司；“突出显示”把其余公司调淡（图例只列所选公司），并加一条所选公司的等权线（虚线）。</p>
     <div class="tk-combo"><div>${chartDiv("c-tk-main", "tk-tall")}</div><div class="tk-list" id="tk-list">${techListHtml(t, hid)}</div></div></section>`;
 }
 function techListHtml(t, hid) {
@@ -259,7 +259,9 @@ function drawTechCombo(d, t, v) {
   const comps = t.companies.map((c, i) => ({ c, i, data: techSeries(d, t, c, v.mode, v.start) })).filter((x) => x.data.some((p) => isNum(p[1])));
   const focus = techFocus(t, v.focus);
   const focusName = focus ? `所选等权（${TK_FOCUS.find((x) => x[0] === v.focus)[1]}）` : null;
-  const names = [...(v.mode !== "abs" ? ["等权指数", ...(focus ? [focusName] : [])] : []), ...comps.map(({ c }) => `${c.name}（${c.ticker}）`)];
+  // 突出显示部分公司时，图例只列所选公司（其余公司的线仍以淡色保留作背景）
+  const names = [...(v.mode !== "abs" ? ["等权指数", ...(focus ? [focusName] : [])] : []),
+    ...comps.filter(({ c }) => !focus || focus.has(c.ticker)).map(({ c }) => `${c.name}（${c.ticker}）`)];
   // 图例多行：按名称长度估算每行能放几个，算出图例高度，信号带与价格图依次往下排
   const width = el.clientWidth || 800;
   let rows = 1, line = 0;
