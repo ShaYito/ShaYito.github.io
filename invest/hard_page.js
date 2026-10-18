@@ -1,0 +1,155 @@
+/* 瓶颈硬数据（M69；数据 hard_data.json，每周 run_bottlenecks.py 生成）：
+   ① 各技术子页“财报硬数据”卡片：相关美股公司最新一季的紧缺迹象（订单快于收入、预付款增多、存货周转加快、毛利率上升）
+      与背景指标（资本开支强度、利息覆盖），以及所选指标按申报日的走势（竖线 = 这项技术的瓶颈信号）
+   ② 技术看板“财报硬数据回测”卡片：财报迹象 vs 新闻信号 vs 股价起点的时滞；迹象出现后 6 / 12 个月的相对表现
+   全部为 SEC 首次披露口径（不使用事后重述），日期为申报日（市场能看到的日子）。 */
+
+let HD_D = null;
+const HD_PREF = "invest.tech.hard";
+const HD_METRICS = [
+  ["score", "紧缺迹象数", (v) => num(v, 0), "四项中满足的个数（有数据的项目）"],
+  ["rev_yoy", "收入同比", (v) => pct(v, 0, true), "当季收入相对去年同季"],
+  ["gm", "毛利率", (v) => pct(v, 1), "当季毛利 ÷ 收入"],
+  ["rpo_excess", "订单增速 − 收入增速", (v) => pct(v, 0, true), "剩余履约义务（RPO）同比 − 收入同比：为正 = 订单增长快于收入"],
+  ["cl_ratio", "合同负债 ÷ 收入", (v) => pct(v, 1), "客户预付款 / 递延收入 ÷ 近 4 季收入"],
+  ["dio", "存货周转天数", (v) => num(v, 0), "季末存货 ÷ 当季销售成本 × 91：越低 = 货越快被拿走"],
+  ["capex_int", "资本开支强度", (v) => pct(v, 1), "近 4 季资本支出 ÷ 收入：公司自己扩产的力度（扩产多 = 一两年后瓶颈可能缓解）"],
+  ["int_cov", "利息覆盖倍数", (v) => num(v, 1), "近 4 季营业利润 ÷ 利息支出：低于 2–3 倍说明靠举债扩张、融资风险高"],
+];
+
+async function hardData() {
+  if (!HD_D) HD_D = await load("hard_data.json").catch(() => ({ available: false }));
+  return HD_D;
+}
+function hardView() {
+  try { return { metric: "score", ...JSON.parse(localStorage.getItem(HD_PREF) || "{}") }; } catch { return { metric: "score" }; }
+}
+function saveHardView(v) { try { localStorage.setItem(HD_PREF, JSON.stringify(v)); } catch { /* 忽略 */ } }
+const hdChg = (v, f) => (isNum(v) ? `<br><span class="muted small">同比 ${f(v)}</span>` : "");
+const hdPP = (v) => `${v > 0 ? "+" : ""}${num(v * 100, 1)} 个百分点`;
+function hdFlags(r, zh) {
+  return Object.entries(r.flags).map(([k, v]) => (v === null ? `<span class="hd-flag na" title="没有数据">${esc(zh[k])}</span>`
+    : `<span class="hd-flag ${v ? "on" : ""}">${v ? "✓ " : ""}${esc(zh[k])}</span>`)).join("");
+}
+function hdLink(t, name) {
+  const inPool = META?.universe?.some((u) => u.ticker === t);
+  const label = `${esc(name)} <span class="muted small">${esc(t)}</span>`;
+  return inPool ? `<a href="#/stock/${esc(t)}">${label}</a>` : label;
+}
+
+// ---------------- 技术子页：财报硬数据 ----------------
+async function fillTechHard(t) {
+  const el = byId("tk-hard");
+  if (!el || t.history) return;
+  const d = await hardData();
+  const tks = (d?.techs?.[t.id] || []).filter((x) => d.companies[x]);
+  if (!tks.length) return;
+  const v = hardView();
+  el.hidden = false;
+  const rows = tks.map((x) => ({ t: x, c: d.companies[x], r: d.companies[x].rows.at(-1) })).sort((a, b) => (b.r.score ?? -1) - (a.r.score ?? -1));
+  const p = d.params;
+  el.innerHTML = `<h3>财报硬数据：瓶颈有没有出现在公司财报里 ${badge("fact")}${badge("derived")}</h3>
+    <p class="muted small">这项技术相关的美股公司（${tks.length} 家，有季度 SEC 财报的）最近一季的四项紧缺迹象：订单快于收入（RPO 同比 − 收入同比 ≥ ${pct(p.rpo_excess, 0)}）、
+      预付款增多（合同负债 ÷ 收入同比上升 ≥ ${pct(p.contract_ratio_growth, 0)}）、存货周转加快（周转天数同比下降 ≥ ${pct(p.dio_drop, 0)}）、毛利率上升（同比 ≥ ${num(p.gm_rise_pp * 100, 0)} 个百分点且收入增长）。
+      数值按 SEC 首次披露口径，日期为申报日；灰色 = 公司没有在财报 XBRL 中披露该项（如 Vertiv 的积压订单只在新闻稿中）。外国公司（20-F）没有季度数据。</p>
+    <div class="table-wrap"><table><thead><tr><th>公司</th><th>最新季度<br><span class="muted small">申报日</span></th><th class="num">收入同比</th><th class="num">毛利率</th>
+      <th class="num">订单增速 −<br>收入增速</th><th class="num">合同负债<br>÷ 收入</th><th class="num">存货<br>周转天数</th><th class="num">资本开支<br>强度</th><th class="num">利息<br>覆盖</th><th>紧缺迹象</th></tr></thead><tbody>
+    ${rows.map(({ t: x, c, r }) => `<tr><td>${hdLink(x, c.name)}</td><td class="small">${esc(r.end)}<br><span class="muted">${esc(r.filed)}</span></td>
+      <td class="num ${cls(r.rev_yoy)}">${pct(r.rev_yoy, 0, true)}</td>
+      <td class="num">${pct(r.gm, 1)}${isNum(r.gm_chg) ? `<br><span class="muted small">${hdPP(r.gm_chg)}</span>` : ""}</td>
+      <td class="num ${cls(r.rpo_excess)}">${isNum(r.rpo_excess) ? pct(r.rpo_excess, 0, true) : `<span class="muted">未披露</span>`}</td>
+      <td class="num">${pct(r.cl_ratio, 1)}${hdChg(r.cl_ratio_chg, (z) => pct(z, 0, true))}</td>
+      <td class="num">${num(r.dio, 0)}${hdChg(r.dio_chg, (z) => pct(z, 0, true))}</td>
+      <td class="num">${pct(r.capex_int, 1)}</td><td class="num ${isNum(r.int_cov) && r.int_cov < 2 ? "neg" : ""}">${isNum(r.int_cov) ? `${num(r.int_cov, 1)}×` : "–"}</td>
+      <td><b>${r.score ?? "–"}</b><span class="muted small"> / ${r.n_flags}</span><br>${hdFlags(r, d.flag_zh)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="row"><span class="muted">走势</span><div class="seg" id="hd-metric">${HD_METRICS.map(([k, n]) => `<button type="button" data-v="${k}" class="${k === v.metric ? "on" : ""}">${n}</button>`).join("")}</div></div>
+    <p class="muted small" id="hd-tip"></p>
+    ${chartDiv("c-hd")}
+    <p class="muted small">折线图横轴为申报日（市场能看到这份财报的日子），竖线为这项技术各轮瓶颈的首个公开信号。看板上的“财报硬数据回测”说明这些迹象历史上是早于还是晚于新闻与股价。</p>`;
+  drawHard(d, t, tks, v);
+  el.querySelectorAll("#hd-metric button").forEach((b) => (b.onclick = () => {
+    v.metric = b.dataset.v; saveHardView(v);
+    el.querySelectorAll("#hd-metric button").forEach((x) => x.classList.toggle("on", x === b));
+    disposeChart(byId("c-hd"));
+    drawHard(d, t, tks, v);
+  }));
+}
+
+// 紧缺迹象数：热力图（行 = 公司，列 = 日历季度，按季末归到所在季度），悬停看满足了哪几项
+const hdQuarter = (end) => { const d = new Date(end); return `${d.getUTCFullYear()} Q${Math.floor(d.getUTCMonth() / 3) + 1}`; };
+function drawHardHeat(d, tks) {
+  byId("hd-tip").textContent = "每格 = 一家公司一个季度满足的紧缺迹象个数（按季末所在的日历季度；悬停看具体是哪几项、申报日）。灰色 = 没有可判断的数据。";
+  const qs = [...new Set(tks.flatMap((x) => d.companies[x].rows.map((r) => hdQuarter(r.end))))].sort();
+  const cells = [];
+  tks.forEach((x, i) => d.companies[x].rows.forEach((r) => {
+    if (r.score === null) return;
+    cells.push({ value: [qs.indexOf(hdQuarter(r.end)), i, r.score], r, x });
+  }));
+  const el = byId("c-hd");
+  el.style.height = `${Math.max(220, 60 + tks.length * 26)}px`;
+  mkChart(el, {
+    grid: { left: 150, right: 20, top: 10, bottom: 60 },
+    xAxis: { type: "category", data: qs, axisLabel: { rotate: 45, fontSize: 10 } },
+    yAxis: { type: "category", data: tks.map((x) => `${d.companies[x].name} ${x}`), inverse: true, axisLabel: { fontSize: 11 } },
+    visualMap: { min: 0, max: 4, calculable: false, orient: "horizontal", left: "center", bottom: 0, show: false,
+      inRange: { color: [isDark() ? "#2c2c2a" : "#f0efec", "#7c5cff"] } },
+    tooltip: { formatter: (p) => {
+      const r = p.data.r, on = Object.entries(r.flags).filter(([, v]) => v).map(([k]) => d.flag_zh[k]);
+      return `<b>${esc(d.companies[p.data.x].name)}</b> 季末 ${esc(r.end)}（申报 ${esc(r.filed)}）<br>紧缺迹象 ${r.score} / ${r.n_flags}${on.length ? `：${on.map(esc).join("、")}` : ""}`;
+    } },
+    series: [{ type: "heatmap", data: cells, label: { show: true, fontSize: 10, formatter: (p) => (p.data.value[2] ? p.data.value[2] : "") } }],
+  });
+}
+
+function drawHard(d, t, tks, v) {
+  const [key, label, fmt, tip] = HD_METRICS.find((m) => m[0] === v.metric) || HD_METRICS[0];
+  byId("c-hd").style.height = "";
+  if (key === "score") return drawHardHeat(d, tks);
+  byId("hd-tip").textContent = tip;
+  const pal = palette();
+  const series = tks.map((x, i) => ({
+    name: `${d.companies[x].name}（${x}）`, type: "line", showSymbol: true, symbolSize: 4, connectNulls: false, color: pal[i % pal.length],
+    data: d.companies[x].rows.map((r) => [r.filed, isNum(r[key]) ? r[key] : null]),
+  }));
+  if (series.length) {
+    series[0].markLine = { symbol: "none", silent: true, label: { formatter: (p) => p.data.name, fontSize: 10, position: "insideEndTop" },
+      lineStyle: { type: "dashed", color: "#7c5cff", width: 1 }, data: (t.rounds || []).map((r) => ({ xAxis: r.first, name: r.name.length > 14 ? `${r.name.slice(0, 14)}…` : r.name })) };
+  }
+  mkChart(byId("c-hd"), {
+    grid: { left: 56, right: 20, top: 50, bottom: 30 }, legend: { type: "scroll", top: 0 },
+    xAxis: { type: "time" }, yAxis: { type: "value", scale: key !== "score", name: label },
+    tooltip: { trigger: "axis", valueFormatter: (x) => (isNum(x) ? fmt(x) : "–") },
+    series,
+  });
+}
+
+// ---------------- 技术看板：回测 ----------------
+async function hardBacktestHtml() {
+  const d = await hardData();
+  const bt = d?.backtest;
+  if (!bt) return "";
+  const ls = bt.lead.summary, p = d.params;
+  const h = String(p.horizons_days.at(-1)), h6 = String(p.horizons_days[0]);
+  const ev = (x) => (x && x.n ? `${pct(x.mean_excess, 0, true)} / ${pct(x.median_excess, 0, true)}<br><span class="muted small">${x.n} 次 · 为正 ${pct(x.pos_share, 0)}${isNum(x.p_sign) ? ` · p ${x.p_sign < 0.01 ? "< 0.01" : num(x.p_sign, 2)}` : ""}</span>` : "–");
+  const rowsFor = [["score", `紧缺迹象 ≥ ${p.score_threshold} 项`, bt.score], ...Object.entries(bt.flags).map(([k, x]) => [k, d.flag_zh[k], x])];
+  const found = bt.lead.samples.filter((s) => s.status === "found").sort((a, b) => b.lead_news - a.lead_news);
+  return `<section class="card"><h3>财报硬数据回测：财报里的紧缺迹象，早于新闻和股价吗？ ${badge("derived")}${badge("simulated")}</h3>
+    <div class="kpis">
+      <div class="kpi"><span class="muted">比首个公开信号更早</span><b>${ls.earlier_than_news} / ${ls.found}</b><span class="muted small">中位数早 ${num(ls.median_lead_news, 0)} 天</span></div>
+      <div class="kpi"><span class="muted">比股价上涨起点更早</span><b>${ls.earlier_than_price} / ${ls.n_price}</b><span class="muted small">中位数早 ${num(ls.median_lead_price, 0)} 天</span></div>
+      <div class="kpi"><span class="muted">窗口内财报没有紧缺迹象</span><b>${ls.none} / ${ls.n}</b><span class="muted small">另有 ${ls.no_data} 个无数据、${ls.already} 个已在紧缺中</span></div>
+    </div>
+    <p class="small">读法：财报迹象大多早于新闻（新闻本身就落后于股价），但和股价起点相比只是略早、分散很大；还有 ${pct(ls.none / Math.max(1, ls.n), 0)} 的样本在财报里看不出紧缺——瓶颈常常落在财报不单列的业务，或被公司其他业务稀释。</p>
+    <div class="table-wrap"><table><thead><tr><th>迹象出现（由不满足变为满足）</th><th class="num">之后 ${Math.round(+h6 / 21)} 个月超额<br><span class="muted small">均值 / 中位数</span></th><th class="num">之后 ${Math.round(+h / 21)} 个月超额<br><span class="muted small">均值 / 中位数</span></th>
+      <th class="num">${Math.round(+h / 21)} 个月 · 出现时股价<b>还没涨</b></th><th class="num">${Math.round(+h / 21)} 个月 · 出现时股价<b>已涨</b></th></tr></thead><tbody>
+    ${rowsFor.map(([k, n, x]) => `<tr><td>${esc(n)}</td><td class="num">${ev(x.horizons[h6])}</td><td class="num">${ev(x.horizons[h])}</td><td class="num">${ev(x.by_past?.[h]?.not_up)}</td><td class="num">${ev(x.by_past?.[h]?.up)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <p class="muted small">超额 = 申报后第一个交易日起相对 SPY 的涨跌 − 同一公司所有季度（同样从申报日起算）的平均值；“还没涨 / 已涨”= 申报前 6 个月相对 SPY 是否为正；p 为符号检验（双侧）。
+      局限：案例库公司是事后挑选的（知道它们后来成了瓶颈）；同一公司的事件在时间上重叠；样本少的格子不要当成规律。阈值为事先固定的规则，没有按结果调参。</p>
+    <details class="small"><summary>逐个样本（${found.length} 个找到迹象）</summary>
+      <div class="table-wrap"><table><thead><tr><th>瓶颈</th><th>公司</th><th>财报申报日</th><th>首个公开信号</th><th>股价起点</th><th class="num">比新闻早（天）</th><th class="num">比股价早（天）</th><th>迹象</th></tr></thead><tbody>
+      ${found.map((s) => `<tr><td>${esc(s.name)}</td><td>${hdLink(s.ticker, d.companies[s.ticker]?.name || s.ticker)}</td><td>${esc(s.filed)}</td><td>${esc(s.signal)}</td><td>${esc(s.price_start || "–")}</td>
+        <td class="num ${cls(s.lead_news)}">${s.lead_news}</td><td class="num ${cls(s.lead_price)}">${s.lead_price ?? "–"}</td><td>${s.flags.map((f) => esc(d.flag_zh[f])).join("、")}</td></tr>`).join("")}
+      </tbody></table></div></details></section>`;
+}

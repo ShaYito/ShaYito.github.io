@@ -112,10 +112,12 @@ PAGES.tech = async (r) => {
     ${howto(TECH_HOWTO)}
     <div id="rm-entry"></div>
     ${card("瓶颈时间线", `${techKindLegend()}${chartDiv("c-tk-tl", "tall")}<div id="tk-tl-info" class="k-info muted">悬停或点击图上的点查看信号内容；点击左侧技术名进入该技术。</div>`, "", ["fact"])}
+    <div id="hd-bt"></div>
     <section class="card"><h3>各项技术 ${badge("fact")}${badge("derived")}</h3><div class="tk-grid">${ai.map((t) => techCardHtml(d, t)).join("")}</div></section>
     ${hist.length ? `<section class="card"><h3>历史对照：非 AI 紧缺周期 ${badge("fact")}${badge("derived")}</h3><p class="muted small">AI 之前的几轮紧缺，不在上方时间线里；卡片走势从第一轮紧缺所在年份的年初开始。</p><div class="tk-grid">${hist.map((t) => techCardHtml(d, t)).join("")}</div></section>` : ""}`;
   drawTechTimeline(d, ai);
   roadmapEntryHtml().then((h) => { const el = byId("rm-entry"); if (el) el.innerHTML = h; });
+  hardBacktestHtml().then((h) => { const el = byId("hd-bt"); if (el) el.innerHTML = h; }); // 财报硬数据回测（M69）
   for (const t of ts) {
     const eq = techEqual(d, t, "index", techCardStart(t));
     mkChart(byId(`tk-sp-${t.id}`), { animation: false, grid: { left: 2, right: 2, top: 4, bottom: 2 }, xAxis: { type: "time", show: false }, yAxis: { type: "log", show: false, scale: true },
@@ -398,6 +400,7 @@ function renderTech(d, t, ts) {
       <p class="muted small">包含的瓶颈轮次：${t.rounds.map((r) => `${esc(r.name)}（${esc(r.first.slice(0, 7))} 起，${TK_STATUS[r.status]}）`).join("；")}</p></section>
     ${techIndustryHtml(t)}
     <section class="card" id="tk-roadmap" hidden></section>
+    <section class="card" id="tk-hard" hidden></section>
     <section class="card" id="tk-chips" data-nav="财报披露" hidden></section>
     <section class="card" id="tk-products" hidden></section>
     <section class="card" id="tk-supply" hidden></section>
@@ -410,6 +413,7 @@ function renderTech(d, t, ts) {
   drawTechIndustry(t);
   if (!t.history) fillTechInfra(t); // 大公司投入（infra_tech_page.js，M61c）
   fillTechRoadmap(t); // 路线图带来的需求变化（roadmap_page.js，M68）
+  fillTechHard(t); // 财报硬数据（hard_page.js，M69）
   fillTechChips(t); // 财报披露的 AI 收入与指引（chip_page.js，M62；目前只有 AI 加速芯片）
   fillAccelResearch(t); // 产品与路线图、供给分配、需求方（accel_page.js，M63；只有 AI 加速芯片）
   drawTechCombo(d, t, v);

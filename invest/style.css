@@ -548,3 +548,7 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .mb-head { font-size: 15px; margin: 4px 0 6px; }
 .mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 10px; margin: 8px 0; }
 .mb-card .warn { color: var(--warn); }
+/* 瓶颈硬数据（M69） */
+.hd-flag { display: inline-block; font-size: 11px; padding: 0 6px; margin: 1px 2px 1px 0; border-radius: 8px; border: 1px solid var(--grid); color: var(--muted); white-space: nowrap; }
+.hd-flag.on { color: var(--good); border-color: var(--good); font-weight: 600; }
+.hd-flag.na { opacity: .45; text-decoration: line-through; }
