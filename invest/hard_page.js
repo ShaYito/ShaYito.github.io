@@ -124,6 +124,27 @@ function drawHard(d, t, tks, v) {
   });
 }
 
+// 大样本重测（M72）：全市场美股，事先确定的四条标准
+const HB_CRIT = { n_ge_100: "事件 ≥ 100 次", significant: "显著且方向一致", same_sign_periods: "两个时间段方向相同", same_sign_sectors: "科技 / 非科技方向相同" };
+async function hardLargeHtml() {
+  const b = await load("hard_backtest.json").catch(() => null);
+  if (!b?.patterns) return "";
+  const h = String(b.horizon), base = b.baseline[h];
+  const st = (x) => `${pct(x.mean, 0, true)} / ${pct(x.median, 0, true)}<br><span class="muted small">${x.n} 次 · 为正 ${pct(x.pos_share, 0)}</span>`;
+  return `<h4>大样本重测（全市场 ${b.companies_with_prices} 家美股，SEC 首次披露口径）</h4>
+    <p class="small">事先写下的标准（看结果前确定）：① 事件 ≥ 100 次；② 显著（符号检验 p &lt; 0.05 且按公司聚合 |t| ≥ 2，方向一致）；③ 2012–2018 与 2019 年起方向相同；④ 科技与非科技方向相同。<b>全部满足才做成个股页提醒。</b></p>
+    <div class="table-wrap"><table><thead><tr><th>迹象出现，且申报前 6 个月股价相对 SPY 没涨</th><th class="num">之后 12 个月相对 SPY<br><span class="muted small">均值 / 中位数</span></th><th class="num">减去同公司平均<br><span class="muted small">按公司聚合 t</span></th><th>标准</th><th>结论</th></tr></thead><tbody>
+    <tr class="muted"><td>参照：全部公司全部季度</td><td class="num">${st(base)}</td><td class="num">–</td><td></td><td></td></tr>
+    ${Object.entries(b.patterns).map(([, p]) => { const nu = p.not_up; return `<tr><td>${esc(p.name)}</td><td class="num">${st(nu[`raw${h}`])}</td>
+      <td class="num">${pct(nu[h].firm_mean, 1, true)}<br><span class="muted small">t = ${num(nu[h].firm_t, 2)}</span></td>
+      <td class="small">${Object.entries(p.criteria).map(([k, v]) => `<span class="hd-flag ${v ? "on" : ""}">${v ? "✓" : "✗"} ${HB_CRIT[k]}</span>`).join("")}${p.untestable?.length ? `<br><span class="muted">无法检验：${p.untestable.map((k) => ({ early: "2012–2018", late: "2019 起", tech: "科技", non_tech: "非科技" })[k]).join("、")}（RPO 科目 2018 年才有）</span>` : ""}</td>
+      <td>${p.passed ? "<b class=\"pos\">成立</b>" : "<span class=\"muted\">不成立</span>"}</td></tr>`; }).join("")}
+    </tbody></table></div>
+    <p class="muted small">读法：股票收益右偏（少数大涨拉高均值），所以“中位数为负、为正比例低于一半”是常态，要和第一行参照比。小样本（上方案例库）看到的“订单快于收入且没涨 +38%”“毛利率上升且没涨 −22%”在大样本中都没有复现。
+      “预付款增多且没涨”在均值、中位数、为正比例上都好于参照、按公司 t 较高，但未通过事先的符号检验、也不是这次事先要检验的组合，只作探索性线索；要当规律用，需要用之后的新数据再检验。
+      局限：股票池为现仍上市的公司（偏乐观）；同一公司事件重叠；符号检验以“减去公司平均”为基准，在收益右偏时偏向负方向（事先设计的不足，如实保留）。</p>`;
+}
+
 // ---------------- 技术看板：回测 ----------------
 async function hardBacktestHtml() {
   const d = await hardData();
@@ -141,6 +162,7 @@ async function hardBacktestHtml() {
       <div class="kpi"><span class="muted">窗口内财报没有紧缺迹象</span><b>${ls.none} / ${ls.n}</b><span class="muted small">另有 ${ls.no_data} 个无数据、${ls.already} 个已在紧缺中</span></div>
     </div>
     <p class="small">读法：财报迹象大多早于新闻（新闻本身就落后于股价），但和股价起点相比只是略早、分散很大；还有 ${pct(ls.none / Math.max(1, ls.n), 0)} 的样本在财报里看不出紧缺——瓶颈常常落在财报不单列的业务，或被公司其他业务稀释。</p>
+    <h4>瓶颈案例库（小样本：案例库中的美股公司）</h4>
     <div class="table-wrap"><table><thead><tr><th>迹象出现（由不满足变为满足）</th><th class="num">之后 ${Math.round(+h6 / 21)} 个月超额<br><span class="muted small">均值 / 中位数</span></th><th class="num">之后 ${Math.round(+h / 21)} 个月超额<br><span class="muted small">均值 / 中位数</span></th>
       <th class="num">${Math.round(+h / 21)} 个月 · 出现时股价<b>还没涨</b></th><th class="num">${Math.round(+h / 21)} 个月 · 出现时股价<b>已涨</b></th></tr></thead><tbody>
     ${rowsFor.map(([k, n, x]) => `<tr><td>${esc(n)}</td><td class="num">${ev(x.horizons[h6])}</td><td class="num">${ev(x.horizons[h])}</td><td class="num">${ev(x.by_past?.[h]?.not_up)}</td><td class="num">${ev(x.by_past?.[h]?.up)}</td></tr>`).join("")}
@@ -151,5 +173,5 @@ async function hardBacktestHtml() {
       <div class="table-wrap"><table><thead><tr><th>瓶颈</th><th>公司</th><th>财报申报日</th><th>首个公开信号</th><th>股价起点</th><th class="num">比新闻早（天）</th><th class="num">比股价早（天）</th><th>迹象</th></tr></thead><tbody>
       ${found.map((s) => `<tr><td>${esc(s.name)}</td><td>${hdLink(s.ticker, d.companies[s.ticker]?.name || s.ticker)}</td><td>${esc(s.filed)}</td><td>${esc(s.signal)}</td><td>${esc(s.price_start || "–")}</td>
         <td class="num ${cls(s.lead_news)}">${s.lead_news}</td><td class="num ${cls(s.lead_price)}">${s.lead_price ?? "–"}</td><td>${s.flags.map((f) => esc(d.flag_zh[f])).join("、")}</td></tr>`).join("")}
-      </tbody></table></div></details></section>`;
+      </tbody></table></div></details>${await hardLargeHtml()}</section>`;
 }

@@ -552,3 +552,8 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .hd-flag { display: inline-block; font-size: 11px; padding: 0 6px; margin: 1px 2px 1px 0; border-radius: 8px; border: 1px solid var(--grid); color: var(--muted); white-space: nowrap; }
 .hd-flag.on { color: var(--good); border-color: var(--good); font-weight: 600; }
 .hd-flag.na { opacity: .45; text-decoration: line-through; }
+/* 信息透明度（M71） */
+.tr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 6px; margin: 8px 0; }
+.tr-item { border: 1px solid var(--grid); border-radius: 6px; padding: 5px 8px; display: flex; flex-direction: column; color: var(--muted); }
+.tr-item.on { color: var(--ink); border-color: var(--good); }
+.tr-item.on b { color: var(--good); }
