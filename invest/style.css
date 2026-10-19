@@ -558,3 +558,8 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .tr-item.on { color: var(--ink); border-color: var(--good); }
 .tr-item.on b { color: var(--good); }
 .hd-alert { border-left: 3px solid var(--warn); }
+/* 同行财报追踪（M77） */
+.pt-row { border-bottom: 1px solid var(--grid); padding: 6px 2px; }
+.pt-row > summary { cursor: pointer; line-height: 1.8; }
+.pt-row.pending { color: var(--muted); }
+.pt-react { float: right; text-align: right; font-size: 12px; }
