@@ -39,12 +39,14 @@ PAGES.overview = async () => {
     ${homeInsiderBuys(h, held, watch)}
     ${homeTargetMoves(h, held, watch)}
     <section class="card"><h3>市场 ${badge("fact")}</h3>${homeMarket(h)}</section>
+    ${homePullback(h.pullback, held)}
     <div class="grid two">
       ${card("选股池本周涨跌（近 5 个交易日）", homeMovers(h, held), "", ["fact"])}
       ${card("近期要闻", homeHeadlines(h, held), "", ["fact", "model"])}
     </div>`;
   if (mine?.book) drawHomeHoldings(mine);
   drawSparks(h);
+  drawPullback(h.pullback);
   byId("sched-low-btn")?.addEventListener("click", (ev) => {
     const on = byId("sched-card").classList.toggle("show-low");
     try { localStorage.setItem(SCHED_LOW_KEY, on ? "1" : "0"); } catch { /* 无存储时只本次生效 */ }
@@ -251,3 +253,48 @@ function homeInsiderBuys(h, held, watch) {
     <p class="muted">${rich("高管与董事用自己的钱在公开市场买入自家股票，申报在交易后 2 个工作日内（SEC Form 4）。与卖出不同（卖出常因分散资产、缴税或事先约定的计划），买入通常意味着内部人认为股价被低估；研究中，金额较大、由核心高管买入、或多人在同一时期集中买入的情况更有信息量，但单笔买入的预测力有限，也不代表一定上涨。股票授予、行权不计入。详细记录见各股票页“内部人交易”。")}</p></section>`;
 }
 
+
+// ---------------- 回调期间相对强弱（M79） ----------------
+function homePullback(p, held) {
+  if (!p?.available) return "";
+  const title = "回调期间相对强弱";
+  if (!p.in_pullback) {
+    return card(title, `<p class="muted">${esc(p.ref_name)}（${esc(p.ref)}）距最近波段高点 ${esc(p.peak_date)} ${pct(p.ref_dd, 1, true)}，跌幅不到 ${pct(p.min_drawdown, 0)}，当前不在回调中。</p>`, "", ["fact"]);
+  }
+  const name = (t) => `<a href="#/stock/${esc(t)}"><b>${esc(t)}</b></a> <span class="muted">${esc(META.names_zh?.[t] || "")}</span>${holdChip(t, held, null)}`;
+  const tag = (r) => esc(r.tag_name.replace(/（.*）/, ""));
+  const row = (r, full) => `<tr><td>${name(r.ticker)}</td><td class="small">${tag(r)}</td>
+    <td class="num ${cls(r.since_peak)}"><b>${pct(r.since_peak, 1, true)}</b></td><td class="num ${cls(r.rel)}">${pct(r.rel, 1, true)}</td>
+    ${full ? `<td class="num ${cls(r.max_dd)}">${pct(r.max_dd, 1, true)}</td><td class="num ${cls(r.from_low)}">${pct(r.from_low, 1, true)}</td>` : ""}
+    <td class="num ${cls(r.w1)}">${pct(r.w1, 1, true)}</td></tr>`;
+  const head = (full) => `<thead><tr><th>股票</th><th>主要业务</th><th class="num">高点以来</th><th class="num">相对 ${esc(p.ref)}</th>${full ? '<th class="num">期间最大回撤</th><th class="num">自低点反弹</th>' : ""}<th class="num">近 5 日</th></tr></thead>`;
+  const tbl = (rows, full = false) => `<div class="table-wrap"><table>${head(full)}<tbody>${rows.map((r) => row(r, full)).join("")}</tbody></table></div>`;
+  const bench = p.benchmarks.map((b) => `${esc(b.name)} <b class="${cls(b.since_peak)}">${pct(b.since_peak, 1, true)}</b>`).join("，");
+  const ctx = p.window_peak_date !== p.peak_date ? `更早的高点是 ${esc(p.window_peak_date)}，距它 ${pct(p.window_dd, 1, true)}。` : "";
+  const top = p.rows.slice(0, 8), bottom = p.rows.slice(-8).reverse();
+  return card(title, `
+    <p>本轮起点：${esc(p.ref_name)}（${esc(p.ref)}）最近的波段高点 <b>${esc(p.peak_date)}</b>，至 ${esc(p.asof)} 共 ${p.days} 个交易日。同期 ${bench}。${ctx}
+    选股池 ${p.n} 只中，${p.n_up} 只上涨，${p.n_beat} 只跑赢 ${esc(p.ref)}。</p>
+    <h4>按主要业务（中位数，高点以来）</h4>${chartDiv("c-pullback", "tall")}
+    <div class="grid two"><div><h4>最抗跌</h4>${tbl(top)}</div><div><h4>跌得最多</h4>${tbl(bottom)}</div></div>
+    <details><summary>全部 ${p.n} 只（含期间最大回撤、自低点反弹）</summary>${tbl(p.rows, true)}</details>
+    <p class="muted small">本轮高点 = 最近一个“较前一低点反弹 ≥ ${pct(p.swing_rebound, 0)}、之后再跌 ≥ ${pct(p.min_drawdown, 0)}”的 ${esc(p.ref)} 收盘高点（找不到则用近 ${p.lookback_days} 个交易日最高点）。
+    期间最大回撤 = 高点日收盘到期间最低收盘；自低点反弹 = 最新收盘相对期间最低收盘。业务按个股标签的第一个（主要业务）。
+    下跌中抗跌说明资金在回避风险，不代表反弹时领涨；历史上急跌后的反弹常由跌得多、但基本面没变坏的股票带动。</p>`, "", ["fact"]);
+}
+
+function drawPullback(p) {
+  const el = byId("c-pullback");
+  if (!el || !p?.tags?.length) return;
+  const tags = [...p.tags].reverse();  // 横向柱状图自下而上，最好的放在最上面
+  el.style.height = `${Math.max(260, tags.length * 22 + 30)}px`;
+  mkChart(el, {
+    grid: { left: 8, right: 56, top: 24, bottom: 8, containLabel: true },
+    tooltip: { trigger: "item", formatter: (x) => { const t = tags[x.dataIndex]; return `<b>${esc(t.name)}</b>（${t.n} 只）<br>高点以来中位数 ${pct(t.median, 1, true)}；自低点反弹中位数 ${pct(t.median_from_low, 1, true)}<br>${t.tickers.map(esc).join("、")}`; } },
+    xAxis: { type: "value", axisLabel: { formatter: (v) => `${Math.round(v * 100)}%` } },
+    yAxis: { type: "category", data: tags.map((t) => `${t.name.replace(/（.*）/, "")}（${t.n}）`), axisLabel: { fontSize: 11 } },
+    series: [{ type: "bar", barMaxWidth: 14, data: tags.map((t) => ({ value: t.median, itemStyle: { color: t.color || css("--ink-2") } })),
+      label: { show: true, position: "right", fontSize: 10, formatter: (x) => pct(x.value, 1, true) },
+      markLine: { symbol: "none", silent: true, label: { formatter: `${p.ref} ${pct(p.ref_ret, 1, true)}`, fontSize: 10 }, lineStyle: { type: "dashed", color: css("--ink-2") }, data: [{ xAxis: p.ref_ret }] } }],
+  });
+}
