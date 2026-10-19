@@ -134,11 +134,11 @@ PAGES.compare = async (r) => {
   app().innerHTML = `
     <div class="stock-layout" data-no-secnav>${compareSidebar(sel)}<div class="stock-main">
     <h2>多股对比 <span class="muted">已选 ${sel.length} 只 · 价格截至 ${esc(dates[end])}</span></h2>
-    <section class="card"><div class="row"><span class="muted">快捷选择</span>${presets.map(([n, ts], i) => `<button type="button" class="ghost cmp-preset" data-i="${i}" title="${esc(ts.join("、"))}">${esc(n)}${ts.length > CMP_MAX ? `（前 ${CMP_MAX}）` : ""}</button>`).join("")}
+    <section class="card cmp-quick" id="cmp-quick"><div class="row"><span class="muted">快捷选择</span>${presets.map(([n, ts], i) => `<button type="button" class="ghost cmp-preset" data-i="${i}" title="${esc(ts.join("、"))}">${esc(n)}${ts.length > CMP_MAX ? `（前 ${CMP_MAX}）` : ""}</button>`).join("")}
       ${sel.length ? `<button type="button" class="ghost" id="cmp-clear">清空</button>` : ""}</div>
       <div class="row"><span class="muted">按业务</span>${usedTags().map((k) => { const d = META.tags[k], ts = META.universe.filter((u) => (u.tags || []).includes(k)).map((u) => u.ticker);
         return `<button type="button" class="ghost cmp-tagp" data-k="${k}" title="${esc(`${d.name}：${ts.join("、")}`)}"><span class="tg" style="background:${d.color}">${esc(d.short)}</span> ${esc(d.name.replace(/（.*）/, ""))}</button>`; }).join("")}</div>
-      ${sel.length ? `<p>${sel.map((t) => `<span class="chip" style="border-color:${color[t]}"><span class="dot" style="background:${color[t]}"></span>${esc(t)} ${esc(META.names_zh?.[t] || "")} <a href="#" class="cmp-x" data-t="${t}" title="移除">×</a></span>`).join("")}</p>` : ""}</section>
+      ${sel.length ? `<p>${sel.map((t) => `<span class="chip" style="border-color:${color[t]}"><span class="dot" style="background:${color[t]}"></span>${esc(t)} ${esc(META.names_zh?.[t] || "")} <a href="#" class="cmp-x" data-t="${t}" title="移除">×</a></span>`).join("")} <a href="#" id="cmp-go-sw" class="cmp-jump">↓ 上涨 / 下跌折线图</a></p>` : ""}</section>
     ${howto(CMP_HOWTO)}
     ${parts ? parts.ins : ""}
     <section class="card" id="cmp-all"><h3>全部股票指标对比 ${valueChip("中–高")}${badge("fact")}${badge("derived")}</h3><div id="cmp-all-body">${empty("加载中…")}</div></section>
@@ -162,6 +162,14 @@ PAGES.compare = async (r) => {
   }));
   document.querySelectorAll(".cmp-x").forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); apply({ t: sel.filter((x) => x !== a.dataset.t), pair: [] }); }));
   byId("cmp-clear")?.addEventListener("click", () => apply({ t: [], pair: [] }));
+  // 快捷选择栏吸顶：紧贴顶部导航栏下方（导航栏换行时高度会变）；跳到折线图时让出两个吸顶栏的高度（直接跳转，不用动画）
+  const qk = byId("cmp-quick"), tb = document.querySelector(".topbar");
+  if (qk && tb) qk.style.top = `${tb.offsetHeight}px`;
+  byId("cmp-go-sw")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    const el = byId("cmp-sw");
+    if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - (tb?.offsetHeight || 0) - (qk?.offsetHeight || 0) - 10);
+  });
   document.querySelectorAll("#cmp-p button").forEach((b) => (b.onclick = () => apply({ p: b.dataset.v })));
   document.querySelectorAll("#cmp-w button").forEach((b) => (b.onclick = () => apply({ w: +b.dataset.v })));
   document.querySelectorAll("#cmp-m button").forEach((b) => (b.onclick = () => apply({ m: b.dataset.v })));

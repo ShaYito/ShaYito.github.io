@@ -563,3 +563,13 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .pt-row > summary { cursor: pointer; line-height: 1.8; }
 .pt-row.pending { color: var(--muted); }
 .pt-react { float: right; text-align: right; font-size: 12px; }
+
+/* 多股对比：快捷选择栏吸顶、紧凑（2026-10-19 用户要求） */
+.cmp-quick { position: sticky; z-index: 6; padding: 6px 10px; margin-bottom: 10px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.cmp-quick .row { gap: 4px; margin: 2px 0; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }  /* 每行一行高，放不下的左右滑动 */
+.cmp-quick .row > * { flex: none; }
+.cmp-quick button.ghost { font-size: 12px; padding: 1px 7px; }
+.cmp-quick .tg { font-size: 10px; }
+.cmp-quick p { margin: 4px 0 0; white-space: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.cmp-quick .chip { font-size: 11.5px; padding: 0 6px; }
+.cmp-quick .cmp-jump { margin-left: 8px; font-size: 12px; white-space: nowrap; }
