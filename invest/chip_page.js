@@ -63,7 +63,7 @@ function renderChips(el, d, v) {
     <h4>逐家公司</h4>
     <div class="row"><div class="seg" id="chip-co">${d.companies.map((x) => btn("c", x.ticker, v.co, chipName(x))).join("")}</div></div>
     <div class="grid two">
-      <div><b>各项收入（十亿美元）</b>${chartDiv("c-chip-co")}</div>
+      <div><b>各项收入（$B）</b>${chartDiv("c-chip-co")}</div>
       <div><b>实际值 vs 上季给出的指引中值</b>${chartDiv("c-chip-beat")}
         <p class="muted small">柱 = 实际 ÷ 指引中值 − 1（毛利率为百分点差）。指引区间通常是中值 ±2%–5%，持续大幅超出说明公司指引偏保守或需求超预期。</p></div>
     </div>

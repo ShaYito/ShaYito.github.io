@@ -233,7 +233,7 @@ function homeTargetMoves(h, held, watch) {
 }
 
 // ---------- 内部人公开市场买入（SEC Form 4，经 yfinance）----------
-const insiderMoney = (v) => (!isNum(v) || v <= 0 ? "–" : v >= 1e6 ? `${(v / 1e6).toFixed(1)} 百万美元` : `${Math.round(v / 1e3)} 千美元`);
+const insiderMoney = (v) => (!isNum(v) || v <= 0 ? "–" : usdAmt(v, v >= 1e6 ? 1 : 0));
 function homeInsiderBuys(h, held, watch) {
   const list = h.insider_buys || [];
   const head = `<h3>内部人公开市场买入（近 ${h.insider_days || 90} 天）${badge("fact")}</h3>`;
@@ -247,7 +247,7 @@ function homeInsiderBuys(h, held, watch) {
       <td class="nowrap"><a href="#/stock/${esc(x.ticker)}"><b>${esc(x.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[x.ticker] || "")}</span>${tag(x.ticker)}</td>
       <td>${esc(x.insider)}<br><span class="muted">${esc(x.position || "")}${x.direct ? "" : "（间接持有）"}</span></td>
       <td class="num">${isNum(x.shares) ? Math.round(x.shares).toLocaleString() : "–"}</td><td class="num">${insiderMoney(x.value)}</td>
-      <td>${notable(x) ? '<span class="chip warnchip" title="金额 ≥ 100 万美元，或由 CEO / CFO 等核心高管买入">值得注意</span>' : (x.value || 0) < 5e4 ? '<span class="muted" title="金额很小，常见于定期小额买入，信息量低">金额很小</span>' : ""}</td></tr>`).join("")}</tbody></table></div>
+      <td>${notable(x) ? '<span class="chip warnchip" title="金额 ≥ $1M，或由 CEO / CFO 等核心高管买入">值得注意</span>' : (x.value || 0) < 5e4 ? '<span class="muted" title="金额很小，常见于定期小额买入，信息量低">金额很小</span>' : ""}</td></tr>`).join("")}</tbody></table></div>
     <p class="muted">${rich("高管与董事用自己的钱在公开市场买入自家股票，申报在交易后 2 个工作日内（SEC Form 4）。与卖出不同（卖出常因分散资产、缴税或事先约定的计划），买入通常意味着内部人认为股价被低估；研究中，金额较大、由核心高管买入、或多人在同一时期集中买入的情况更有信息量，但单笔买入的预测力有限，也不代表一定上涨。股票授予、行权不计入。详细记录见各股票页“内部人交易”。")}</p></section>`;
 }
 

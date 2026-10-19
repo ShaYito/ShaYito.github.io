@@ -122,7 +122,7 @@ function renderAccelSupply(d) {
     const node = byId(`c-ac-cw-${i}`);
     if (!node) return;
     const items = [...c.items].sort((a, b) => b.value - a.value);
-    mkChart(node, { tooltip: { trigger: "item", formatter: (q) => { const x = items[q.dataIndex]; return `<b>${esc(x.name)}</b>：${num(x.value, 1)} 万片（${pct(x.value / c.total, 0)}）${x.note ? `<br>${esc(x.note)}` : ""}`; } },
+    mkChart(node, { tooltip: { trigger: "item", formatter: (q) => { const x = items[q.dataIndex]; return `<b>${esc(x.name)}</b>：${num(x.value, 0)}K 片（${pct(x.value / c.total, 0)}）${x.note ? `<br>${esc(x.note)}` : ""}`; } },
       legend: { show: false }, grid: { left: 110, right: 70, top: 6, bottom: 10 },
       xAxis: { type: "value", show: false }, yAxis: { type: "category", inverse: true, data: items.map((x) => x.name), axisLabel: { fontSize: 11 } },
       series: [{ type: "bar", barMaxWidth: 14, color: palette()[0], itemStyle: { borderRadius: [0, 4, 4, 0] }, data: items.map((x) => x.value),

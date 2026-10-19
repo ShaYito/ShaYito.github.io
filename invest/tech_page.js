@@ -176,7 +176,7 @@ function srcLink(x) { return `<a href="${esc(x.url)}" target="_blank" rel="noope
 
 function techIndustryHtml(t) {
   const none = `<p class="muted">未找到公开数据（或尚未整理）。</p>`;
-  const market = t.market?.length ? `<div class="kpis">${t.market.map((m) => `<div class="kpi"><span class="muted">${esc(m.label)}</span><b>${num(m.value, m.value < 100 ? 1 : 0)} ${esc(m.unit)}</b><span class="muted small">${esc(m.note || "")}</span>${srcLink(m)}</div>`).join("")}</div>` : none;
+  const market = t.market?.length ? `<div class="kpis">${t.market.map((m) => `<div class="kpi"><span class="muted">${esc(m.label)}</span><b>${esc(unitVal(m.value, m.unit, m.value < 100 ? 1 : 0))}</b><span class="muted small">${esc(m.note || "")}</span>${srcLink(m)}</div>`).join("")}</div>` : none;
   const shares = t.shares?.length ? `<div class="tk-shares">${t.shares.map((s, i) => `<div><b>${esc(s.label)}</b> <span class="muted small">${esc(s.basis)}</span>
       ${s.items.some((x) => isNum(x.share)) ? chartDiv(`c-tk-sh-${i}`, "short") : ""}
       <ul class="small">${s.items.filter((x) => !isNum(x.share) || x.value).map((x) => `<li>${esc(x.name)}${isNum(x.share) ? ` ${pct(x.share, 1)}` : ""}${x.value ? `：${esc(x.value)}` : ""}</li>`).join("")}</ul>
@@ -380,7 +380,7 @@ function techCompanyTable(t) {
       <td class="num">${isNum(c.mcap_usd) ? `${num(c.mcap_usd, c.mcap_usd < 10 ? 1 : 0)}B` : "–"}</td><td class="num">${isNum(c.fwd_pe) ? num(c.fwd_pe, 1) : "–"}</td>
       ${["1m", "6m", "1y"].map((k) => `<td class="num ${cls(c.ret?.[k])}">${pct(c.ret?.[k], 0, true)}</td>`).join("")}
       <td class="num ${cls(c.rel?.["1y"])}">${pct(c.rel?.["1y"], 0, true)}</td><td class="num">${pct(c.from_high, 0, true)}</td><td class="num">${c.analysts ?? "–"}</td></tr>`).join("")}</tbody></table></div>
-    <p class="muted small">市值按最新汇率换算成美元（B = 十亿美元）；涨跌为当地货币价格；“1 年相对大盘”= 公司 ÷ 本地大盘的 1 年变化。业务纯度 = 这项技术相关业务占公司收入的大致比重（人工判断，仅瓶颈案例中的公司有）。</p></section>`;
+    <p class="muted small">市值按最新汇率换算成美元（B = billion，十亿美元）；涨跌为当地货币价格；“1 年相对大盘”= 公司 ÷ 本地大盘的 1 年变化。业务纯度 = 这项技术相关业务占公司收入的大致比重（人工判断，仅瓶颈案例中的公司有）。</p></section>`;
 }
 
 function techNewsHtml(t) {

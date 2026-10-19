@@ -822,7 +822,7 @@ function fmtMetric(v, f) {
   if (f === "pct0") return pct(v, 0);
   if (f === "pp") return pct(v, 1, true);
   if (f === "num1") return num(v, 1);
-  if (f === "cap") return v >= 1e12 ? `${num(v / 1e12, 2)} 万亿美元` : `${Math.round(v / 1e8).toLocaleString()} 亿美元`;
+  if (f === "cap") return usdAmt(v, v >= 1e12 ? 2 : 1);
   return num(v, 2);
 }
 // 相对同行中位数的一句话（只描述事实：高于 / 低于多少）
@@ -926,7 +926,7 @@ function insiderCard(s, t) {
   const recent = list.filter((x) => x.date >= s6);
   const agg = (k) => recent.filter((x) => x.kind === k).reduce((a, x) => ({ n: a.n + 1, v: a.v + (x.value || 0), sh: a.sh + (x.shares || 0) }), { n: 0, v: 0, sh: 0 });
   const buy = agg("purchase"), sell = agg("sale");
-  const money$ = (v) => (v >= 1e8 ? `${(v / 1e8).toFixed(1)} 亿美元` : v >= 1e4 ? `${(v / 1e4).toFixed(0)} 万美元` : v > 0 ? `${Math.round(v)} 美元` : "–");
+  const money$ = (v) => (v > 0 ? usdAmt(v) : "–");
   const rows = list.slice(0, 15).map((x) => `<tr><td class="nowrap">${esc(x.date)}</td><td>${esc(x.insider)}<br><span class="muted">${esc(x.position)}</span></td>
     <td><span class="${x.kind === "purchase" ? "pos" : x.kind === "sale" ? "neg" : "muted"}">${esc(INSIDER_ZH[x.kind] || x.kind)}</span>${x.direct ? "" : ' <span class="muted" title="通过信托、家族实体等间接持有">（间接）</span>'}</td>
     <td class="num">${isNum(x.shares) ? Math.round(x.shares).toLocaleString() : "–"}</td><td class="num">${money$(x.value)}</td></tr>`).join("");
@@ -1149,7 +1149,7 @@ function drawPhase(s, k) {
 }
 
 // ---------------- 现金跑道与股本稀释（M67，SEC 现金流量表 + 封面流通股 + 增发相关文件）----------------
-const rwMoney = (v) => (!isNum(v) ? "–" : v === 0 ? "0" : `${v < 0 ? "−" : ""}${Math.abs(v) >= 1e8 ? `${num(Math.abs(v) / 1e8, Math.abs(v) >= 1e10 ? 0 : 1)} 亿美元` : `${num(Math.abs(v) / 1e4, 0)} 万美元`}`);
+const rwMoney = (v) => (!isNum(v) ? "–" : v === 0 ? "0" : usdAmt(v));
 const RW_STATUS = {
   self_funded: ["自给", "pos", "近几季自由现金流为正，经营不消耗现金"],
   capex: ["扩张靠融资", "warn", "经营现金流为正，但资本支出更大，缺口靠发债 / 增发 / 客户预付"],
@@ -1181,7 +1181,7 @@ function runwayCard(s) {
   const L = r.liquidity;
   const parts = [["现金", L.cash], ["短期投资", L.st], ["长期证券投资", L.lt]].filter(([, v]) => isNum(v) && v > 0).map(([k, v]) => `${k} ${rwMoney(v)}`).join(" + ");
   const shText = !sh.dates?.length ? "SEC 封面没有可用的流通股数据（多类股公司常见），股本变化未计算。"
-    : `流通股 ${num(sh.values.at(-1) / 1e6, 0)} 百万股（${esc(sh.dates.at(-1))}）：近 1 年 ${dil(sh.yoy)}，近 3 年年化 ${dil(sh.cagr3)}${isNum(sh.yoy) ? (sh.yoy > 0.05 ? "——明显稀释：同样的公司价值分给更多股份，每股价值被摊薄。" : sh.yoy < -0.005 ? "——股本在减少（回购）。" : isNum(sh.cagr3) && sh.cagr3 > 0.1 ? "——近 1 年基本稳定，但此前稀释明显。" : "——基本稳定。") : ""}`;
+    : `流通股 ${num(sh.values.at(-1) / 1e6, 0)}M 股（${esc(sh.dates.at(-1))}）：近 1 年 ${dil(sh.yoy)}，近 3 年年化 ${dil(sh.cagr3)}${isNum(sh.yoy) ? (sh.yoy > 0.05 ? "——明显稀释：同样的公司价值分给更多股份，每股价值被摊薄。" : sh.yoy < -0.005 ? "——股本在减少（回购）。" : isNum(sh.cagr3) && sh.cagr3 > 0.1 ? "——近 1 年基本稳定，但此前稀释明显。" : "——基本稳定。") : ""}`;
   const splitNote = (sh.splits || []).length ? `已按拆股 / 并股调整到最新口径（${sh.splits.map((x) => `${esc(x.date)} ${x.ratio >= 1 ? `每 1 股拆为 ${num(x.ratio, 0)} 股` : `每 ${num(1 / x.ratio, 0)} 股合并为 1 股`}`).join("、")}${(sh.notes || []).length ? `；${sh.notes.map(esc).join("；")}` : ""}）。` : "";
   const rows = (r.filings || []).map((f) => `<tr><td class="nowrap">${esc(f.date)}</td><td>${esc(f.form)}</td><td>${esc(f.kind)}</td><td><a href="${esc(f.url)}" target="_blank" rel="noopener">原文</a></td></tr>`).join("");
   return `<section class="card" id="runway-card">${head}
@@ -1208,10 +1208,10 @@ function drawRunway(s) {
   const r = s.runway;
   if (!r || !byId("c-rw-cash")) return;
   const lbl = r.quarters.map((d) => d.slice(0, 7));
-  const B = (v) => (isNum(v) ? v / 1e8 : null);
+  const B = (v) => (isNum(v) ? v / 1e6 : null);
   const eq = r.quarters.map((_, i) => (isNum(r.equity?.[i]) || isNum(r.warrants?.[i]) ? (r.equity?.[i] || 0) + (r.warrants?.[i] || 0) : null));
   mkChart(byId("c-rw-cash"), {
-    title: { text: "每季自由现金流与股票融资（亿美元）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    title: { text: "每季自由现金流与股票融资（$M）", left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
     tooltip: { trigger: "axis", formatter: (ps) => { const i = ps[0].dataIndex; return `${r.quarters[i]}<br>自由现金流 ${rwMoney(r.fcf[i])}（经营 ${rwMoney(r.ocf[i])}，资本支出 ${rwMoney(r.capex[i])}）<br>股票与认股权证融资 ${rwMoney(eq[i])}${isNum(r.debt?.[i]) && r.debt[i] ? `<br>发债 ${rwMoney(r.debt[i])}` : ""}`; } },
     legend: { top: 0, right: 0, textStyle: { fontSize: 11 } }, grid: { left: 48, right: 10, top: 34, bottom: 24 },
     xAxis: { type: "category", data: lbl, axisLabel: { fontSize: 10 } }, yAxis: { type: "value", axisLabel: { fontSize: 10 } },
@@ -1223,8 +1223,8 @@ function drawRunway(s) {
   const sh = r.shares || {};
   if (!sh.dates?.length || !byId("c-rw-sh")) return;
   mkChart(byId("c-rw-sh"), {
-    title: { text: `流通股（百万股${(sh.splits || []).length ? "，已按拆股 / 并股调整" : ""}）`, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
-    tooltip: { trigger: "axis", formatter: (ps) => `${sh.dates[ps[0].dataIndex]}：${num(sh.values[ps[0].dataIndex] / 1e6, 1)} 百万股` },
+    title: { text: `流通股（M 股${(sh.splits || []).length ? "，已按拆股 / 并股调整" : ""}）`, left: 0, top: 0, textStyle: { fontSize: 12, fontWeight: 500, color: css("--ink-2") } },
+    tooltip: { trigger: "axis", formatter: (ps) => `${sh.dates[ps[0].dataIndex]}：${num(sh.values[ps[0].dataIndex] / 1e6, 1)}M 股` },
     legend: { show: false }, grid: { left: 52, right: 10, top: 34, bottom: 24 },
     xAxis: { type: "category", data: sh.dates.map((d) => d.slice(0, 7)), axisLabel: { fontSize: 10 } },
     yAxis: { type: "value", scale: true, axisLabel: { fontSize: 10, formatter: (v) => num(v / 1e6, 0) } },

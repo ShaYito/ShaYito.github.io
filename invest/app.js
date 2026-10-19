@@ -17,6 +17,18 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const isNum = (v) => typeof v === "number" && isFinite(v);
 const pct = (v, d = 1, signed = false) => (isNum(v) ? `${signed && v > 0 ? "+" : ""}${(v * 100).toFixed(d)}%` : "–");
 const num = (v, d = 2, signed = false) => (isNum(v) ? `${signed && v > 0 ? "+" : ""}${v.toFixed(d)}` : "–");
+// 带单位的数值（M78 金额统一用英文单位）：unit 为 "$B"、"CNY B"、"T" 这类时写成 $220B、CNY 160B、120T，其他单位放在数字后
+const unitVal = (v, unit, d) => {
+  const m = /^(.*?)\s*([KMBT])$/.exec(unit || "");
+  return m ? `${m[1]}${m[1] && !m[1].endsWith("$") ? " " : ""}${num(v, d)}${m[2]}` : `${num(v, d)} ${unit || ""}`.trim();
+};
+// 美元金额（单位：美元）自动选 T / B / M / K，去掉小数末尾的 0
+const usdAmt = (v, d = 1) => {
+  if (!isNum(v)) return "–";
+  const a = Math.abs(v), s = v < 0 ? "−" : "";
+  const [div, u] = a >= 1e12 ? [1e12, "T"] : a >= 1e9 ? [1e9, "B"] : a >= 1e6 ? [1e6, "M"] : a >= 1e3 ? [1e3, "K"] : [1, ""];
+  return `${s}$${(a / div).toFixed(u ? d : 0).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}${u}`;
+};
 const cls = (v) => (isNum(v) ? (v > 0 ? "pos" : v < 0 ? "neg" : "") : "");
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const isDark = () => css("--page").toLowerCase() === "#0d0d0d";
@@ -829,7 +841,7 @@ function stockInsights(s, t) {
 const REGION_COLOR = { us: "#2a78d6", americas: "#5b9be6", americas_other: "#9cc3f0", china: "#e34948", taiwan: "#eb6834",
   japan: "#1baf7a", korea: "#0e8a5f", singapore: "#6fd0a8", asia_pacific: "#eda100", asia_other: "#f3c75a",
   europe: "#4a3aa7", non_us: "#a9a7a0", other: "#c9c7c0" };
-const CUR_ZH = { USD: "十亿美元", TWD: "十亿新台币", EUR: "十亿欧元" };
+const CUR_ZH = { USD: "$B", TWD: "NT$ B", EUR: "EUR B" };
 const OTHER_GRAY = () => (isDark() ? "#55544f" : "#d3d1ca");
 const periodLabel = (p, freq) => (freq === "annual" ? `${p.slice(0, 4)} 财年` : p.slice(0, 7));
 const ppText = (v) => (isNum(v) ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}` : "–");

@@ -11,12 +11,12 @@ async function pvData() {
   if (!PV_DATA) PV_DATA = await load("private_cos.json");
   return PV_DATA?.companies ? PV_DATA : null;
 }
-const pvB = (v) => (isNum(v) ? (v >= 1000 ? `${num(v / 1000, 2)} 万亿美元` : `${(v * 10).toLocaleString("en-US", { maximumFractionDigits: v < 10 ? 1 : 0 })} 亿美元`) : "–");
+const pvB = (v) => (isNum(v) ? usdAmt(v * 1e9, 2) : "–");
 const pvDate = (x) => (x.precision === "month" ? `${x.date.slice(0, 7)}（约）` : x.date);
 const pvSrc = (x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="small">来源</a>${x.basis === "reported" ? ' <span class="muted small" title="媒体报道（据知情人士），公司未正式公布">据报道</span>' : ""}`;
 const pvTk = (t, inPool) => (t ? (inPool ? `<a href="#/stock/${esc(t)}"><b>${esc(t)}</b></a>` : `<b>${esc(t)}</b>`) : "");
 const pvName = (c) => `${esc(c.name)}${c.name_zh ? ` <span class="muted">${esc(c.name_zh)}</span>` : ""}`;
-const pvVal = (m) => (m.unit === "十亿美元" ? pvB(m.value) : `${num(m.value, m.value < 10 ? 1 : 0)} ${esc(m.unit)}`);
+const pvVal = (m) => (m.unit === "$B" ? pvB(m.value) : esc(unitVal(m.value, m.unit, m.value < 10 ? 1 : 0)));
 function pvLatestMetric(c, re) { return [...c.metrics].reverse().find((m) => re.test(m.label)); }
 function pvEvents(c) {
   return [
@@ -86,7 +86,7 @@ function renderPrivate(d, c) {
     <div class="kpi"><span class="muted">最近一轮估值</span><b>${lr ? pvB(lr.post_money_b) : "–"}</b><span class="muted small">${lr ? `${esc(pvDate(lr))} ${esc(lr.name)}` : ""}</span></div>
     <div class="kpi"><span class="muted">基金估值折算</span><b>${imp ? pvB(imp.latest_b) : "–"}</b><span class="muted small">${imp ? `${esc(imp.latest_period)}，较“${esc(imp.round)}” <span class="${cls(imp.change)}">${pct(imp.change, 0, true)}</span>` : "无足够的基金估值"}</span></div>
     <div class="kpi"><span class="muted">最新收入</span><b>${rev ? pvVal(rev) : "–"}</b><span class="muted small">${rev ? `${esc(rev.label)} ${esc(pvDate(rev))}${rev.basis === "reported" ? "（据报道）" : ""}` : ""}</span></div>
-    <div class="kpi"><span class="muted">公募基金持有</span><b>${fh.n_funds ? `${fh.n_funds} 只` : "–"}</b><span class="muted small">${fh.n_funds ? `合计约 ${num(fh.value_m / 100, 1)} 亿美元（${esc(fh.period)}）` : ""}</span></div></div>`;
+    <div class="kpi"><span class="muted">公募基金持有</span><b>${fh.n_funds ? `${fh.n_funds} 只` : "–"}</b><span class="muted small">${fh.n_funds ? `合计约 ${usdAmt(fh.value_m * 1e6)}（${esc(fh.period)}）` : ""}</span></div></div>`;
   app().innerHTML = `${nav}<h2>${pvName(c)} <span class="muted">${esc(c.position)} · 数据截至 ${esc(d.asof)}</span></h2>
     <section class="card"><p>${esc(c.summary)}</p>${kpis}
       <p class="small">关系最紧密的上市公司：${c.related.map((x) => pvTk(x.ticker, x.in_pool)).join(" ")}</p></section>
@@ -146,7 +146,7 @@ function pvRoundsHtml(c) {
 function pvFundTable(fh) {
   if (!fh.top.length) return "";
   return `<details class="howto"><summary>最近一期持有它的基金（前 ${fh.top.length} 只，共 ${fh.n_funds} 只）</summary><div class="table-wrap"><table><thead><tr><th>申报主体</th><th>基金公司</th><th>报告期</th><th class="num">市值</th><th>持有的股份类别</th><th></th></tr></thead><tbody>
-    ${fh.top.map((x) => `<tr><td class="wrap">${esc(x.filer)}</td><td>${esc(x.family)}</td><td>${esc(x.period)}</td><td class="num">${num(x.value_m, 1)} 百万美元</td><td class="wrap small">${x.classes.map(esc).join("；")}</td><td><a href="${esc(x.url)}" target="_blank" rel="noopener" class="small">N-PORT</a></td></tr>`).join("")}</tbody></table></div></details>`;
+    ${fh.top.map((x) => `<tr><td class="wrap">${esc(x.filer)}</td><td>${esc(x.family)}</td><td>${esc(x.period)}</td><td class="num">${usdAmt(x.value_m * 1e6)}</td><td class="wrap small">${x.classes.map(esc).join("；")}</td><td><a href="${esc(x.url)}" target="_blank" rel="noopener" class="small">N-PORT</a></td></tr>`).join("")}</tbody></table></div></details>`;
 }
 function pvHoldersHtml(c) {
   if (!c.holders.length) return "";
@@ -180,7 +180,7 @@ function pvDocsHtml(c) {
   const docs = c.docs.length ? `<ul>${[...c.docs].reverse().map((x) => `<li><b>${esc(pvDate(x))}</b> ${PV_DOC[x.kind]}：${esc(x.title)} <span class="muted small">${esc(x.text)}</span> ${pvSrc(x)}</li>`).join("")}</ul>` : `<p class="muted">暂无人工整理的文件。</p>`;
   const ipoHtml = ipo.length ? `<ul>${ipo.map((x) => `<li><b>${esc(x.date)}</b> ${esc(x.form)} · ${esc(x.filer)} <a href="${esc(x.url)}" target="_blank" rel="noopener" class="small">EDGAR</a></li>`).join("")}</ul>` : `<p class="muted small">EDGAR 上尚无公开的上市申请文件（秘密提交的草案不公开）。</p>`;
   const fd = own.length ? `<div class="table-wrap"><table><thead><tr><th>日期</th><th>表格</th><th>主体</th><th class="num">发行金额</th><th class="num">已售</th><th>首次出售</th><th>证券类型</th><th></th></tr></thead><tbody>
-    ${own.slice(0, 12).map((x) => `<tr><td>${esc(x.date)}</td><td>${esc(x.form)}</td><td class="wrap">${esc(x.entity || x.issuer || "")}</td><td class="num">${isNum(x.offering) ? `${num(x.offering / 1e8, 1)} 亿美元` : "不限"}</td><td class="num">${isNum(x.sold) ? `${num(x.sold / 1e8, 1)} 亿美元` : "–"}</td><td>${esc(x.first_sale || "")}</td><td class="small">${esc((x.types || []).join(" / "))}</td><td><a href="${esc(x.url)}" target="_blank" rel="noopener" class="small">EDGAR</a></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted small">公司本身没有 Form D 备案（或通过其他豁免融资）。</p>`;
+    ${own.slice(0, 12).map((x) => `<tr><td>${esc(x.date)}</td><td>${esc(x.form)}</td><td class="wrap">${esc(x.entity || x.issuer || "")}</td><td class="num">${isNum(x.offering) ? usdAmt(x.offering) : "不限"}</td><td class="num">${isNum(x.sold) ? usdAmt(x.sold) : "–"}</td><td>${esc(x.first_sale || "")}</td><td class="small">${esc((x.types || []).join(" / "))}</td><td><a href="${esc(x.url)}" target="_blank" rel="noopener" class="small">EDGAR</a></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted small">公司本身没有 Form D 备案（或通过其他豁免融资）。</p>`;
   return `<section class="card"><h3>投资者文件 ${badge("fact")}</h3>
     <h4>关键文件</h4>${docs}<h4>上市申请（S-1 / F-1 / 424B4，自动检测）</h4>${ipoHtml}
     <h4>公司自己的 Form D（私募融资备案）</h4>${fd}

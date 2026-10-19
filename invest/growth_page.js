@@ -43,7 +43,7 @@ function growthBacktestHtml(bt) {
   const weak = Object.keys(GROWTH_COMP).filter((k) => Math.abs(s.component_ic?.[k]?.[12]?.mean ?? 0) < 0.01).map((k) => GROWTH_COMP[k]);
   const q = s.quintiles || [], mono = q.length === 5 && q.every((v, i) => i === 0 || v >= q[i - 1] - 0.005);
   const verdict = `<p><b>结论</b>：得分前 ${s.top_n} 只年化 ${pct(a.top, 1)}，比全部可选科技股等权高 ${pp(a.top - a.pool).replace(" 个百分点", "")} 个百分点，但波动与回撤也更大；五等分${mono ? "大致单调" : "并不单调"}（超额主要来自得分最高的一组）；总分 IC ${num(ic[1]?.mean, 3)}（t ${num(ic[1]?.t, 1)}）${(ic[1]?.t ?? 0) > 2 ? "统计上显著" : "统计上不显著"}。${strong.length ? `单项中 ${strong.join("、")} 在 12 个月上统计可靠（t > 2）` : "没有单项在 12 个月上统计可靠"}${weak.length ? `；${weak.join("、")} 单独几乎没有预测力（IC 接近 0）` : ""}。可以用上方权重调节器提高可靠项的权重，但按回测结果调权重本身有过拟合风险。</p>`;
-  return `<p class="muted">${esc(s.period[0])} 至 ${esc(s.period[1])}，共 ${s.months} 个月；每月末用<b>当时已披露</b>的财报与当时的价格打分（与上表同一套代码与默认权重），在当时市值 ≥ ${capFmt(bt.min_cap)} 美元的科技股中（平均 ${num(s.avg_eligible, 0)} 只）买入得分前 ${s.top_n} 只、等权、持有一个月。</p>
+  return `<p class="muted">${esc(s.period[0])} 至 ${esc(s.period[1])}，共 ${s.months} 个月；每月末用<b>当时已披露</b>的财报与当时的价格打分（与上表同一套代码与默认权重），在当时市值 ≥ ${capFmt(bt.min_cap)}的科技股中（平均 ${num(s.avg_eligible, 0)} 只）买入得分前 ${s.top_n} 只、等权、持有一个月。</p>
     <div class="grid two">
       <div><div id="growth-bt-chart" class="chart"></div></div>
       <div><div class="table-wrap"><table><thead><tr><th></th><th class="num">年化收益</th><th class="num">年化波动</th><th class="num">最大回撤</th></tr></thead><tbody>
@@ -58,7 +58,7 @@ function growthBacktestHtml(bt) {
       <div class="table-wrap"><table><thead><tr><th>单项指标的 IC</th><th class="num">1 个月</th><th class="num">12 个月</th></tr></thead><tbody>${compIc}</tbody></table></div></div>
       <div>${years.length ? `<div class="table-wrap"><table><thead><tr><th>年份</th><th class="num">前 ${s.top_n} 只</th><th class="num">可选股票等权</th><th class="num">SPY</th></tr></thead><tbody>
         ${years.map(([y, v]) => `<tr><td>${esc(y)}</td><td class="num ${v.top > v.pool ? "pos" : "neg"}">${pct(v.top, 0)}</td><td class="num">${pct(v.pool, 0)}</td><td class="num">${pct(v.spy, 0)}</td></tr>`).join("")}</tbody></table></div>` : ""}</div></div>
-    <p class="muted">怎么读：IC 是每月“得分排名”与“之后收益排名”的相关系数，> 0 说明得分高的股票之后平均涨得更多；单个股票因子的 IC 通常只有 0.02–0.05，t 值 > 2 才算统计上可靠（6 / 12 个月的样本相互重叠，t 值偏高）。<b>已知偏差</b>：股票池来自现在仍上市的公司（股票池 ${bt.pool_size} 只，当前市值 ≥ ${capFmt(bt.min_cap_now)} 美元），被收购或退市的公司不在其中，所有组合的收益都偏乐观——更应看“前 ${s.top_n} 只”与“全部可选股票等权”之间的差距，以及五等分是否单调；历史财报来自 SEC 首次披露数值，只有年报的外国公司数据更滞后；Yahoo 兜底数据不进入回测。过去有效不代表未来有效。</p>`;
+    <p class="muted">怎么读：IC 是每月“得分排名”与“之后收益排名”的相关系数，> 0 说明得分高的股票之后平均涨得更多；单个股票因子的 IC 通常只有 0.02–0.05，t 值 > 2 才算统计上可靠（6 / 12 个月的样本相互重叠，t 值偏高）。<b>已知偏差</b>：股票池来自现在仍上市的公司（股票池 ${bt.pool_size} 只，当前市值 ≥ ${capFmt(bt.min_cap_now)}），被收购或退市的公司不在其中，所有组合的收益都偏乐观——更应看“前 ${s.top_n} 只”与“全部可选股票等权”之间的差距，以及五等分是否单调；历史财报来自 SEC 首次披露数值，只有年报的外国公司数据更滞后；Yahoo 兜底数据不进入回测。过去有效不代表未来有效。</p>`;
 }
 
 async function drawGrowth() {
@@ -73,7 +73,7 @@ async function drawGrowth() {
   const seg = [["pending", "待审核"], ["watch", "已关注"], ["add", "已加入"], ["ignore", "已忽略"], ["all", "全部"]];
   const th = d.thresholds;
   host.innerHTML = `<h3>高成长科技股候选池 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 扫描于 ${esc(d.generated)} · ${d.stats.passed} 只通过门槛，显示前 ${d.max_candidates}</span></h3>
-    <p class="muted">不看 AI 关键词，只看<b>发展快不快、质量好不好、市场是否认可</b>，用来发现 AI 以外的高成长科技股。范围：全部美国上市股票（含 ADR，来自 Nasdaq 股票筛选器）中，${esc(d.sectors_always.join("、"))} 板块全部纳入；${esc(d.sectors_if_rnd.join("、"))} 板块只纳入研发投入 ≥ 收入 ${pct(th.min_rnd_intensity, 0)} 的公司（如亚马逊、优步、特斯拉），另外 ${esc(d.industries_always.join("、"))} 行业直接纳入。门槛：市值 ≥ ${capFmt(th.min_market_cap)} 美元、近 3 个月日均成交额 ≥ ${num(th.min_dollar_volume / 1e6, 0)} 百万美元。财务数据来自 SEC（首次披露口径）${d.stats.yahoo_fallback ? `，${d.stats.yahoo_fallback} 只 SEC 没有近期数据的改用 Yahoo 年报` : ""}。</p>
+    <p class="muted">不看 AI 关键词，只看<b>发展快不快、质量好不好、市场是否认可</b>，用来发现 AI 以外的高成长科技股。范围：全部美国上市股票（含 ADR，来自 Nasdaq 股票筛选器）中，${esc(d.sectors_always.join("、"))} 板块全部纳入；${esc(d.sectors_if_rnd.join("、"))} 板块只纳入研发投入 ≥ 收入 ${pct(th.min_rnd_intensity, 0)} 的公司（如亚马逊、优步、特斯拉），另外 ${esc(d.industries_always.join("、"))} 行业直接纳入。门槛：市值 ≥ ${capFmt(th.min_market_cap)}、近 3 个月日均成交额 ≥ ${usdAmt(th.min_dollar_volume)}。财务数据来自 SEC（首次披露口径）${d.stats.yahoo_fallback ? `，${d.stats.yahoo_fallback} 只 SEC 没有近期数据的改用 Yahoo 年报` : ""}。</p>
     ${manualTodoHtml(d.manual_todo)}
     <details class="howto"><summary>六项指标怎么算、可信度如何</summary>
       <div class="table-wrap"><table class="cand-method"><thead><tr><th style="width:12%">指标</th><th>怎么算</th><th style="width:7%">可信度</th><th style="width:40%">已知问题</th></tr></thead><tbody>

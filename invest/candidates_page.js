@@ -9,7 +9,7 @@ const CAND_COMP = { segment: "AI 业务收入占比", accel: "AI 周期收入加
 const CAND_REVIEW_ZH = { watch: "已关注", add: "已加入选股池", ignore: "已忽略" };
 const CAND_W_KEY = "invest.cand.weights";
 let CAND_STATE = { filter: "pending", all: false, uni: true };
-const capFmt = (v) => (!isNum(v) ? "–" : v >= 1e12 ? `${num(v / 1e12, 2)} 万亿` : `${Math.round(v / 1e8).toLocaleString()} 亿`);
+const capFmt = (v) => usdAmt(v, v >= 1e12 ? 2 : 1);
 
 // 八类证据的计算方式与可信度（页面常驻说明；顺序与 CAND_COMP 无关，按此表显示）
 const CAND_METHOD = [
@@ -64,7 +64,7 @@ async function drawCandidates() {
   const themes = META.themes.map((t) => `<option value="${t.key}">${esc(t.name)}</option>`).join("");
   const seg = [["pending", "待审核"], ["watch", "已关注"], ["add", "已加入"], ["ignore", "已忽略"], ["all", "全部"]];
   host.innerHTML = `<h3>AI 相关股票候选池 ${badge("fact")}${badge("derived")}<span class="muted" style="font-weight:400"> 扫描于 ${esc(d.generated)} · ${d.candidates.length} 只候选通过门槛</span></h3>
-    <p class="muted">${rich(`从公开数据中找出选股池以外、与 AI 相关的美国上市公司（含 ADR），每周日更新；只列证据，不判断投资价值，加入关注 / 选股池由你审核。来源：${d.sources.etfs.map((e) => `${e.ticker}（${e.name}，${e.holdings} 只）`).join("、")} 的持仓，以及 SEC 全文检索（近 15 个月年报、季报与 8-K 中提到 ${Object.keys(d.sources.sec_queries).map((q) => `“${q}”`).join("、")} 的公司）。门槛：市值 ≥ ${capFmt(d.thresholds.min_market_cap)} 美元、近 3 个月日均成交额 ≥ ${num(d.thresholds.min_dollar_volume / 1e6, 0)} 百万美元。`)}</p>
+    <p class="muted">${rich(`从公开数据中找出选股池以外、与 AI 相关的美国上市公司（含 ADR），每周日更新；只列证据，不判断投资价值，加入关注 / 选股池由你审核。来源：${d.sources.etfs.map((e) => `${e.ticker}（${e.name}，${e.holdings} 只）`).join("、")} 的持仓，以及 SEC 全文检索（近 15 个月年报、季报与 8-K 中提到 ${Object.keys(d.sources.sec_queries).map((q) => `“${q}”`).join("、")} 的公司）。门槛：市值 ≥ ${capFmt(d.thresholds.min_market_cap)}、近 3 个月日均成交额 ≥ ${usdAmt(d.thresholds.min_dollar_volume)}。`)}</p>
     ${manualTodoHtml(d.manual_todo)}
     <details class="howto" open><summary>八类得分怎么算、可信度如何</summary>
       <div class="table-wrap"><table class="cand-method"><thead><tr><th style="width:14%">证据</th><th>怎么算</th><th style="width:7%">可信度</th><th style="width:38%">已知问题</th></tr></thead><tbody>
@@ -109,7 +109,7 @@ async function drawCandidates() {
         ${a ? `<p class="muted">最新年报：<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.form)}（${esc(a.date)}）</a>；点名次数：${esc(Object.entries(a.named || {}).map(([t, n]) => `${t} ${n}`).join("、") || "无")}（可能是客户、供应商、合作方，也可能是竞争对手，见摘录）</p>
           ${a.snippets?.length ? `<ul class="cand-snip">${a.snippets.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}` : ""}
         ${Object.keys(r.queries).length ? `<p class="muted">SEC 全文检索（近 15 个月年报、季报、8-K）：${esc(Object.entries(r.queries).map(([q, n]) => `“${q}” ${n} 份`).join("、"))}</p>` : ""}
-        <p class="muted">收入增速 ${isNum(r.revenue_growth) ? pct(r.revenue_growth, 0, true) : "–"} · 日均成交额 ${isNum(r.dollar_volume) ? `${num(r.dollar_volume / 1e6, 0)} 百万美元` : "–"} · ${isUni ? `<a href="#/stock/${esc(r.ticker)}">个股页</a>` : `<a href="https://finance.yahoo.com/quote/${esc(r.ticker)}" target="_blank" rel="noopener">Yahoo 行情</a>`}</p>
+        <p class="muted">收入增速 ${isNum(r.revenue_growth) ? pct(r.revenue_growth, 0, true) : "–"} · 日均成交额 ${isNum(r.dollar_volume) ? usdAmt(r.dollar_volume) : "–"} · ${isUni ? `<a href="#/stock/${esc(r.ticker)}">个股页</a>` : `<a href="https://finance.yahoo.com/quote/${esc(r.ticker)}" target="_blank" rel="noopener">Yahoo 行情</a>`}</p>
         ${isUni ? "" : r.in_universe ? '<p class="pos">已在选股池中。</p>' : `<div class="row cand-act" data-t="${esc(r.ticker)}">
           <button type="button" class="ghost" data-act="watch">关注</button><button type="button" class="ghost" data-act="ignore">忽略</button>
           ${st !== "pending" ? '<button type="button" class="ghost" data-act="reset">撤销</button>' : ""}
