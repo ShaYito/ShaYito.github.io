@@ -1231,3 +1231,40 @@ function drawRunway(s) {
     series: [{ type: "line", step: "end", showSymbol: true, symbolSize: 4, data: sh.values, color: palette()[0], lineStyle: { width: 2 } }],
   });
 }
+
+// ---------------- 分散作用（M81，分散化主题股票） ----------------
+function diversifyCard(s) {
+  const d = s.diversify;
+  if (!d) return "";
+  const r = d.reason;
+  const why = r ? `<ul>
+      <li><b>主要驱动</b>：${esc(r.driver)}</li><li><b>为什么能分散</b>：${esc(r.why)}</li>${r.caveat ? `<li><b>局限</b>：${esc(r.caveat)}</li>` : ""}</ul>` : "";
+  const c = (v) => `<span class="${isNum(v) ? (v <= -0.2 ? "pos" : v >= 0.3 ? "neg" : "") : ""}">${isNum(v) ? (v > 0 ? "+" : "") + v.toFixed(2) : "–"}</span>`;
+  const rv = d.roll.values.filter(isNum);
+  const lo = rv.length ? Math.min(...rv) : null, hi = rv.length ? Math.max(...rv) : null;
+  return `<section class="card" data-nav="分散作用"><h3>分散作用 ${badge("model")}${badge("derived")}</h3>
+    ${why ? `<p class="muted small">加入分散化主题时的理由（人工整理）：</p>${why}` : ""}
+    <div class="kpis">
+      <div class="kpi"><span class="muted">与 AI 股的相关性</span><b>${c(d.corr_ai)}</b><span class="muted small">AI 股 = 选股池 ${d.n_ai} 只 AI 相关股票等权</span></div>
+      <div class="kpi"><span class="muted">与其他分散化股票</span><b>${c(d.corr_div)}</b><span class="muted small">同主题其余 ${d.n_div} 只等权；越低越能补充新的驱动</span></div>
+      <div class="kpi"><span class="muted">对标普 500 的 beta</span><b>${isNum(d.beta_spy) ? d.beta_spy.toFixed(2) : "–"}</b><span class="muted small">大盘涨跌 1% 时它平均涨跌多少</span></div>
+      <div class="kpi"><span class="muted">年化波动</span><b>${pct(d.vol, 0)}</b><span class="muted small">AI 股组合 ${pct(d.vol_ai, 0)}</span></div>
+      <div class="kpi"><span class="muted">AI 股大跌日（${d.down_n} 天）</span><b class="${cls(d.down_x)}">${pct(d.down_x, 1, true)}</b><span class="muted small">当天 AI 股平均 ${pct(d.down_ai, 1, true)}；它上涨的天数占 ${pct(d.down_up_share, 0)}</span></div>
+    </div>
+    <h4>与 AI 股的滚动相关性（${d.rolling_days} 个交易日窗口）</h4>${chartDiv("c-div-roll", "short")}
+    <p class="muted small">指标按近 1 年（${esc(d.start)} 至 ${esc(d.asof)}，${d.n_days} 个交易日）的日涨跌计算，每天更新；相关性 −1 ~ 1，越低（负）越能在 AI 股下跌时起到缓冲。
+    AI 股大跌日 = AI 股等权组合单日跌超 ${pct(-d.ai_down, 0)}。${rv.length ? `近 3 年滚动相关性在 ${lo.toFixed(2)} 至 ${hi.toFixed(2)} 之间变化：分散作用并不稳定，市场风格切换或全市场抛售时，相关性可能明显上升。` : ""}</p></section>`;
+}
+
+function drawDiversify(s) {
+  const d = s.diversify, el = byId("c-div-roll");
+  if (!d || !el) return;
+  mkChart(el, {
+    grid: { left: 40, right: 16, top: 12, bottom: 28 },
+    tooltip: { trigger: "axis", formatter: (ps) => `${ps[0].axisValue}：${isNum(ps[0].value) ? ps[0].value.toFixed(2) : "–"}` },
+    xAxis: { type: "category", data: d.roll.dates, axisLabel: { fontSize: 10 } },
+    yAxis: { type: "value", min: -1, max: 1, axisLabel: { fontSize: 10 } },
+    series: [{ type: "line", showSymbol: false, data: d.roll.values, lineStyle: { width: 1.5 }, color: css("--accent") || "#2a78d6",
+      markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { type: "dashed", color: css("--ink-2") }, data: [{ yAxis: 0 }] } }],
+  });
+}
