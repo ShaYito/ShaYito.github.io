@@ -114,6 +114,7 @@ PAGES.compare = async (r) => {
   await bnData().catch(() => null); // 侧边栏紫色标出有瓶颈信号的股票
   const st = cmpParse(r);
   const raw = await load("sim/prices.json");
+  CMP_EARN = await load("earn_days.json").catch(() => null); // 剔除 β 表的财报标记；缺失时不标
   const dates = raw.dates, end = dates.length - 1;
   const perN = CMP_PERIODS.find(([k]) => k === st.p)[1];
   const i0 = perN === "ytd" ? Math.max(0, dates.findIndex((d) => d >= `${dates[end].slice(0, 4)}-01-01`) - 1) : Math.max(0, end - perN);
@@ -394,22 +395,49 @@ const CMP_RW_SORT = { sort: null, dir: -1 }; // 排序列（"ticker" / "beta" / 
 // β 估计窗口：[交易日数, 最少有效日数, 名称]；1 年与个股页“相对大盘走势”一致
 const CMP_RW_BETA = [[252, 120, "近 1 年"], [126, 60, "近半年"], [21, 15, "近 1 个月"]];
 let CMP_RW_BW = 252; // 当前显示哪张表（β 估计窗口）
+let CMP_EARN = null; // earn_days.json：各股近 2 年财报反应日
+const CMP_RW_SIG = [1, 2]; // 相对正常波动的倍数：< 1 视为噪声（灰），≥ 2 视为明显（加粗）
+/* 一格的统计：累计 v、相对正常波动的倍数 z（v ÷ (窗口前一年残差日波动 × √N)）、窗口内财报反应日及不计这些日子的累计 */
+function cmpRwCell(resid, end, n, earnIdx) {
+  const v = RelStr.trailing(resid, end, n);
+  if (!isNum(v)) return { v };
+  const a = end - n + 1, past = resid.slice(Math.max(1, a - 252), a).filter(isNum);
+  let sd = null;
+  if (past.length >= 60) { const m = past.reduce((x, y) => x + y, 0) / past.length; sd = Math.sqrt(past.reduce((x, y) => x + (y - m) ** 2, 0) / (past.length - 1)); }
+  const band = sd ? sd * Math.sqrt(n) : null;
+  const ev = earnIdx.filter((i) => i >= a && i <= end);
+  let exE = null;
+  if (ev.length) { let lvl = 1; for (let i = a; i <= end; i++) if (isNum(resid[i]) && !ev.includes(i)) lvl *= 1 + resid[i]; exE = lvl - 1; }
+  return { v, z: band ? v / band : null, band, ev: ev.map((i) => ({ i, r: resid[i] })), exE };
+}
 function cmpResidWin(st, raw, sel, color) {
   const end = raw.dates.length - 1;
   const bench = Object.fromEntries(sel.map((t) => [t, cmpBench(t, st.b, raw)]));
   const skip = sel.filter((t) => bench[t] === t);
   const mean = (xs) => (xs = xs.filter(isNum)).length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   const cell = (v) => `<td class="num ${cls(v)}">${isNum(v) ? pct(v, 1, true) : "–"}</td>`;
+  const di = Object.fromEntries(raw.dates.map((x, i) => [x, i]));
+  const earn = Object.fromEntries(sel.map((t) => [t, (CMP_EARN?.days?.[t] || []).filter((e) => di[e.d] != null).map((e) => ({ ...e, i: di[e.d] }))]));
+  const sigCell = (t, c) => {
+    if (!isNum(c.v)) return `<td class="num">–</td>`;
+    const z = c.z, a = isNum(z) ? Math.abs(z) : null;
+    const tone = a == null ? cls(c.v) : a < CMP_RW_SIG[0] ? "rw-weak" : `${cls(c.v)}${a >= CMP_RW_SIG[1] ? " rw-strong" : ""}`;
+    const evs = c.ev.map((e) => { const x = earn[t].find((y) => y.i === e.i); return `${x.a} ${x.timing}公布（反应日 ${x.d}）：当天剔除 β 后 ${pct(e.r, 1, true)}`; });
+    const tip = [isNum(z) ? `约 ${num(z, 1)} 倍正常波动（正常范围约 ±${pct(c.band, 1)}，按此前一年自身每日波动估计）${a < CMP_RW_SIG[0] ? "：在正常波动之内，基本是噪声" : a >= CMP_RW_SIG[1] ? "：明显超出正常波动" : ""}` : "此前历史太短，无法判断是否超出正常波动",
+      ...(evs.length ? ["窗口内有财报：", ...evs, `不计财报反应日：${pct(c.exE, 1, true)}`] : [])].join("\n");
+    return `<td class="num ${tone}" title="${esc(tip)}">${pct(c.v, 1, true)}${evs.length ? `<sup class="rw-earn">财</sup>` : ""}</td>`;
+  };
   const table = ([win, minObs, nm]) => {
     const ok = sel.filter((t) => bench[t] !== t).map((t) => {
       const d = RelStr.daily(raw.close[t], raw.close[bench[t]], { win, minObs });
-      return { t, bt: bench[t], beta: d.beta[end], v: Object.fromEntries(CMP_RW.map(([n]) => [n, RelStr.trailing(d.resid, end, n)])) };
+      const c = Object.fromEntries(CMP_RW.map(([n]) => [n, cmpRwCell(d.resid, end, n, earn[t].map((e) => e.i))]));
+      return { t, bt: bench[t], beta: d.beta[end], c, v: Object.fromEntries(CMP_RW.map(([n]) => [n, c[n].v])) };
     });
     const k = CMP_RW_SORT.sort, val = (r) => (k === "ticker" ? r.t : k === "beta" ? r.beta : r.v[k]);
     if (k) ok.sort((a, b) => cmpSortCmp(val(a), val(b), CMP_RW_SORT.dir));
     const th = (key, label, tip) => cmpSortTh(CMP_RW_SORT, key, label, { tip, num: key !== "ticker" });
     return `<div class="table-wrap"><table><thead><tr>${th("ticker", "标的", "按股票代码字母排序")}${th("beta", "β", `当前 β（${nm}日收益估计）`)}${CMP_RW.map(([n, nm2]) => th(String(n), `近 ${nm2}`, `最近 ${n} 个交易日`)).join("")}</tr></thead><tbody>
-      ${ok.map((r) => `<tr><td class="nowrap"><span class="dot" style="background:${color[r.t]}"></span><a href="#/stock/${esc(r.t)}"><b>${esc(r.t)}</b></a>${r.bt !== "SPY" ? ` <span class="muted">vs ${esc(r.bt)}</span>` : ""}</td><td class="num">${isNum(r.beta) ? num(r.beta, 2) : "–"}</td>${CMP_RW.map(([n]) => cell(r.v[n])).join("")}</tr>`).join("")}
+      ${ok.map((r) => `<tr><td class="nowrap"><span class="dot" style="background:${color[r.t]}"></span><a href="#/stock/${esc(r.t)}"><b>${esc(r.t)}</b></a>${r.bt !== "SPY" ? ` <span class="muted">vs ${esc(r.bt)}</span>` : ""}</td><td class="num">${isNum(r.beta) ? num(r.beta, 2) : "–"}</td>${CMP_RW.map(([n]) => sigCell(r.t, r.c[n])).join("")}</tr>`).join("")}
       ${ok.length >= 2 ? `<tr class="total"><td><b>平均</b> <span class="muted">（${ok.length} 只等权）</span></td><td class="num">${num(mean(ok.map((r) => r.beta)), 2)}</td>${CMP_RW.map(([n]) => cell(mean(ok.map((r) => r.v[n])))).join("")}</tr>` : ""}
     </tbody></table></div>`;
   };
@@ -417,8 +445,9 @@ function cmpResidWin(st, raw, sel, color) {
     <div class="row"><span class="muted">基准</span><div class="seg" id="cmp-rb">${[["spy", "SPY"], ["theme", "各自主题基准"]].map(([k, n]) => `<button type="button" data-v="${k}" class="${st.b === k ? "on" : ""}">${n}</button>`).join("")}</div>
       <span class="muted">β 估计用</span><div class="seg" id="cmp-rbw">${CMP_RW_BETA.map(([w, , nm]) => `<button type="button" data-v="${w}" class="${CMP_RW_BW === w ? "on" : ""}" title="滚动 ${w} 个交易日">${nm}</button>`).join("")}</div>
       <span class="muted">点表头排序</span></div>
+    <p class="muted small">颜色深浅按“超出正常波动多少”：<b class="pos">加粗</b> = 超过 ${CMP_RW_SIG[1]} 倍正常波动（明显）；正常颜色 = ${CMP_RW_SIG[0]}–${CMP_RW_SIG[1]} 倍；<span class="rw-weak">灰色</span> = 不到 ${CMP_RW_SIG[0]} 倍（基本是噪声）。<sup class="rw-earn">财</sup> = 窗口内有财报。鼠标悬停看倍数、财报当天涨跌和“不计财报日”的值。</p>
     ${table(CMP_RW_BETA.find(([w]) => w === CMP_RW_BW))}
-    <p class="muted">${rich("每格 = 最近 N 个交易日内，每天的涨跌减去 [[beta|β]] × 基准涨跌后按日复利累计：正数 = 去掉大盘 / 板块带动的部分后，公司自身因素让它跑赢。β 每天滚动重估，只用当天之前的日收益（不用未来数据）；上方按钮切换估计 β 用多长的历史：1 年最稳定，半年更贴近近期，1 个月反应最快但噪声大（只有约 21 个数据点，一两天的大涨大跌就会明显改变 β）。“平均”一行是所选股票的等权平均。数据不足（上市时间短、缺失超过两成、β 估计不出）显示“–”。截至 ")}${esc(raw.dates[end])}。${skip.length ? `${skip.map(esc).join("、")} 本身就是基准，不列出。` : ""}</p>`;
+    <p class="muted">${rich("每格 = 最近 N 个交易日内，每天的涨跌减去 [[beta|β]] × 基准涨跌后按日复利累计：正数 = 去掉大盘 / 板块带动的部分后，公司自身因素让它跑赢。β 每天滚动重估，只用当天之前的日收益（不用未来数据）；上方按钮切换估计 β 用多长的历史：1 年最稳定，半年更贴近近期，1 个月反应最快但噪声大（只有约 21 个数据点，一两天的大涨大跌就会明显改变 β）。正常波动 = 这只股票此前一年（窗口开始之前）剔除 β 后的每日波动 × √N，代表“没有特别事件时，N 天里随机波动的典型幅度”；倍数只说明是否异常，不说明之后会延续还是反转。财报反应日：盘后公布算下一个交易日。“平均”一行是所选股票的等权平均（不做倍数判断）。数据不足（上市时间短、缺失超过两成、β 估计不出）显示“–”。截至 ")}${esc(raw.dates[end])}。${skip.length ? `${skip.map(esc).join("、")} 本身就是基准，不列出。` : ""}</p>`;
 }
 function cmpResidWinBind(st, raw, sel, color, apply) {
   const host = byId("cmp-rw");

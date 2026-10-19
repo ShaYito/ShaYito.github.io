@@ -573,3 +573,7 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .cmp-quick p { margin: 4px 0 0; white-space: nowrap; overflow-x: auto; scrollbar-width: thin; }
 .cmp-quick .chip { font-size: 11.5px; padding: 0 6px; }
 .cmp-quick .cmp-jump { margin-left: 8px; font-size: 12px; white-space: nowrap; }
+/* 多股对比“剔除 β 后相对大盘”：按超出正常波动的倍数区分深浅；财报标记 */
+td.rw-weak, span.rw-weak { color: var(--muted); }
+td.rw-strong { font-weight: 700; }
+sup.rw-earn { font-size: 10px; color: var(--ink-2); margin-left: 2px; font-weight: 400; }
