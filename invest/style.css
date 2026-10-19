@@ -557,3 +557,4 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 .tr-item { border: 1px solid var(--grid); border-radius: 6px; padding: 5px 8px; display: flex; flex-direction: column; color: var(--muted); }
 .tr-item.on { color: var(--ink); border-color: var(--good); }
 .tr-item.on b { color: var(--good); }
+.hd-alert { border-left: 3px solid var(--warn); }

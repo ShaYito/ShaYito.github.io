@@ -173,5 +173,47 @@ async function hardBacktestHtml() {
       <div class="table-wrap"><table><thead><tr><th>瓶颈</th><th>公司</th><th>财报申报日</th><th>首个公开信号</th><th>股价起点</th><th class="num">比新闻早（天）</th><th class="num">比股价早（天）</th><th>迹象</th></tr></thead><tbody>
       ${found.map((s) => `<tr><td>${esc(s.name)}</td><td>${hdLink(s.ticker, d.companies[s.ticker]?.name || s.ticker)}</td><td>${esc(s.filed)}</td><td>${esc(s.signal)}</td><td>${esc(s.price_start || "–")}</td>
         <td class="num ${cls(s.lead_news)}">${s.lead_news}</td><td class="num ${cls(s.lead_price)}">${s.lead_price ?? "–"}</td><td>${s.flags.map((f) => esc(d.flag_zh[f])).join("、")}</td></tr>`).join("")}
-      </tbody></table></div></details>${await hardLargeHtml()}</section>`;
+      </tbody></table></div></details>${await hardLargeHtml()}${await hardSearchHtml()}</section>`;
+}
+
+// ---------------- 个股页：财报规律提醒（M73；数据 hard_alerts.json，每周生成）----------------
+const HD_FLAG_ZH = { rpo: "订单快于收入", contract: "预付款增多", dio: "存货周转加快", gm: "毛利率上升", score: "紧缺迹象 ≥ 2 项" };
+function hardAlertCard(t, d) {
+  const list = d?.alerts?.[t];
+  if (!list?.length) return "";
+  return list.map((a) => {
+    const p = d.patterns[a.pattern];
+    if (!p?.active) return "";
+    const ds = p.disc || {}, vs = p.val || {}, fw = p.forward || {};
+    const fwText = fw.status === "insufficient" ? `前瞻检验（${esc(fw.start)} 之后的新事件）样本还不够：已到期 ${fw.n || 0} 个、待到期 ${fw.pending || 0} 个`
+      : `前瞻检验 ${fw.n} 个：中位数 ${pct(fw.median, 0, true)}（${fw.status === "consistent" ? "未与原结论矛盾" : "与原结论矛盾"}）`;
+    return `<section class="card hd-alert"><h3>📌 财报规律提醒 <span class="rm-tag warn">${esc(p.evidence)}</span> ${badge("derived")}${badge("simulated")}</h3>
+      <p><b>${esc(a.filed)}</b> 申报的季报（季末 ${esc(a.end)}）出现「${esc(HD_FLAG_ZH[p.flag] || p.flag)}」：合同负债 ÷ 近 4 季收入 ${pct(a.cl_ratio, 1)}，同比 ${pct(a.cl_ratio_chg, 0, true)}；收入同比 ${pct(a.rev_yoy, 0, true)}。
+        提醒期至 ${esc(a.until)}${isNum(a.since_rel) ? `；触发后至今相对 SPY <b class="${cls(a.since_rel)}">${pct(a.since_rel, 0, true)}</b>` : ""}。</p>
+      <p class="small">历史上（科技股 ${p.universe_n} 家，近 5 年）出现这一迹象后的 ${Math.round(p.horizon / 21)} 个月，股价相对同期同组股票中位数：
+        2021-10 至 2023 年 中位数 ${pct(ds.median, 0, true)} / 均值 ${pct(ds.mean, 0, true)}（${ds.n} 次，为正 ${pct(ds.pos_share, 0)}）；
+        2024 年起 中位数 ${pct(vs.median, 0, true)} / 均值 ${pct(vs.mean, 0, true)}（${vs.n} 次，为正 ${pct(vs.pos_share, 0)}）。${esc(p.note)}。${fwText}。</p>
+      <p class="muted small">这是统计倾向，不是买入信号：同样条件下仍有约四成到一半的情况跑输同组股票；“科技股”按 Nasdaq 板块分类（与检验口径一致）。详见技术看板“财报硬数据回测”。</p></section>`;
+  }).join("");
+}
+
+// ---------------- 技术看板：细分范围找规律（M73；数据 pattern_search.json）----------------
+const PS_UNI = { tech: "科技股", ai: "AI 相关" };
+async function hardSearchHtml() {
+  const d = await load("pattern_search.json").catch(() => null);
+  if (!d?.tests) return "";
+  const uname = (k) => PS_UNI[k] || `走势聚类 ${k.split("_")[1]}`;
+  const top = d.tests.filter((x) => x.disc?.p !== undefined && x.disc.n >= 30).sort((a, b) => a.disc.p - b.disc.p).slice(0, 10);
+  const cell = (x) => (x?.n ? `${pct(x.median, 0, true)} / ${pct(x.mean, 0, true)}<br><span class="muted small">${x.n} 次 · t ${num(x.t, 2)}${isNum(x.q) ? ` · q ${num(x.q, 2)}` : ""}</span>` : "–");
+  const clus = Object.entries(d.universes).filter(([k]) => k.startsWith("cluster"));
+  return `<h4>细分范围找规律（科技股 / AI 相关 / 走势聚类，近 5 年）</h4>
+    <p class="small">事先写下的范围：${Object.keys(d.universes).length} 个股票组 × 5 种迹象 × 3 种股价条件 × 2 个期限 = ${d.n_tests} 个检验（样本量合格 ${d.n_eligible} 个）。
+      结果 = 相对同一股票组、同一季度申报的全部公司的中位数（扣除时期效应）。先在 2021-10 至 2023 年找（多重比较校正 FDR ≤ 10%），再用 2024 年起的数据验证。
+      <b>按这个严格标准：0 条通过。</b>“科技股 · 预付款增多 · 12 个月”两段各自显著、方向一致，经用户确认按“中等证据”做成个股页提醒（每周前瞻检验，转弱即撤下）。</p>
+    <div class="table-wrap"><table><thead><tr><th>股票组</th><th>迹象出现</th><th>股价条件</th><th>期限</th><th class="num">2021-10 至 2023<br><span class="muted small">中位数 / 均值</span></th><th class="num">2024 年起<br><span class="muted small">中位数 / 均值</span></th></tr></thead><tbody>
+    ${top.map((x) => `<tr><td>${esc(uname(x.universe))}</td><td>${esc(x.flag_name)}</td><td class="small">${esc({ any: "不限", not_up: "之前没涨", up: "之前已涨" }[x.past])}</td><td>${Math.round(x.horizon / 21)} 个月</td><td class="num">${cell(x.disc)}</td><td class="num">${cell(x.val)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <details class="small"><summary>走势聚类（2018-10 至 2021-10 的周收益相关性，Ward 层次聚类）</summary><ul>
+      ${clus.map(([k, v]) => `<li><b>${esc(uname(k))}</b>（${v.n} 家，当时 3 年相对 SPY 中位数 ${pct(v.median_rel_3y, 0, true)}）：${(v.members || []).slice(0, 20).map(esc).join("、")}${v.n > 20 ? " …" : ""}</li>`).join("")}</ul></details>
+    <p class="muted small">按发现期 p 值排列的前 10 个；t 为按公司聚合的 t 值，q 为多重比较校正后的值。聚类只用样本期之前的数据，避免前视。</p>`;
 }
