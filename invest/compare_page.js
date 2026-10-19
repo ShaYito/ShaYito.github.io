@@ -233,6 +233,26 @@ const CMP_GROUPS = [
   ["price", "价格与风险", ["price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
   ["expect", "市场预期", ["median_target", "median_upside", "moves_up", "moves_down", "weighted_target", "weighted_upside", "analysts", "rec_mean", "short_pct_float", "short_change", "days_to_cover", "insiders_pct", "institutions_pct", "next_earnings"]],
 ];
+/* 本页表格共用的表头排序：s = { sort, dir }（dir 1 = 从低到高 / A→Z，−1 = 从高到低）；只有当前排序列显示 ▲ / ▼；
+   点新列按 firstDir(key) 定方向，再点同一列反向。“ticker”列按代码字母排序；缺数据的行始终排在最后。 */
+function cmpSortTh(s, key, label, { tip = "", num = true } = {}) {
+  const on = s.sort === key;
+  return `<th class="${num ? "num " : ""}sortable ${on ? "on" : ""}" data-k="${esc(key)}"${tip ? ` title="${esc(tip)}"` : ""}>${label}${on ? (s.dir > 0 ? " ▲" : " ▼") : ""}</th>`;
+}
+function cmpSortCmp(x, y, dir) {
+  const has = (v) => (typeof v === "string" ? v !== "" : isNum(v));
+  if (!has(x) && !has(y)) return 0;
+  if (!has(x)) return 1;
+  if (!has(y)) return -1;
+  return (typeof x === "string" ? x.localeCompare(y) : x - y) * dir;
+}
+function cmpSortBind(host, s, firstDir, redraw) {
+  host.querySelectorAll("th.sortable").forEach((h) => (h.onclick = () => {
+    const k = h.dataset.k;
+    if (s.sort === k) s.dir *= -1; else { s.sort = k; s.dir = firstDir(k); }
+    redraw();
+  }));
+}
 const CMP_ALL = { group: null, sort: null, dir: 1, theme: "", tag: "" };
 function cmpDef(k) { return CMP_EXTRA_DEFS[k] || METRIC_DEFS[k] || { name: k, fmt: "num2" }; }
 // 参考价值评级 → 分数（取评级文字开头，如“中–高”“高（风险）”“低（科技）/ 中（银行）”取“低”）
@@ -288,37 +308,28 @@ async function cmpAllTable(sel) {
     const keys = cmpGroups().find(([g]) => g === CMP_ALL.group)[2];
     const rows = data.rows.filter((r) => (!CMP_ALL.theme || r.theme === CMP_ALL.theme) && (!CMP_ALL.tag || tagsOf(r.ticker).includes(CMP_ALL.tag)));
     const k = CMP_ALL.sort;
-    const val = (r) => (k === "next_earnings" ? (r[k] ? Date.parse(r[k]) : null) : r[k]);
+    const val = (r) => (k === "ticker" ? r.ticker : k === "next_earnings" ? (r[k] ? Date.parse(r[k]) : null) : r[k]);
     rows.sort((a, b) => {
       const sa = sel.includes(a.ticker), sb = sel.includes(b.ticker);
       if (sa !== sb) return sa ? -1 : 1; // 已选的排在最前
-      const x = val(a), y = val(b);
-      if (!isNum(x) && !isNum(y)) return 0;
-      if (!isNum(x)) return 1;
-      if (!isNum(y)) return -1;
-      return (x - y) * CMP_ALL.dir;
+      return cmpSortCmp(val(a), val(b), CMP_ALL.dir);
     });
     const med = (key) => { const xs = rows.map((r) => r[key]).filter(isNum).sort((a, b) => a - b); return xs.length ? xs[Math.floor((xs.length - 1) / 2)] : null; };
-    const th = (key) => { const d = cmpDef(key); return `<th class="num sortable ${key === k ? "on" : ""}" data-k="${key}" title="${esc(`${d.name}：${d.def || ""}${d.read ? ` 如何理解：${d.read}` : ""}`)}">${esc(d.name)}${key === k ? (CMP_ALL.dir > 0 ? " ▲" : " ▼") : ""}</th>`; };
+    const th = (key) => { const d = cmpDef(key); return cmpSortTh(CMP_ALL, key, esc(d.name), { tip: `${d.name}：${d.def || ""}${d.read ? ` 如何理解：${d.read}` : ""}` }); };
     host.innerHTML = `<div class="row"><div class="seg" id="ca-g">${cmpGroups().map(([g, n]) => `<button type="button" data-g="${g}" class="${g === CMP_ALL.group ? "on" : ""}">${n}</button>`).join("")}</div>
       <select id="ca-theme"><option value="">全部主题</option>${META.themes.map((t) => `<option value="${t.key}" ${t.key === CMP_ALL.theme ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>
       <select id="ca-tag"><option value="">全部业务</option>${usedTags().map((k) => `<option value="${k}" ${k === CMP_ALL.tag ? "selected" : ""}>${esc(META.tags[k].short)} ${esc(META.tags[k].name)}</option>`).join("")}</select>
       <span class="muted">点表头排序；悬停表头看指标说明；已选股票（${sel.length}）高亮并排在最前</span></div>
-      <div class="table-wrap"><table class="cmp-all"><thead><tr><th>股票</th>${keys.map(th).join("")}</tr></thead><tbody>
+      <div class="table-wrap"><table class="cmp-all"><thead><tr>${cmpSortTh(CMP_ALL, "ticker", "股票", { tip: "按股票代码字母排序", num: false })}${keys.map(th).join("")}</tr></thead><tbody>
       ${rows.map((r) => `<tr class="${sel.includes(r.ticker) ? "sel" : ""}"><td class="nowrap"><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a>${r.cyc_tier === "strong" ? ' <span class="chip warnchip" title="强周期：P/E 高低主要反映处于周期的哪个阶段">强周期</span>' : r.cyc_tier === "medium" ? ' <span class="chip" title="中等周期性">中周期</span>' : ""}${r.fin_currency && r.fin_currency !== "USD" ? `<sup title="财报以 ${esc(r.fin_currency)} 计">†</sup>` : ""} <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span></td>
         ${keys.map((key) => { const d = cmpDef(key); return `<td class="num ${d.fmt === "pp" ? cls(r[key]) : ""}">${cmpFmt(r[key], d.fmt)}</td>`; }).join("")}</tr>`).join("")}
       <tr class="total"><td><b>中位数</b></td>${keys.map((key) => `<td class="num">${key === "next_earnings" ? "" : cmpFmt(med(key), cmpDef(key).fmt)}</td>`).join("")}</tr></tbody></table></div>
       <details class="howto" open><summary>本组指标的含义、用法与参考价值</summary>${metricDocTable(keys, cmpDef)}<p class="muted">${esc(METRIC_VALUE_NOTE)}</p></details>
       <p class="muted">公司数据来自 yfinance（${esc(data.asof)}），价格类按最新收盘计算；“–”表示该公司不适用或暂无数据（如银行没有毛利率、EV/EBITDA）。ETF 与黄金没有这些公司指标，不列入。† = 财报以外币计（如台积电 TWD、ASML EUR）：总额类比率已按汇率换算，P/B 与 EV/EBITDA 不显示，P/E 可能有约一成的汇率口径偏差。每个指标的含义与用法见个股页“关键指标”。</p>`;
-    host.querySelectorAll("#ca-g button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = cmpGroups().find(([g]) => g === CMP_ALL.group)[2]; if (!ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
+    host.querySelectorAll("#ca-g button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = cmpGroups().find(([g]) => g === CMP_ALL.group)[2]; if (CMP_ALL.sort !== "ticker" && !ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
     byId("ca-theme").onchange = (e) => { CMP_ALL.theme = e.target.value; draw(); };
     byId("ca-tag").onchange = (e) => { CMP_ALL.tag = e.target.value; draw(); };
-    host.querySelectorAll("#cmp-rbw button").forEach((b) => (b.onclick = () => {
-    CMP_RW_BW = +b.dataset.v;
-    host.innerHTML = cmpResidWin(st, raw, sel, color);
-    cmpResidWinBind(st, raw, sel, color, apply);
-  }));
-  host.querySelectorAll("th.sortable").forEach((h) => (h.onclick = () => { if (CMP_ALL.sort === h.dataset.k) CMP_ALL.dir *= -1; else { CMP_ALL.sort = h.dataset.k; CMP_ALL.dir = cmpDef(h.dataset.k).better === "high" ? -1 : 1; } draw(); }));
+    cmpSortBind(host, CMP_ALL, (key) => (key === "ticker" ? 1 : cmpDef(key).better === "high" ? -1 : 1), draw);
   };
   draw();
 }
@@ -379,7 +390,7 @@ function cmpBody(st, raw, sel, i0, end, color, myW) {
 
 // ---------------- 剔除 β 后相对大盘：多个时间窗（近 1 周 – 1 年）----------------
 const CMP_RW = [[5, "1 周"], [10, "2 周"], [15, "3 周"], [21, "1 个月"], [42, "2 个月"], [63, "3 个月"], [126, "6 个月"], [189, "9 个月"], [252, "1 年"]];
-const CMP_RW_SORT = { n: null, dir: -1 }; // 排序列（"beta" 或交易日数字符串；null = 按选择顺序），切换表格时保留
+const CMP_RW_SORT = { sort: null, dir: -1 }; // 排序列（"ticker" / "beta" / 交易日数字符串；null = 按选择顺序），切换表格时保留
 // β 估计窗口：[交易日数, 最少有效日数, 名称]；1 年与个股页“相对大盘走势”一致
 const CMP_RW_BETA = [[252, 120, "近 1 年"], [126, 60, "近半年"], [21, 15, "近 1 个月"]];
 let CMP_RW_BW = 252; // 当前显示哪张表（β 估计窗口）
@@ -394,11 +405,10 @@ function cmpResidWin(st, raw, sel, color) {
       const d = RelStr.daily(raw.close[t], raw.close[bench[t]], { win, minObs });
       return { t, bt: bench[t], beta: d.beta[end], v: Object.fromEntries(CMP_RW.map(([n]) => [n, RelStr.trailing(d.resid, end, n)])) };
     });
-    const val = (r, k) => (k === "beta" ? r.beta : r.v[k]);
-    if (CMP_RW_SORT.n) ok.sort((a, b) => { const x = val(a, CMP_RW_SORT.n), y = val(b, CMP_RW_SORT.n); return !isNum(x) && !isNum(y) ? 0 : !isNum(x) ? 1 : !isNum(y) ? -1 : (x - y) * CMP_RW_SORT.dir; });
-    const th = (k, label, tip) => { const on = CMP_RW_SORT.n === k;
-      return `<th class="num sortable ${on ? "on" : ""}" data-n="${k}" title="${esc(tip)}；点击按此列排序">${label}<span class="${on ? "" : "muted"}">${on ? (CMP_RW_SORT.dir < 0 ? " ▼" : " ▲") : " ⇅"}</span></th>`; };
-    return `<div class="table-wrap"><table><thead><tr><th>标的</th>${th("beta", "β", `当前 β（${nm}日收益估计）`)}${CMP_RW.map(([n, nm2]) => th(String(n), `近 ${nm2}`, `最近 ${n} 个交易日`)).join("")}</tr></thead><tbody>
+    const k = CMP_RW_SORT.sort, val = (r) => (k === "ticker" ? r.t : k === "beta" ? r.beta : r.v[k]);
+    if (k) ok.sort((a, b) => cmpSortCmp(val(a), val(b), CMP_RW_SORT.dir));
+    const th = (key, label, tip) => cmpSortTh(CMP_RW_SORT, key, label, { tip, num: key !== "ticker" });
+    return `<div class="table-wrap"><table><thead><tr>${th("ticker", "标的", "按股票代码字母排序")}${th("beta", "β", `当前 β（${nm}日收益估计）`)}${CMP_RW.map(([n, nm2]) => th(String(n), `近 ${nm2}`, `最近 ${n} 个交易日`)).join("")}</tr></thead><tbody>
       ${ok.map((r) => `<tr><td class="nowrap"><span class="dot" style="background:${color[r.t]}"></span><a href="#/stock/${esc(r.t)}"><b>${esc(r.t)}</b></a>${r.bt !== "SPY" ? ` <span class="muted">vs ${esc(r.bt)}</span>` : ""}</td><td class="num">${isNum(r.beta) ? num(r.beta, 2) : "–"}</td>${CMP_RW.map(([n]) => cell(r.v[n])).join("")}</tr>`).join("")}
       ${ok.length >= 2 ? `<tr class="total"><td><b>平均</b> <span class="muted">（${ok.length} 只等权）</span></td><td class="num">${num(mean(ok.map((r) => r.beta)), 2)}</td>${CMP_RW.map(([n]) => cell(mean(ok.map((r) => r.v[n])))).join("")}</tr>` : ""}
     </tbody></table></div>`;
@@ -406,9 +416,7 @@ function cmpResidWin(st, raw, sel, color) {
   return `<h3>剔除 β 后相对大盘：近 1 周 – 1 年（${st.b === "theme" ? "相对各自主题基准" : "相对 SPY"}）${valueChip("中")}${badge("derived")}</h3>
     <div class="row"><span class="muted">基准</span><div class="seg" id="cmp-rb">${[["spy", "SPY"], ["theme", "各自主题基准"]].map(([k, n]) => `<button type="button" data-v="${k}" class="${st.b === k ? "on" : ""}">${n}</button>`).join("")}</div>
       <span class="muted">β 估计用</span><div class="seg" id="cmp-rbw">${CMP_RW_BETA.map(([w, , nm]) => `<button type="button" data-v="${w}" class="${CMP_RW_BW === w ? "on" : ""}" title="滚动 ${w} 个交易日">${nm}</button>`).join("")}</div>
-      <span class="muted">排序</span><select id="cmp-rsort"><option value="">按选择顺序</option>${[["beta", "β"], ...CMP_RW.map(([n, nm]) => [String(n), `近 ${nm}`])].map(([k, nm]) => `<option value="${k}" ${CMP_RW_SORT.n === k ? "selected" : ""}>${nm}</option>`).join("")}</select>
-      ${CMP_RW_SORT.n ? `<div class="seg" id="cmp-rdir">${[[-1, "从高到低"], [1, "从低到高"]].map(([d, nm]) => `<button type="button" data-v="${d}" class="${CMP_RW_SORT.dir === d ? "on" : ""}">${nm}</button>`).join("")}</div>` : ""}
-      <span class="muted">也可点表头（⇅）排序，再点反向</span></div>
+      <span class="muted">点表头排序</span></div>
     ${table(CMP_RW_BETA.find(([w]) => w === CMP_RW_BW))}
     <p class="muted">${rich("每格 = 最近 N 个交易日内，每天的涨跌减去 [[beta|β]] × 基准涨跌后按日复利累计：正数 = 去掉大盘 / 板块带动的部分后，公司自身因素让它跑赢。β 每天滚动重估，只用当天之前的日收益（不用未来数据）；上方按钮切换估计 β 用多长的历史：1 年最稳定，半年更贴近近期，1 个月反应最快但噪声大（只有约 21 个数据点，一两天的大涨大跌就会明显改变 β）。“平均”一行是所选股票的等权平均。数据不足（上市时间短、缺失超过两成、β 估计不出）显示“–”。截至 ")}${esc(raw.dates[end])}。${skip.length ? `${skip.map(esc).join("、")} 本身就是基准，不列出。` : ""}</p>`;
 }
@@ -416,20 +424,9 @@ function cmpResidWinBind(st, raw, sel, color, apply) {
   const host = byId("cmp-rw");
   if (!host) return;
   host.querySelectorAll("#cmp-rb button").forEach((b) => (b.onclick = () => apply({ b: b.dataset.v })));
-  host.querySelectorAll("#cmp-rbw button").forEach((b) => (b.onclick = () => {
-    CMP_RW_BW = +b.dataset.v;
-    host.innerHTML = cmpResidWin(st, raw, sel, color);
-    cmpResidWinBind(st, raw, sel, color, apply);
-  }));
   const redraw = () => { host.innerHTML = cmpResidWin(st, raw, sel, color); cmpResidWinBind(st, raw, sel, color, apply); };
-  host.querySelectorAll("th.sortable").forEach((h) => (h.onclick = () => {
-    const n = h.dataset.n;
-    if (CMP_RW_SORT.n !== n) Object.assign(CMP_RW_SORT, { n, dir: -1 });
-    else CMP_RW_SORT.dir *= -1;
-    redraw();
-  }));
-  byId("cmp-rsort")?.addEventListener("change", (e) => { Object.assign(CMP_RW_SORT, { n: e.target.value || null, dir: -1 }); redraw(); });
-  host.querySelectorAll("#cmp-rdir button").forEach((b) => (b.onclick = () => { CMP_RW_SORT.dir = +b.dataset.v; redraw(); }));
+  host.querySelectorAll("#cmp-rbw button").forEach((b) => (b.onclick = () => { CMP_RW_BW = +b.dataset.v; redraw(); }));
+  cmpSortBind(host, CMP_RW_SORT, (key) => (key === "ticker" ? 1 : -1), redraw);
 }
 
 // ---------------- 周期性（cyclicality.json：财报数据分档 + 人工修正）----------------
