@@ -511,37 +511,37 @@ function cmpDraw(st, raw, sel, i0, end, color, apply) {
       markLine: { symbol: "none", silent: true, lineStyle: { color: css("--axis"), type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }] } }] });
 }
 
-// ---------------- 上涨 / 下跌相对大盘（最近 N 轮，M83；2026-10-19 由总览移到本页，用本页的选择） ----------------
+// ---------------- 上涨 / 下跌相对大盘（最近 N 轮，M83；各股按自己的走势切波段，散点用相对大盘） ----------------
 async function cmpSwings(sel, color) {
   const box = byId("cmp-sw");
   if (!box) return;
   const w = await load("swings.json").catch(() => null);
   if (!w?.available) { box.innerHTML = `<h3>上涨 / 下跌相对大盘</h3>${empty("暂无数据")}`; return; }
   const ok = sel.filter((t) => w.stocks[t]), skip = sel.filter((t) => !w.stocks[t]);
-  const p = (x) => pct(x, 1, true);
-  const periods = w.periods.map((x, i) => `<li><b>第 ${i + 1} 轮</b>：上涨 ${esc(x.rise[0])} → ${esc(x.rise[1])}（${esc(w.ref)} ${p(x.ref_rise)}，${esc(w.bench)} ${p(x.bench_rise)}）；
-    下跌 ${esc(x.decline[0])} → ${esc(x.decline[1])}${x.ongoing ? "（进行中）" : ""}（${esc(w.ref)} ${p(x.ref_decline)}，${esc(w.bench)} ${p(x.bench_decline)}）</li>`).join("");
+  const d5 = (d) => d.slice(2);  // 26-10-05
+  const per = ok.map((t) => { const x = w.stocks[t];
+    return `<li><span class="dot" style="background:${color[t]}"></span><b>${esc(t)}</b>（阈值 ${pct(x.th, 0)}）：${x.periods.map((r, i) => `${i + 1} ↑${d5(r.rise[0])}→${d5(r.rise[1])} ↓→${d5(r.decline[1])}${r.ongoing ? "（进行中）" : ""}`).join("；")}${x.rising_since ? `；自 ${d5(x.rising_since)} 起的上涨未结束，未计入` : ""}</li>`; }).join("");
   box.innerHTML = `<h3>上涨 / 下跌相对大盘（最近 ${w.n} 轮）${valueChip("低–中")}${badge("derived")}</h3>
-    <p class="muted">每只股票每轮一个点：横轴 = 上涨段涨跌 − ${esc(w.bench)} 同期涨跌，纵轴 = 下跌段涨跌 − ${esc(w.bench)} 同期涨跌（单位：百分点）。
-    <b>右上角 = 涨时跑赢、跌时也跑赢大盘</b>。点按时间顺序标 1–${w.n} 并连线，最后一点最大，看位置往哪个方向移动。股票用左侧勾选或上方快捷按钮选择。</p>
+    <p class="muted">每只股票按<b>自己的股价走势</b>切出最近 ${w.n} 轮“上涨段 + 随后的下跌段”（各股时段不同），每轮一个点：横轴 = 上涨段涨跌 − ${esc(w.bench)} 同期涨跌，纵轴 = 下跌段涨跌 − ${esc(w.bench)} 同期涨跌（单位：百分点）。
+    因为下跌段是按各股自己的跌势切出来的，纵轴通常为负：<b>越靠右 = 涨时比大盘涨得越多；越靠上 = 跌时比大盘跌得越少</b>，往右上方移动 = “涨得多、跌得少”在改善。
+    点按时间顺序标 1–${w.n} 并连线，最后一点最大。股票用左侧勾选或上方快捷按钮选择。</p>
     ${ok.length ? chartDiv("c-cmp-sw", "tall") : empty("所选标的都没有这项数据（只计算选股池股票）")}
     ${skip.length ? `<p class="muted small">${skip.map(esc).join("、")} 不在选股池（ETF 等），不计算。</p>` : ""}
-    <p class="muted small"><b>${w.n} 个时段</b>（按 ${esc(w.ref)} 波段切分：从高 / 低点反向变动 ≥ ${pct(w.threshold, 0)} 才算一个拐点；一轮 = 上涨段 + 随后的下跌段）：</p>
-    <ul class="small" style="margin-top:0">${periods}</ul>
-    ${w.rising_now ? `<p class="muted small">${esc(w.ref)} 自 ${esc(w.rising_since)} 起处于一段尚未结束的上涨中，未计入。</p>` : ""}
-    <p class="muted small">上市较晚的股票缺少早期的点。各轮时长差别很大（如有一轮上涨约 10 个月），横轴的数值范围也因此不同；连线只表示时间顺序，不代表中间的路径。单只股票的 5 轮明细见个股页“最近 5 轮涨跌”。只反映过去的走势特征，不代表之后会重复。</p>`;
+    ${ok.length ? `<p class="muted small"><b>各折线使用的 ${w.n} 个时段</b>（↑ 上涨段起止，↓ 下跌段终点；阈值 = 股价从高 / 低点反向变动多少才算拐点，取 ${w.vol_mult} × 该股近 3 年年化波动，限制在 ${pct(w.th_min, 0)}–${pct(w.th_max, 0)}）：</p>
+    <ul class="small" style="margin-top:0;list-style:none;padding-left:0">${per}</ul>` : ""}
+    <p class="muted small">各股、各轮时长不同，横轴的数值范围也因此不同；连线只表示时间顺序，不代表中间的路径。单只股票的明细见个股页“最近 5 轮涨跌”。只反映过去的走势特征，不代表之后会重复。</p>`;
   if (!ok.length) return;
-  const series = ok.map((t) => ({
+  const series = ok.map((t) => { const x = w.stocks[t]; return {
     name: t, type: "line", color: color[t], lineStyle: { width: 1.5 }, connectNulls: true,
-    data: w.stocks[t].map((v, i) => (v ? { value: [v[0] * 100, v[1] * 100], i } : { value: [null, null], i })),
-    symbolSize: (_, x) => 5 + x.data.i * 2.2, emphasis: { focus: "series" },
-    label: { show: true, fontSize: 9, position: "top", formatter: (x) => `${x.data.i + 1}` },
+    data: x.periods.map((r, i) => (r.rel ? { value: [r.rel[0] * 100, r.rel[1] * 100], i, last: i === x.periods.length - 1 } : { value: [null, null], i })),
+    symbolSize: (_, p) => 5 + p.data.i * 2.2, emphasis: { focus: "series" },
+    label: { show: true, fontSize: 9, position: "top", formatter: (p) => `${p.data.i + 1}` },
     endLabel: { show: true, formatter: t, fontSize: 11, fontWeight: 600 },
-  }));
+  }; });
   mkChart(byId("c-cmp-sw"), {
     grid: { left: 56, right: 60, top: 36, bottom: 44 },
     legend: { top: 0, type: "scroll" },
-    tooltip: { trigger: "item", formatter: (x) => { const per = w.periods[x.data.i]; return `<b>${esc(x.seriesName)}</b> 第 ${x.data.i + 1} 轮<br>上涨 ${per.rise[0]} → ${per.rise[1]}：相对 ${w.bench} ${num(x.value[0], 1, true)} 个百分点<br>下跌 ${per.decline[0]} → ${per.decline[1]}${per.ongoing ? "（进行中）" : ""}：相对 ${w.bench} ${num(x.value[1], 1, true)} 个百分点`; } },
+    tooltip: { trigger: "item", formatter: (p) => { const r = w.stocks[p.seriesName].periods[p.data.i]; return `<b>${esc(p.seriesName)}</b> 第 ${p.data.i + 1} 轮<br>上涨 ${r.rise[0]} → ${r.rise[1]}：${pct(r.ret[0], 1, true)}，相对 ${w.bench} ${num(p.value[0], 1, true)} 个百分点<br>下跌 ${r.decline[0]} → ${r.decline[1]}${r.ongoing ? "（进行中）" : ""}：${pct(r.ret[1], 1, true)}，相对 ${w.bench} ${num(p.value[1], 1, true)} 个百分点`; } },
     xAxis: { type: "value", name: `上涨段相对 ${w.bench}（百分点）`, nameLocation: "middle", nameGap: 28, axisLabel: { formatter: (v) => `${v > 0 ? "+" : ""}${v}` } },
     yAxis: { type: "value", name: `下跌段相对 ${w.bench}（百分点）`, nameLocation: "middle", nameGap: 40, axisLabel: { formatter: (v) => `${v > 0 ? "+" : ""}${v}` } },
     series: [...series, { type: "line", data: [], silent: true,

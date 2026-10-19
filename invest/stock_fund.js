@@ -1269,33 +1269,34 @@ function drawDiversify(s) {
   });
 }
 
-// ---------------- 最近 N 轮涨跌（M84，与总览“上涨 / 下跌相对大盘”同一套波段） ----------------
+// ---------------- 最近 N 轮涨跌（M84；2026-10-19 起按本股自己的股价曲线切波段，散点用相对大盘） ----------------
 function swingsStockCard(s) {
   const w = s.swings;
   if (!w) return "";
   const p = (x) => pct(x, 1, true), pp = (x) => (isNum(x) ? `${x > 0 ? "+" : ""}${(x * 100).toFixed(1)}` : "–");
-  const rk = (r, i) => (r.rank ? `${r.rank[i]} / ${r.n_ai}` : "–");
-  const rows = w.rounds.flatMap((r, i) => [
-    `<tr><td rowspan="2"><b>第 ${i + 1} 轮</b></td><td>上涨 ${esc(r.rise[0])} → ${esc(r.rise[1])}</td><td class="num ${cls(r.ret?.[0])}">${r.ret ? p(r.ret[0]) : "–"}</td><td class="num">${p(r.ref_rise)}</td><td class="num">${p(r.bench_rise)}</td><td class="num ${cls(r.rel?.[0])}"><b>${r.rel ? pp(r.rel[0]) : "–"}</b></td><td class="num">${w.in_ai ? rk(r, 0) : "–"}</td></tr>`,
-    `<tr><td>下跌 ${esc(r.decline[0])} → ${esc(r.decline[1])}${r.ongoing ? "（进行中）" : ""}</td><td class="num ${cls(r.ret?.[1])}">${r.ret ? p(r.ret[1]) : "–"}</td><td class="num">${p(r.ref_decline)}</td><td class="num">${p(r.bench_decline)}</td><td class="num ${cls(r.rel?.[1])}"><b>${r.rel ? pp(r.rel[1]) : "–"}</b></td><td class="num">${w.in_ai ? rk(r, 1) : "–"}</td></tr>`]).join("");
-  return `<section class="card" data-nav="最近 ${w.rounds.length} 轮涨跌"><h3>最近 ${w.rounds.length} 轮涨跌（相对大盘） ${badge("derived")}</h3>
-    <p class="muted">按 ${esc(w.ref)} 的波段切出最近 ${w.rounds.length} 轮“上涨段 + 随后的下跌段”（与总览“上涨 / 下跌相对大盘”同一套时段）。相对大盘 = 本股涨跌 − ${esc(w.bench)} 同期涨跌（百分点）。</p>
+  const n = w.periods.length;
+  const rows = w.periods.flatMap((r, i) => [
+    `<tr><td rowspan="2"><b>第 ${i + 1} 轮</b></td><td>上涨 ${esc(r.rise[0])} → ${esc(r.rise[1])}</td><td class="num ${cls(r.ret[0])}">${p(r.ret[0])}</td><td class="num">${p(r.bench[0])}</td><td class="num">${p(r.ref[0])}</td><td class="num ${cls(r.rel?.[0])}"><b>${r.rel ? pp(r.rel[0]) : "–"}</b></td></tr>`,
+    `<tr><td>下跌 ${esc(r.decline[0])} → ${esc(r.decline[1])}${r.ongoing ? "（进行中）" : ""}</td><td class="num ${cls(r.ret[1])}">${p(r.ret[1])}</td><td class="num">${p(r.bench[1])}</td><td class="num">${p(r.ref[1])}</td><td class="num ${cls(r.rel?.[1])}"><b>${r.rel ? pp(r.rel[1]) : "–"}</b></td></tr>`]).join("");
+  return `<section class="card" data-nav="最近 ${n} 轮涨跌"><h3>最近 ${n} 轮涨跌（按本股走势切分，相对大盘） ${badge("derived")}</h3>
+    <p class="muted">按本股自己的股价曲线切出最近 ${n} 轮“上涨段 + 随后的下跌段”：股价从高 / 低点反向变动 ≥ <b>${pct(w.th, 0)}</b> 才算一个拐点（阈值 = ${w.vol_mult} × 本股近 3 年年化波动，波动越大门槛越高）。
+    轨迹图用相对大盘的涨跌：本股涨跌 − ${esc(w.bench)} 同期涨跌（百分点）；下跌段按本股自己的跌势切出，纵轴通常为负，越靠右 = 涨时比大盘涨得越多，越靠上 = 跌时比大盘跌得越少。</p>
     ${chartDiv("c-sws-px")}
-    <div class="grid two"><div><h4>每段涨跌：本股 vs ${esc(w.ref)} vs ${esc(w.bench)}</h4>${chartDiv("c-sws-bar")}</div>
+    <div class="grid two"><div><h4>每段涨跌：本股 vs ${esc(w.bench)} vs ${esc(w.ref)}</h4>${chartDiv("c-sws-bar")}</div>
     <div><h4>轨迹：上涨段 / 下跌段相对 ${esc(w.bench)}</h4>${chartDiv("c-sws-xy")}</div></div>
-    <div class="table-wrap"><table><thead><tr><th>轮次</th><th>时段</th><th class="num">本股</th><th class="num">${esc(w.ref)}</th><th class="num">${esc(w.bench)}</th><th class="num">相对 ${esc(w.bench)}</th><th class="num">AI 股中名次</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="muted small">${esc(w.ref)} 从高 / 低点反向变动 ≥ ${pct(w.threshold, 0)} 才算一个拐点。名次：在选股池 AI 股中按“相对 ${esc(w.bench)}”从好到差排（1 = 最好）${w.in_ai ? "" : "；本股不属于 AI 股主题，不排名"}。
-    轨迹图中的灰色虚线 = AI 股每轮的中位数，用来对照本股是比一般 AI 股更攻还是更守。${w.rising_now ? `${esc(w.ref)} 自 ${esc(w.rising_since)} 起的上涨尚未结束，未计入。` : ""}上市较晚的股票缺少早期的轮次。只反映过去的走势特征。</p></section>`;
+    <div class="table-wrap"><table><thead><tr><th>轮次</th><th>时段</th><th class="num">本股</th><th class="num">${esc(w.bench)}</th><th class="num">${esc(w.ref)}</th><th class="num">相对 ${esc(w.bench)}</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted small">${w.rising_since ? `本股自 ${esc(w.rising_since)} 起处于一段尚未确认结束的上涨中（之后的回落还没达到 ${pct(w.th, 0)}），未计入。` : ""}
+    时段按本股自己的走势确定，各股不同，所以不同股票之间不按轮次直接比较；多只股票放在一起看请用“多股对比”页。${n < 5 ? `上市时间较短，只有 ${n} 轮。` : ""}只反映过去的走势特征。</p></section>`;
 }
 
 function drawSwingsStock(s) {
   const w = s.swings;
   if (!w || !byId("c-sws-px")) return;
-  const start = w.rounds[0].rise[0], i0 = s.dates.findIndex((d) => d >= start);
+  const start = w.periods[0].rise[0], i0 = s.dates.findIndex((d) => d >= start);
   const dates = s.dates.slice(Math.max(0, i0 - 5)), close = s.ohlc.slice(Math.max(0, i0 - 5)).map((o) => o[1]);
+  const has = new Set(dates);
   const area = (a, b, color, name) => [{ xAxis: a, itemStyle: { color }, label: { show: true, position: "insideTop", formatter: name, fontSize: 10, color: css("--ink-2") } }, { xAxis: b }];
-  const has = new Set(dates);  // 上市较晚：早期的时段不在价格数据里，不画
-  const areas = w.rounds.flatMap((r, i) => [[r.rise, "rgba(12,163,12,0.10)", `${i + 1}↑`], [r.decline, "rgba(208,59,59,0.12)", `${i + 1}↓`]])
+  const areas = w.periods.flatMap((r, i) => [[r.rise, "rgba(12,163,12,0.10)", `${i + 1}↑`], [r.decline, "rgba(208,59,59,0.12)", `${i + 1}↓`]])
     .filter(([ab]) => has.has(ab[0]) && has.has(ab[1])).map(([ab, c, n]) => area(ab[0], ab[1], c, n));
   mkChart(byId("c-sws-px"), {
     grid: { left: 50, right: 16, top: 16, bottom: 28 },
@@ -1304,27 +1305,26 @@ function drawSwingsStock(s) {
     yAxis: { type: Math.max(...close) / Math.min(...close) > 3 ? "log" : "value", scale: true, axisLabel: { fontSize: 10 } },  // 涨跌幅很大时用对数轴
     series: [{ name: s.ticker, type: "line", showSymbol: false, data: close, lineStyle: { width: 1.5 }, color: css("--accent"), markArea: { silent: true, data: areas } }],
   });
-  const cats = w.rounds.flatMap((r, i) => [`${i + 1}↑`, `${i + 1}↓`]);
-  const val = (f) => w.rounds.flatMap((r) => f(r).map((v) => (isNum(v) ? +(v * 100).toFixed(1) : null)));
+  const cats = w.periods.flatMap((r, i) => [`${i + 1}↑`, `${i + 1}↓`]);
+  const val = (f) => w.periods.flatMap((r) => f(r).map((v) => (isNum(v) ? +(v * 100).toFixed(1) : null)));
   mkChart(byId("c-sws-bar"), {
     grid: { left: 44, right: 10, top: 30, bottom: 24 }, legend: { top: 0 },
     tooltip: { trigger: "axis", valueFormatter: (v) => (isNum(v) ? `${v > 0 ? "+" : ""}${v}%` : "–") },
     xAxis: { type: "category", data: cats }, yAxis: { type: "value", axisLabel: { formatter: (v) => `${v}%` } },
     series: [
-      { name: s.ticker, type: "bar", data: val((r) => r.ret || [null, null]), color: css("--accent") },
-      { name: w.ref, type: "bar", data: val((r) => [r.ref_rise, r.ref_decline]), color: "#9cc3f0" },
-      { name: w.bench, type: "bar", data: val((r) => [r.bench_rise, r.bench_decline]), color: "#a9a7a0" },
+      { name: s.ticker, type: "bar", data: val((r) => r.ret), color: css("--accent") },
+      { name: w.bench, type: "bar", data: val((r) => r.bench), color: "#a9a7a0" },
+      { name: w.ref, type: "bar", data: val((r) => r.ref), color: "#9cc3f0" },
     ],
   });
-  const pts = (f) => w.rounds.map((r, i) => (f(r) ? { value: [f(r)[0] * 100, f(r)[1] * 100], i } : { value: [null, null], i }));
-  const line = (name, data, color, big) => ({ name, type: "line", data, color, connectNulls: true, lineStyle: { width: big ? 2 : 1.2, type: big ? "solid" : "dashed" },
-    symbolSize: (_, x) => (big ? 6 + x.data.i * 2 : 5), label: { show: true, fontSize: 9, position: "top", formatter: (x) => `${x.data.i + 1}` } });
   mkChart(byId("c-sws-xy"), {
-    grid: { left: 52, right: 16, top: 30, bottom: 40 }, legend: { top: 0 },
-    tooltip: { trigger: "item", formatter: (x) => { const r = w.rounds[x.data.i]; return `<b>${esc(x.seriesName)}</b> 第 ${x.data.i + 1} 轮<br>上涨段相对 ${w.bench} ${num(x.value[0], 1, true)}<br>下跌段相对 ${w.bench} ${num(x.value[1], 1, true)}${r.ongoing ? "（进行中）" : ""}`; } },
+    grid: { left: 52, right: 16, top: 20, bottom: 40 },
+    tooltip: { trigger: "item", formatter: (x) => { const r = w.periods[x.data.i]; return `<b>第 ${x.data.i + 1} 轮</b><br>上涨 ${r.rise[0]} → ${r.rise[1]}：相对 ${w.bench} ${num(x.value[0], 1, true)}<br>下跌 ${r.decline[0]} → ${r.decline[1]}${r.ongoing ? "（进行中）" : ""}：相对 ${w.bench} ${num(x.value[1], 1, true)}`; } },
     xAxis: { type: "value", name: "上涨段相对大盘", nameLocation: "middle", nameGap: 24, axisLabel: { fontSize: 10 } },
     yAxis: { type: "value", name: "下跌段相对大盘", nameLocation: "middle", nameGap: 36, axisLabel: { fontSize: 10 } },
-    series: [line(s.ticker, pts((r) => r.rel), css("--accent"), true), line("AI 股中位数", pts((r) => r.ai_median), css("--ink-2"), false),
-      { type: "line", data: [], silent: true, markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { type: "dotted", color: css("--ink-2") }, data: [{ xAxis: 0 }, { yAxis: 0 }] } }],
+    series: [{ name: s.ticker, type: "line", color: css("--accent"), connectNulls: true, lineStyle: { width: 2 },
+      data: w.periods.map((r, i) => (r.rel ? { value: [r.rel[0] * 100, r.rel[1] * 100], i } : { value: [null, null], i })),
+      symbolSize: (_, x) => 6 + x.data.i * 2, label: { show: true, fontSize: 9, position: "top", formatter: (x) => `${x.data.i + 1}` },
+      markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { type: "dotted", color: css("--ink-2") }, data: [{ xAxis: 0 }, { yAxis: 0 }] } }],
   });
 }
