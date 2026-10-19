@@ -374,29 +374,32 @@ function cmpBody(st, raw, sel, i0, end, color, myW) {
 
 // ---------------- 剔除 β 后相对大盘：多个时间窗（近 1 周 – 1 年）----------------
 const CMP_RW = [[5, "1 周"], [10, "2 周"], [15, "3 周"], [21, "1 个月"], [42, "2 个月"], [63, "3 个月"], [126, "6 个月"], [189, "9 个月"], [252, "1 年"]];
-const CMP_RW_SORT = { n: null, dir: -1 }; // 排序列（交易日数；null = 按选择顺序）
+const CMP_RW_SORT = { n: null, dir: -1 }; // 排序列（交易日数；null = 按选择顺序），三张表共用
+// β 估计窗口：[交易日数, 最少有效日数, 名称]；1 年与个股页“相对大盘走势”一致
+const CMP_RW_BETA = [[252, 120, "近 1 年"], [126, 60, "近半年"], [21, 15, "近 1 个月"]];
 function cmpResidWin(st, raw, sel, color) {
   const end = raw.dates.length - 1;
-  const rows = sel.map((t) => {
-    const bt = cmpBench(t, st.b, raw);
-    if (bt === t) return { t, bt, self: true };
-    const d = RelStr.daily(raw.close[t], raw.close[bt]);
-    return { t, bt, beta: d.beta[end], v: Object.fromEntries(CMP_RW.map(([n]) => [n, RelStr.trailing(d.resid, end, n)])) };
-  });
-  const ok = rows.filter((r) => !r.self);
-  if (CMP_RW_SORT.n) ok.sort((a, b) => { const x = a.v[CMP_RW_SORT.n], y = b.v[CMP_RW_SORT.n]; return !isNum(x) ? 1 : !isNum(y) ? -1 : (x - y) * CMP_RW_SORT.dir; });
+  const bench = Object.fromEntries(sel.map((t) => [t, cmpBench(t, st.b, raw)]));
+  const skip = sel.filter((t) => bench[t] === t);
   const mean = (xs) => (xs = xs.filter(isNum)).length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
-  const avg = (n) => mean(ok.map((r) => r.v[n]));
   const cell = (v) => `<td class="num ${cls(v)}">${isNum(v) ? pct(v, 1, true) : "–"}</td>`;
-  const skip = rows.filter((r) => r.self).map((r) => r.t);
+  const table = ([win, minObs, nm]) => {
+    const ok = sel.filter((t) => bench[t] !== t).map((t) => {
+      const d = RelStr.daily(raw.close[t], raw.close[bench[t]], { win, minObs });
+      return { t, bt: bench[t], beta: d.beta[end], v: Object.fromEntries(CMP_RW.map(([n]) => [n, RelStr.trailing(d.resid, end, n)])) };
+    });
+    if (CMP_RW_SORT.n) ok.sort((a, b) => { const x = a.v[CMP_RW_SORT.n], y = b.v[CMP_RW_SORT.n]; return !isNum(x) ? 1 : !isNum(y) ? -1 : (x - y) * CMP_RW_SORT.dir; });
+    return `<h4>β 用${nm}日收益估计（滚动 ${win} 个交易日）</h4>
+    <div class="table-wrap"><table><thead><tr><th>标的</th><th class="num" title="当前 β（${nm}日收益估计）">β</th>${CMP_RW.map(([n, nm2]) => `<th class="num sortable ${CMP_RW_SORT.n === n ? "on" : ""}" data-n="${n}" title="最近 ${n} 个交易日">近 ${nm2}${CMP_RW_SORT.n === n ? (CMP_RW_SORT.dir < 0 ? " ▼" : " ▲") : ""}</th>`).join("")}</tr></thead><tbody>
+      ${ok.map((r) => `<tr><td class="nowrap"><span class="dot" style="background:${color[r.t]}"></span><a href="#/stock/${esc(r.t)}"><b>${esc(r.t)}</b></a>${r.bt !== "SPY" ? ` <span class="muted">vs ${esc(r.bt)}</span>` : ""}</td><td class="num">${isNum(r.beta) ? num(r.beta, 2) : "–"}</td>${CMP_RW.map(([n]) => cell(r.v[n])).join("")}</tr>`).join("")}
+      ${ok.length >= 2 ? `<tr class="total"><td><b>平均</b> <span class="muted">（${ok.length} 只等权）</span></td><td class="num">${num(mean(ok.map((r) => r.beta)), 2)}</td>${CMP_RW.map(([n]) => cell(mean(ok.map((r) => r.v[n])))).join("")}</tr>` : ""}
+    </tbody></table></div>`;
+  };
   return `<h3>剔除 β 后相对大盘：近 1 周 – 1 年（${st.b === "theme" ? "相对各自主题基准" : "相对 SPY"}）${valueChip("中")}${badge("derived")}</h3>
     <div class="row"><span class="muted">基准</span><div class="seg" id="cmp-rb">${[["spy", "SPY"], ["theme", "各自主题基准"]].map(([k, n]) => `<button type="button" data-v="${k}" class="${st.b === k ? "on" : ""}">${n}</button>`).join("")}</div>
-      <span class="muted">点表头按该列排序（再点一次反向；第三次恢复选择顺序）</span></div>
-    <div class="table-wrap"><table><thead><tr><th>标的</th><th class="num" title="当前 β（过去一年日收益估计）">β</th>${CMP_RW.map(([n, nm]) => `<th class="num sortable ${CMP_RW_SORT.n === n ? "on" : ""}" data-n="${n}" title="最近 ${n} 个交易日">近 ${nm}${CMP_RW_SORT.n === n ? (CMP_RW_SORT.dir < 0 ? " ▼" : " ▲") : ""}</th>`).join("")}</tr></thead><tbody>
-      ${ok.map((r) => `<tr><td class="nowrap"><span class="dot" style="background:${color[r.t]}"></span><a href="#/stock/${esc(r.t)}"><b>${esc(r.t)}</b></a>${r.bt !== "SPY" ? ` <span class="muted">vs ${esc(r.bt)}</span>` : ""}</td><td class="num">${isNum(r.beta) ? num(r.beta, 2) : "–"}</td>${CMP_RW.map(([n]) => cell(r.v[n])).join("")}</tr>`).join("")}
-      ${ok.length >= 2 ? `<tr class="total"><td><b>平均</b> <span class="muted">（${ok.length} 只等权）</span></td><td class="num">${num(mean(ok.map((r) => r.beta)), 2)}</td>${CMP_RW.map(([n]) => cell(avg(n))).join("")}</tr>` : ""}
-    </tbody></table></div>
-    <p class="muted">${rich("每格 = 最近 N 个交易日内，每天的涨跌减去 [[beta|β]] × 基准涨跌（β 用当天之前一年的日收益估计，不用未来数据）后按日复利累计：正数 = 去掉大盘 / 板块带动的部分后，公司自身因素让它跑赢。“平均”一行是所选股票的等权平均。数据不足（上市时间短、缺失超过两成）显示“–”。截至 ")}${esc(raw.dates[end])}。${skip.length ? `${skip.map(esc).join("、")} 本身就是基准，不列出。` : ""}</p>`;
+      <span class="muted">点表头按该列排序（三张表同时排序；再点一次反向；第三次恢复选择顺序）</span></div>
+    ${CMP_RW_BETA.map(table).join("")}
+    <p class="muted">${rich("每格 = 最近 N 个交易日内，每天的涨跌减去 [[beta|β]] × 基准涨跌后按日复利累计：正数 = 去掉大盘 / 板块带动的部分后，公司自身因素让它跑赢。β 每天滚动重估，只用当天之前的日收益（不用未来数据）；三张表只差在估计 β 用多长的历史：1 年最稳定，半年更贴近近期，1 个月反应最快但噪声大（只有约 21 个数据点，一两天的大涨大跌就会明显改变 β）。“平均”一行是所选股票的等权平均。数据不足（上市时间短、缺失超过两成、β 估计不出）显示“–”。截至 ")}${esc(raw.dates[end])}。${skip.length ? `${skip.map(esc).join("、")} 本身就是基准，不列出。` : ""}</p>`;
 }
 function cmpResidWinBind(st, raw, sel, color, apply) {
   const host = byId("cmp-rw");
