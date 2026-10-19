@@ -40,7 +40,6 @@ PAGES.overview = async () => {
     ${homeTargetMoves(h, held, watch)}
     <section class="card"><h3>市场 ${badge("fact")}</h3>${homeMarket(h)}</section>
     ${homePullback(h.pullback, held)}
-    ${homeSwings(h.swings)}
     <div class="grid two">
       ${card("选股池本周涨跌（近 5 个交易日）", homeMovers(h, held), "", ["fact"])}
       ${card("近期要闻", homeHeadlines(h, held), "", ["fact", "model"])}
@@ -48,7 +47,6 @@ PAGES.overview = async () => {
   if (mine?.book) drawHomeHoldings(mine);
   drawSparks(h);
   drawPullback(h.pullback);
-  initSwings(h.swings);
   byId("sched-low-btn")?.addEventListener("click", (ev) => {
     const on = byId("sched-card").classList.toggle("show-low");
     try { localStorage.setItem(SCHED_LOW_KEY, on ? "1" : "0"); } catch { /* 无存储时只本次生效 */ }
@@ -301,64 +299,3 @@ function drawPullback(p) {
   });
 }
 
-// ---------------- 上涨 / 下跌相对大盘（最近 N 轮，M83） ----------------
-const SW_KEY = "swings_sel";
-function homeSwings(w) {
-  if (!w?.available) return "";
-  const p = (x) => pct(x, 1, true);
-  const periods = w.periods.map((x, i) => `<li><b>第 ${i + 1} 轮</b>：上涨 ${esc(x.rise[0])} → ${esc(x.rise[1])}（${esc(w.ref)} ${p(x.ref_rise)}，${esc(w.bench)} ${p(x.bench_rise)}）；
-    下跌 ${esc(x.decline[0])} → ${esc(x.decline[1])}${x.ongoing ? "（进行中）" : ""}（${esc(w.ref)} ${p(x.ref_decline)}，${esc(w.bench)} ${p(x.bench_decline)}）</li>`).join("");
-  return card(`上涨 / 下跌相对大盘（最近 ${w.n} 轮）`, `
-    <p class="muted">每只股票每轮一个点：横轴 = 上涨段涨跌 − ${esc(w.bench)} 同期涨跌，纵轴 = 下跌段涨跌 − ${esc(w.bench)} 同期涨跌（单位：百分点）。
-    <b>右上角 = 涨时跑赢、跌时也跑赢大盘</b>。点按时间顺序标 1–${w.n} 并连线，最后一点最大，看位置往哪个方向移动。</p>
-    <div class="row" id="sw-ctl"></div>${chartDiv("c-swings", "tall")}
-    <p class="muted small"><b>${w.n} 个时段</b>（按 ${esc(w.ref)} 波段切分：从高 / 低点反向变动 ≥ ${pct(w.threshold, 0)} 才算一个拐点；一轮 = 上涨段 + 随后的下跌段）：</p>
-    <ul class="small" style="margin-top:0">${periods}</ul>
-    ${w.rising_now ? `<p class="muted small">${esc(w.ref)} 自 ${esc(w.rising_since)} 起处于一段尚未结束的上涨中，未计入。</p>` : ""}
-    <p class="muted small">上市较晚的股票缺少早期的点。各轮时长差别很大（第 3 轮上涨约 10 个月），横轴的数值范围也因此不同；连线只表示时间顺序，不代表中间的路径。只反映过去的走势特征，不代表之后会重复。</p>`, "", ["derived"]);
-}
-
-function initSwings(w) {
-  const el = byId("c-swings"), ctl = byId("sw-ctl");
-  if (!w?.available || !el || !ctl) return;
-  let sel;
-  try { sel = JSON.parse(localStorage.getItem(SW_KEY) || "null"); } catch { sel = null; }
-  sel = (Array.isArray(sel) ? sel : w.default).filter((t) => w.stocks[t]);
-  const save = () => { try { localStorage.setItem(SW_KEY, JSON.stringify(sel)); } catch { /* 无存储时只本次生效 */ } };
-  const groups = {};
-  Object.keys(w.stocks).forEach((t) => { (groups[w.themes[t] || "other"] ||= []).push(t); });
-  const opts = Object.entries(groups).map(([th, ts]) => `<optgroup label="${esc(themeName(th))}">${ts.sort().map((t) => `<option value="${esc(t)}">${esc(t)} ${esc(META.names_zh?.[t] || "")}</option>`).join("")}</optgroup>`).join("");
-  const render = () => {
-    ctl.innerHTML = `${sel.map((t) => `<span class="chip">${esc(t)} <a href="#" data-rm="${esc(t)}" title="移除">×</a></span>`).join(" ")}
-      <select id="sw-add"><option value="">＋ 添加股票</option>${opts}</select>
-      <button type="button" id="sw-def">恢复默认</button><button type="button" id="sw-clear">清空</button>`;
-    ctl.querySelectorAll("[data-rm]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); sel = sel.filter((x) => x !== a.dataset.rm); save(); render(); }));
-    byId("sw-add").onchange = (e) => { const t = e.target.value; if (t && !sel.includes(t)) { sel.push(t); save(); render(); } };
-    byId("sw-def").onclick = () => { sel = [...w.default]; save(); render(); };
-    byId("sw-clear").onclick = () => { sel = []; save(); render(); };
-    drawSwings(el, w, sel);
-  };
-  render();
-}
-
-function drawSwings(el, w, sel) {
-  echarts.getInstanceByDom(el)?.dispose();
-  const pal = palette();
-  const series = sel.map((t, k) => ({
-    name: t, type: "line", color: pal[k % pal.length], lineStyle: { width: 1.5 }, connectNulls: true,
-    data: w.stocks[t].map((v, i) => (v ? { value: [v[0] * 100, v[1] * 100], i } : { value: [null, null], i })),
-    symbolSize: (_, x) => 5 + x.data.i * 2.2, emphasis: { focus: "series" },
-    label: { show: true, fontSize: 9, position: "top", formatter: (x) => `${x.data.i + 1}` },
-    endLabel: { show: true, formatter: t, fontSize: 11, fontWeight: 600 },
-  }));
-  mkChart(el, {
-    grid: { left: 56, right: 60, top: 36, bottom: 44 },
-    legend: { top: 0, type: "scroll" },
-    tooltip: { trigger: "item", formatter: (x) => { const per = w.periods[x.data.i]; return `<b>${esc(x.seriesName)}</b> 第 ${x.data.i + 1} 轮<br>上涨 ${per.rise[0]} → ${per.rise[1]}：相对 ${w.bench} ${num(x.value[0], 1, true)} 个百分点<br>下跌 ${per.decline[0]} → ${per.decline[1]}${per.ongoing ? "（进行中）" : ""}：相对 ${w.bench} ${num(x.value[1], 1, true)} 个百分点`; } },
-    xAxis: { type: "value", name: `上涨段相对 ${w.bench}（百分点）`, nameLocation: "middle", nameGap: 28, axisLabel: { formatter: (v) => `${v > 0 ? "+" : ""}${v}` } },
-    yAxis: { type: "value", name: `下跌段相对 ${w.bench}（百分点）`, nameLocation: "middle", nameGap: 40, axisLabel: { formatter: (v) => `${v > 0 ? "+" : ""}${v}` } },
-    series: [...series, { type: "line", data: [], silent: true,
-      markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { type: "dashed", color: css("--ink-2") }, data: [{ xAxis: 0 }, { yAxis: 0 }] } }],
-  });
-  if (!sel.length) el.insertAdjacentHTML("afterbegin", `<div class="empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">从上方添加股票</div>`);
-}
