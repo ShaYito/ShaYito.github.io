@@ -185,7 +185,28 @@ const RISK_PARTS = [
   ["mdd", "近 1 年最大回撤", (v) => `−${pct(v, 0)}`],
   ["dbeta", "下行 β（只看大盘下跌日）", (v) => num(v, 2)],
 ];
-async function fillRiskCard(t) {
+// 拥挤度（M92，描述性参考）：近期是否像“彩票股”一样被追捧；检验未达事先标准，只作参考
+const CROWD_PARTS = [
+  ["max5", "近 1 月最大 5 日涨幅均值", (v) => pct(v, 1, true)],
+  ["ivol", "特质波动（日，剔除大盘）", (v) => pct(v, 1)],
+  ["skew", "近 3 月收益偏度", (v) => num(v, 2)],
+  ["ext", "偏离 200 日均线", (v) => pct(v, 0, true)],
+];
+function crowdSection(d, r, s) {
+  const c = r.crowd;
+  if (!c || !isNum(c.score_pct)) return "";
+  const ev = d.crowd_evidence || {}, dd = ev.drawdown || {};
+  const m = {};
+  for (const g of s?.metrics?.groups || []) for (const it of g.items) m[it.key] = it.value;
+  const top = c.score_pct >= 80;
+  return `<h4 style="margin-top:12px">拥挤度（参考） <span class="chip basis-chip evid-weak" title="预测收益：大盘股中无效；预测大幅回撤：最拥挤 20% 约为同风险股票的 ${num(dd.ratio, 2)} 倍（t ${num(dd.diff?.t, 1)}），显著但未达事先标准 1.5 倍">未达事先标准</span></h4>
+    <p class="small">在大盘股中排第 <b>${num(c.score_pct, 0)}</b> 分位${top ? '：<b class="neg">处于最拥挤的 20%</b>' : ""}。<span class="muted">${top ? `历史上这一组之后半年跌超 40% 的概率约为同等价格风险股票的 ${num(dd.ratio, 1)} 倍。` : "不在最拥挤的 20%。"}</span></p>
+    <div class="table-wrap"><table class="tbl small"><tbody>${CROWD_PARTS.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%">${isNum(c.raw[k]) ? f(c.raw[k]) : "–"}</td><td style="width:22%">${seBar(c.pct[k])}</td><td class="muted">${isNum(c.pct[k]) ? `第 ${num(c.pct[k], 0)} 分位` : "–"}</td></tr>`).join("")}
+      ${isNum(m.short_pct_float) ? `<tr><td>空头占流通股（无历史数据，未检验）</td><td class="num">${pct(m.short_pct_float, 1)}</td><td></td><td class="muted">10% 以上算偏高</td></tr>` : ""}</tbody></table></div>
+    <p class="muted small">拥挤度 = 四项在大盘股中的位置等权平均（Bali, Cakici & Whitelaw 2011 的 MAX、Ang et al. 2006 的特质波动、偏度、偏离均线）。检验（≥ $10B，2012 年起）：对之后 1–3 个月的收益没有预测力；对之后半年的大幅回撤有约 1.4 倍的额外提示（≥ $2B 中 1.35 倍），显著但未达事先定的 1.5 倍标准，所以只作参考、不计入任何分数。</p>`;
+}
+
+async function fillRiskCard(t, s) {
   const el = byId("risk-card");
   const d = await load("risk_scores.json").catch(() => null);
   const r = d?.available ? d.stocks?.[t] : null;
@@ -201,6 +222,7 @@ async function fillRiskCard(t) {
     <div class="table-wrap"><table class="tbl"><tbody>${RISK_PARTS.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%"><b>${isNum(r.raw[k]) ? f(r.raw[k]) : "–"}</b></td>
       <td style="width:22%">${seBar(r.pct[k])}</td><td class="muted small" style="white-space:normal">${isNum(r.pct[k]) ? `大盘股中第 ${num(r.pct[k], 0)} 分位` : "数据不足（上市不满约 2 年）"}</td></tr>`).join("")}</tbody></table></div>
     <p class="small">怎么用：<b>用来决定仓位大小和能承受的波动，不预测涨跌。</b>风险越高，同样金额的仓位带来的账户波动越大；按“近 1 年波动”粗略估计，正常情况下一个月的涨跌幅度约为 ±${isNum(r.raw.vol) ? pct(r.raw.vol / Math.sqrt(12), 0) : "–"}（一个标准差）。</p>
+    ${crowdSection(d, r, s)}
     <details class="small"><summary>检验与读法</summary>
       <p>检验（当时市值 ≥ $10B 的美股，2012 年起每周）：综合分与之后 3 个月实际波动的排序相关 ${e1 ? `${num(e1.ic, 2)}（t ${num(e1.t, 0)}）` : "–"}、与之后半年最大回撤 ${e2 ? `${num(e2.ic, 2)}（t ${num(e2.t, 0)}）` : "–"}，2019 年前后都稳定——波动有很强的持续性，这是比预测涨跌可靠得多的事。单项中“近 1 年波动”最强。</p>
       <p>综合分 = 三项各自在参照池中的位置（正态分数）等权平均。下行 β = 只用大盘下跌的日子估计的 β，衡量大盘跌时它跌多少（Ang, Chen & Xing 2006）。分布每周更新（截至 ${esc(d.dist_asof)}），个股读数每天更新（截至 ${esc(d.asof)}）。</p>
@@ -234,10 +256,75 @@ async function fillQualityCard(t) {
     </details>`;
 }
 
+// ---------- 个股页“与你持仓的关系”（M92，分散度；在浏览器内按你的持仓计算，持仓不离开本机）----------
+function seCorr(a, b) {
+  let n = 0, sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (!isNum(a[i]) || !isNum(b[i])) continue;
+    n++; sa += a[i]; sb += b[i]; saa += a[i] * a[i]; sbb += b[i] * b[i]; sab += a[i] * b[i];
+  }
+  if (n < 30) return null;
+  const cov = sab / n - (sa / n) * (sb / n), va = saa / n - (sa / n) ** 2, vb = sbb / n - (sb / n) ** 2;
+  return va > 0 && vb > 0 ? { corr: cov / Math.sqrt(va * vb), beta: cov / vb, n } : null;
+}
+async function fillDiversityCard(t) {
+  const el = byId("dv-card");
+  if (!el) return;
+  const { raw } = await simData().catch(() => ({}));
+  if (!raw?.close?.[t]) return;
+  const N = 252, L = raw.dates.length, i0 = L - N;
+  const ret = (tk) => { const c = raw.close[tk]; if (!c) return null; const out = []; for (let i = i0; i < L; i++) out.push(isNum(c[i]) && isNum(c[i - 1]) ? c[i] / c[i - 1] - 1 : null); return out; };
+  const mine = typeof cmpMyWeights === "function" ? cmpMyWeights(raw) : null;
+  const held = mine ? Object.entries(mine).filter(([tk, w]) => w > 0 && tk !== t && raw.close[tk]) : [];
+  let weights, refName;
+  if (held.length) { weights = Object.fromEntries(held); refName = "你的持仓（不含本股，按市值加权）"; }
+  else {
+    const ai = META.universe.filter((u) => ["semiconductors", "ai_infrastructure", "cloud_ai_platforms"].includes(u.theme) && u.ticker !== t && raw.close[u.ticker]).map((u) => u.ticker);
+    weights = Object.fromEntries(ai.map((x) => [x, 1 / ai.length])); refName = "AI 股等权组合（未录入持仓时的参照）";
+  }
+  const rs = Object.fromEntries(Object.keys(weights).map((tk) => [tk, ret(tk)]));
+  const wsum = Object.values(weights).reduce((a, b) => a + b, 0);
+  const port = [];
+  for (let k = 0; k < N; k++) { let s = 0, w = 0; for (const [tk, wt] of Object.entries(weights)) { const v = rs[tk]?.[k]; if (isNum(v)) { s += v * wt; w += wt; } } port.push(w > 0 ? (s / w) : null); }
+  const me = ret(t);
+  const all = seCorr(me, port);
+  if (!all) return;
+  const downIdx = port.map((v, k) => (isNum(v) && v < 0 ? k : -1)).filter((k) => k >= 0);
+  const dn = seCorr(downIdx.map((k) => me[k]), downIdx.map((k) => port[k]));
+  // 加入 5% 仓位后组合年化波动的变化（现有持仓按比例缩到 95%；未录入持仓时按参照组合计算）
+  const sd = (xs) => { const v = xs.filter(isNum); const m = v.reduce((a, b) => a + b, 0) / v.length; return Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length) * Math.sqrt(252); };
+  const cash = held.length ? 1 - wsum : 0;
+  const pFull = port.map((v) => (isNum(v) ? v * (1 - cash) : null));
+  const pNew = pFull.map((v, k) => (isNum(v) && isNum(me[k]) ? v * 0.95 + me[k] * 0.05 : null));
+  const dVol = sd(pNew) - sd(pFull);
+  const pairs = Object.keys(weights).map((tk) => [tk, seCorr(me, rs[tk])?.corr, weights[tk]]).filter(([, c]) => isNum(c)).sort((a, b) => b[1] - a[1]);
+  const tags = (x) => META.universe.find((u) => u.ticker === x)?.tags || [];
+  const myTag = tags(t)[0];
+  const sameTag = held.length && myTag ? held.filter(([tk]) => tags(tk)[0] === myTag).reduce((a, [, w]) => a + w, 0) : null;
+  const lv = (c) => (c >= 0.7 ? ["neg", "高度同涨同跌"] : c >= 0.4 ? ["", "中等相关"] : c >= 0 ? ["pos", "低相关"] : ["pos", "负相关（有对冲作用）"]);
+  const [lc, lt] = lv(all.corr);
+  const ev = (await load("risk_scores.json").catch(() => null))?.crowd_evidence?.persistence || {};
+  el.hidden = false;
+  el.innerHTML = `<h3>与你持仓的关系（分散度） ${badge("derived")} <span class="chip basis-chip evid-strong" title="过去一年的相关性对之后 3 个月相关性的预测：大盘股中排序相关 ${num(ev.corr?.mean, 2)}（t ${num(ev.corr?.t, 0)}）">相关性：已验证可持续</span></h3>
+    <p>与${refName}近 1 年日收益相关 <b class="${lc}">${num(all.corr, 2)}</b>：${lt}；相对它的 β ${num(all.beta, 2)}。</p>
+    <div class="kpis">
+      <div class="kpi"><span class="muted">组合下跌日的相关</span><b>${dn ? num(dn.corr, 2) : "–"}</b><span class="muted small">只看组合下跌的 ${downIdx.length} 天（参考：可持续性较弱）</span></div>
+      <div class="kpi"><span class="muted">加入 5% 仓位后组合波动</span><b class="${dVol > 0 ? "neg" : "pos"}">${dVol >= 0 ? "+" : "−"}${num(Math.abs(dVol) * 100, 2)} 个百分点</b><span class="muted small">年化，现有 ${num(sd(pFull) * 100, 1)}%</span></div>
+      ${sameTag != null ? `<div class="kpi"><span class="muted">持仓中同一主要业务</span><b>${pct(sameTag, 0)}</b><span class="muted small">${esc(META.tags?.[myTag]?.name || myTag || "")}</span></div>` : ""}
+    </div>
+    <p class="small">相关最高的${held.length ? "持仓" : "参照股票"}：${pairs.slice(0, 4).map(([tk, c, w]) => `<a href="#/stock/${esc(tk)}">${esc(tk)}</a> ${num(c, 2)}${held.length ? `（占 ${pct(w, 0)}）` : ""}`).join("、")}</p>
+    <details class="small"><summary>怎么读与依据</summary>
+      <p>相关越高，这只股票和你已有的东西越容易同涨同跌，加仓带来的分散作用越小；“加入 5% 仓位后组合波动”直接回答“买它会让账户更稳还是更晃”（现有持仓按比例缩到 95% 后加入本股 5%，用近 1 年日收益计算）。</p>
+      <p>依据：组合理论（Markowitz 1952）；下跌时相关性往往升高（Longin & Solnik 2001）——所以单独列出组合下跌日的相关。本系统检验（当时市值 ≥ $10B，2012 年起）：过去一年的相关对之后 3 个月相关的排序相关 ${num(ev.corr?.mean, 2)}（前后两段都约 0.6），可持续；下行相关 ${num(ev.down_corr?.mean, 2)}，可持续性较弱，只作参考。</p>
+      <p>持仓只在你的浏览器里计算，不上传。${held.length ? "" : "录入持仓（我的持仓 → 交易记录）或解锁个人版后，这里会改为按你的实际持仓计算。"}</p>
+    </details>`;
+}
+
 /* ---------- 个股页三层分组与“短期依据”标签 ---------- */
 // [标题开头, 标签类, 标签文字, 悬停说明]；按卡片标题（h3 文本）开头匹配
 const EVIDENCE_BASIS = [
   ["短期证据", "evid-strong", "短期：已验证", "P1 大样本检验按事先标准有用"],
+  ["与你持仓的关系", "evid-strong", "组合：已验证", "过去一年的相关性对之后 3 个月相关性有较强预测力（大盘股 IC 约 0.6）；用于判断分散作用"],
   ["价格风险", "evid-strong", "风险：已验证", "与之后 3 个月实际波动的排序相关约 0.7、与之后半年最大回撤约 0.5（大盘股，2012 年起）；用于仓位，不预测涨跌"],
   ["相对大盘走势", "evid-strong", "短期：部分已验证", "近 1 周剔除 β 的明显异动之后 1–4 周倾向部分回吐（已验证，反向）；近 3 月剔除 β 累计经检验无效"],
   ["价格走势", "", "描述", "事实与标注，本身不是预测信号"],
