@@ -822,6 +822,7 @@ function fmtMetric(v, f) {
   if (f === "pct0") return pct(v, 0);
   if (f === "pp") return pct(v, 1, true);
   if (f === "num1") return num(v, 1);
+  if (f === "num0") return num(v, 0);
   if (f === "cap") return usdAmt(v, v >= 1e12 ? 2 : 1);
   return num(v, 2);
 }

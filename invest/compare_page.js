@@ -240,7 +240,11 @@ const SCORE_DEFS = {
   score_4w_lit: { name: "4 周 · 文献部分", fmt: "pct2s", better: "high", def: "4 周得分中来自 EPS 预期修正、空头、内部人买入的部分（权重为假定，本系统未检验）。", read: "EPS 预期上调为正、空头很高为负。", use: "看得分来自哪里。",
     value: ["低–中", "文献支持，本系统尚未检验（已进入证据前瞻账本）"] },
 };
-Object.assign(CMP_EXTRA_DEFS, SCORE_DEFS);
+Object.assign(CMP_EXTRA_DEFS, SCORE_DEFS, {
+  risk_pct: { name: "价格风险分位", fmt: "num0", better: "low", def: "近 1 年波动、近 1 年最大回撤、下行 β 三项在当前市值 ≥ $10B 美股中的综合分位（0 = 最稳，100 = 波动最大）。",
+    read: "检验：与之后 3 个月实际波动的排序相关约 0.7、与之后半年最大回撤约 0.5（2012 年起，前后稳定）。", use: "决定仓位大小与能承受的波动；不预测涨跌。",
+    value: ["高（风险）", "预测之后的波动与回撤很可靠（波动有很强的持续性）；不预测方向"] },
+});
 const CMP_GROUPS = [
   ["score", "短期综合得分", ["score_1w", "score_4w", "score_4w_mom", "score_4w_rev", "score_4w_lit"]],
   ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
@@ -248,7 +252,7 @@ const CMP_GROUPS = [
   ["fcf_phase", "FCF 收益率上升期", ["fcf_stage_code", "fcf_kind_code", "fcf_z", "fcf_y_chg", "fcf_ps_chg", "fcf_px_chg", "fcf_y_pct"]],
   ["growth", "增长与盈利", ["revenue_growth", "earnings_growth", "eps_fwd_growth", "gross_margin", "op_margin", "net_margin", "roe", "roa"]],
   ["health", "财务健康", ["net_cash_pct", "debt_to_equity", "current_ratio", "payout"]],
-  ["price", "价格与风险", ["price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
+  ["price", "价格与风险", ["risk_pct", "price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
   ["expect", "市场预期", ["median_target", "median_upside", "moves_up", "moves_down", "weighted_target", "weighted_upside", "analysts", "rec_mean", "short_pct_float", "short_change", "days_to_cover", "insiders_pct", "institutions_pct", "next_earnings"]],
 ];
 /* 本页表格共用的表头排序：s = { sort, dir }（dir 1 = 从低到高 / A→Z，−1 = 从高到低）；只有当前排序列显示 ▲ / ▼；
@@ -324,11 +328,12 @@ async function cmpAllTable(sel) {
   const data = await load("compare_metrics.json").catch(() => null);
   if (!data) { host.innerHTML = empty("暂无数据"); return; }
   const se = await load("short_evidence.json").catch(() => null); // M88：并入短期综合得分
+  const rk = await load("risk_scores.json").catch(() => null); // M91：价格风险分位
   for (const r of data.rows) {
     const sc = se?.scores?.[r.ticker] || {};
     const w4 = sc["4"], w1 = sc["1"];
     Object.assign(r, { score_4w: w4?.total, score_1w: w1?.total, score_4w_mom: w4?.momentum, score_4w_rev: w4?.reversal,
-      score_4w_lit: w4 ? w4.total - w4.price : null });
+      score_4w_lit: w4 ? w4.total - w4.price : null, risk_pct: rk?.stocks?.[r.ticker]?.score_pct });
   }
   const draw = () => {
     const keys = cmpGroups().find(([g]) => g === CMP_ALL.group)[2];

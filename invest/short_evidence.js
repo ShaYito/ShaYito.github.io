@@ -179,10 +179,40 @@ async function fillShortExtremes(held) {
     <p class="muted small">得分 = 之后 ${h} 周预期相对全市场平均的表现（截至 ${esc(d.asof)}），后面列出贡献最大的两项。历史上全市场得分最高与最低五分之一相差约 ${pct((m.oos_quintiles[4] - m.oos_quintiles[0]), 1)}，而单只股票的实际结果标准差约 ±${pct(m.xs_sd, 0)}：只是倾向，不是买卖信号。<a href="#/evidence">检验结果 →</a></p>`;
 }
 
+// ---------- 个股页“价格风险”（M91；数据 risk_scores.json）：估计之后的波动与回撤幅度，用于仓位，不预测涨跌 ----------
+const RISK_PARTS = [
+  ["vol", "近 1 年波动（年化）", (v) => pct(v, 0)],
+  ["mdd", "近 1 年最大回撤", (v) => `−${pct(v, 0)}`],
+  ["dbeta", "下行 β（只看大盘下跌日）", (v) => num(v, 2)],
+];
+async function fillRiskCard(t) {
+  const el = byId("risk-card");
+  const d = await load("risk_scores.json").catch(() => null);
+  const r = d?.available ? d.stocks?.[t] : null;
+  if (!el || !r || !isNum(r.score_pct)) return;
+  el.hidden = false;
+  const p = r.score_pct;
+  const lv = p >= 80 ? ["neg", "高"] : p >= 60 ? ["", "偏高"] : p >= 40 ? ["", "中等"] : p >= 20 ? ["", "偏低"] : ["pos", "低"];
+  const ev = d.evidence || {};
+  const e1 = ev["risk:fvol"], e2 = ev["risk:fdd"];
+  el.innerHTML = `<h3>价格风险 ${badge("derived")}</h3>
+    <p>在当前市值 ≥ $${num((d.min_cap || 1e10) / 1e9, 0)}B 的 ${(d.dist_n || 0).toLocaleString()} 只美股中排第 <b>${num(p, 0)}</b> 分位：风险<b class="${lv[0]}">${lv[1]}</b>
+      <span class="muted small">（0 = 最稳，100 = 波动最大）</span> ${seBar(p)}</p>
+    <div class="table-wrap"><table class="tbl"><tbody>${RISK_PARTS.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%"><b>${isNum(r.raw[k]) ? f(r.raw[k]) : "–"}</b></td>
+      <td style="width:22%">${seBar(r.pct[k])}</td><td class="muted small" style="white-space:normal">${isNum(r.pct[k]) ? `大盘股中第 ${num(r.pct[k], 0)} 分位` : "数据不足（上市不满约 2 年）"}</td></tr>`).join("")}</tbody></table></div>
+    <p class="small">怎么用：<b>用来决定仓位大小和能承受的波动，不预测涨跌。</b>风险越高，同样金额的仓位带来的账户波动越大；按“近 1 年波动”粗略估计，正常情况下一个月的涨跌幅度约为 ±${isNum(r.raw.vol) ? pct(r.raw.vol / Math.sqrt(12), 0) : "–"}（一个标准差）。</p>
+    <details class="small"><summary>检验与读法</summary>
+      <p>检验（当时市值 ≥ $10B 的美股，2012 年起每周）：综合分与之后 3 个月实际波动的排序相关 ${e1 ? `${num(e1.ic, 2)}（t ${num(e1.t, 0)}）` : "–"}、与之后半年最大回撤 ${e2 ? `${num(e2.ic, 2)}（t ${num(e2.t, 0)}）` : "–"}，2019 年前后都稳定——波动有很强的持续性，这是比预测涨跌可靠得多的事。单项中“近 1 年波动”最强。</p>
+      <p>综合分 = 三项各自在参照池中的位置（正态分数）等权平均。下行 β = 只用大盘下跌的日子估计的 β，衡量大盘跌时它跌多少（Ang, Chen & Xing 2006）。分布每周更新（截至 ${esc(d.dist_asof)}），个股读数每天更新（截至 ${esc(d.asof)}）。</p>
+      <p>局限：突发事件（财报、监管、并购）带来的跳跃无法从过去的波动里看出——财报前后的幅度见上方“财报”与“期权预期波动”。</p>
+    </details>`;
+}
+
 /* ---------- 个股页三层分组与“短期依据”标签 ---------- */
 // [标题开头, 标签类, 标签文字, 悬停说明]；按卡片标题（h3 文本）开头匹配
 const EVIDENCE_BASIS = [
   ["短期证据", "evid-strong", "短期：已验证", "P1 大样本检验按事先标准有用"],
+  ["价格风险", "evid-strong", "风险：已验证", "与之后 3 个月实际波动的排序相关约 0.7、与之后半年最大回撤约 0.5（大盘股，2012 年起）；用于仓位，不预测涨跌"],
   ["相对大盘走势", "evid-strong", "短期：部分已验证", "近 1 周剔除 β 的明显异动之后 1–4 周倾向部分回吐（已验证，反向）；近 3 月剔除 β 累计经检验无效"],
   ["价格走势", "", "描述", "事实与标注，本身不是预测信号"],
   ["财报与预期", "evid-mid", "短期：事件风险", "财报日是 1 周 – 3 个月内最大的单一事件；EPS 意外后的漂移（PEAD）经检验 2019 年后已消失"],
