@@ -1245,6 +1245,7 @@ PAGES.stock = async (r) => {
     ${howto(STOCK_HOWTO)}${briefCard(t, briefRow, [...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], reports)}
     ${swingsStockCard(s)}${metricsCard(s)}${valuationCard(s)}
     <section class="card" id="qp-card" data-nav="质量画像" hidden></section>
+    <section class="card" id="iss-card" data-nav="股本变化" hidden></section>
     <section class="card" id="radar-card" data-nav="同行雷达" hidden></section>
     ${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${segSection(sc, t, "geography")}<section class="card" id="tr-card" data-nav="信息透明度" hidden></section>${segGraphCard(t, graphData)}
     <section class="card" id="infra-card" data-nav="AI 基础设施" hidden></section>
@@ -1290,6 +1291,7 @@ PAGES.stock = async (r) => {
   fillRiskCard(t, s); // 价格风险 + 拥挤度参考（short_evidence.js，M91 / M92）
   fillDiversityCard(t); // 与你持仓的关系（short_evidence.js，M92；浏览器内计算）
   fillQualityCard(t); // 质量画像（short_evidence.js，M91，描述性）
+  fillIssueCard(t); // 股本变化（short_evidence.js，M93，已验证 6–12 个月）
   stockLayers(); // 三层分组、弱证据收起与“短期依据”标签（short_evidence.js，P3）
   const bnOv = bnStockOverlay(bnD, t, s, nearest);
   const bnShow = { sig: true, leg: true };

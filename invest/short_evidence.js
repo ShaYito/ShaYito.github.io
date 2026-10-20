@@ -230,6 +230,12 @@ async function fillRiskCard(t, s) {
     </details>`;
 }
 
+// Nasdaq 板块名 → 中文（质量画像、股本变化等同板块比较的卡片用）
+const SECTOR_ZH = { Technology: "科技", "Consumer Discretionary": "可选消费", "Consumer Staples": "必需消费", Industrials: "工业",
+  "Health Care": "医疗", Utilities: "公用事业", Energy: "能源", "Basic Materials": "原材料", Telecommunications: "电信",
+  Finance: "金融", "Real Estate": "房地产" };
+const sectorZh = (x) => (x ? `${SECTOR_ZH[x] || x}板块` : "同板块");
+
 // ---------- 个股页“质量画像”（M91；数据 quality_profile.json）：同板块大盘股中的位置，描述性（检验未通过，不给综合分）----------
 const QP_ITEMS = {
   gpa: ["毛利 ÷ 总资产", (v) => pct(v, 0), "high", "每 1 美元资产带来多少毛利（Novy-Marx 2013）"],
@@ -246,7 +252,7 @@ async function fillQualityCard(t) {
   el.hidden = false;
   const verdict = (k) => { const x = d.tests?.[k]?.["52"]; return x ? `12 个月 IC ${x.ic >= 0 ? "+" : ""}${num(x.ic, 3)}（t ${num(x.t, 1)}）` : "–"; };
   el.innerHTML = `<h3>质量画像（同板块比较） ${badge("derived")}</h3>
-    <p class="small muted">在${esc(r.sector || "同板块")}的大盘股（当时市值 ≥ $10B）中的位置。<b>这些指标经检验对之后 6–12 个月的相对收益没有显著预测力</b>，只用来了解公司的盈利能力、稳定性与资产负债结构。</p>
+    <p class="small muted">在${esc(sectorZh(r.sector))}的大盘股（当时市值 ≥ $10B）中的位置。<b>这些指标经检验对之后 6–12 个月的相对收益没有显著预测力</b>，只用来了解公司的盈利能力、稳定性与资产负债结构。</p>
     <div class="table-wrap"><table class="tbl"><tbody>${Object.entries(QP_ITEMS).map(([k, [n, f, good, tip]]) => { const it = r.items[k] || {};
       return `<tr title="${esc(tip)}"><td style="width:24%">${n} <span class="muted small">（${good === "high" ? "越高越好" : "越低越好"}）</span></td><td class="num" style="width:16%"><b>${isNum(it.raw) ? f(it.raw) : "–"}</b></td>
         <td style="width:22%">${seBar(it.pct)}</td><td class="muted small" style="white-space:normal">${isNum(it.pct) ? `同板块第 ${num(it.pct, 0)} 分位` : "无数据"} · 检验 ${verdict(k)}</td></tr>`; }).join("")}</tbody></table></div>
@@ -320,6 +326,25 @@ async function fillDiversityCard(t) {
     </details>`;
 }
 
+// ---------- 个股页“股本变化（回购 / 增发）”（M93）：大盘股中按事先标准通过的资本配置指标（期限 6–12 个月）----------
+async function fillIssueCard(t) {
+  const el = byId("iss-card");
+  const d = await load("issuance.json").catch(() => null);
+  const r = d?.available ? d.stocks?.[t] : null;
+  if (!el || !r) return;
+  el.hidden = false;
+  const e26 = d.evidence?.["26"], q = e26?.quintiles || [];
+  const p = r.buyback_pct;
+  const lv = !isNum(p) ? "" : p >= 80 ? '<b class="pos">回购力度在同板块前 20%</b>' : p <= 20 ? '<b class="neg">增发 / 稀释在同板块前 20%</b>' : "处于同板块中间";
+  el.innerHTML = `<h3>股本变化（回购 / 增发） ${badge("derived")}</h3>
+    <p>近 1 年股本 <b class="${r.raw < 0 ? "pos" : r.raw > 0.01 ? "neg" : ""}">${pct(Math.expm1(r.raw), 1, true)}</b>（按拆股调整；负数 = 净回购）${isNum(p) ? `，回购程度在${esc(sectorZh(r.sector))}的大盘股中排第 <b>${num(p, 0)}</b> 分位 ${seBar(p)}` : ""}。${lv}。</p>
+    <p class="small">检验（当时市值 ≥ $10B 的美股，2012 年起，同板块比较；事先标准同短期证据）：股本变化越少，之后 6 个月相对表现越好，IC ${e26 ? `${num(e26.ic, 3)}（t ${num(e26.t, 1)}）` : "–"}，按事先标准有用；≥ $2B 中 6 个月与 12 个月都有用。效应集中在回购最多的五分之一（之后 6 个月平均约 ${q.length ? pct(q[4], 1, true) : "+1.5%"}，其余各组差别小）。</p>
+    <details class="small"><summary>依据与局限</summary>
+      <p>依据：公司增发后股价往往偏弱、回购后偏强（Pontiff & Woodgate 2008；Daniel & Titman 2006；Ikenberry, Lakonishok & Vermaelen 1995）——管理层倾向在股价高估时增发、低估时回购。本系统检验了总资产增速、资本支出强度与资本配置综合，都未通过，只有这一项通过。</p>
+      <p>局限：期限是 6–12 个月，不适合 1–4 周的判断；员工股票激励会持续增加股本（回购部分抵消）；并购换股会让股本突然增加；股本来自 SEC 申报（按拆股调整），外国公司与部分多类股公司没有数据。数据截至 ${esc(d.asof)}，随财报季手动更新。</p>
+    </details>`;
+}
+
 /* ---------- 个股页三层分组与“短期依据”标签 ---------- */
 // [标题开头, 标签类, 标签文字, 悬停说明]；按卡片标题（h3 文本）开头匹配
 const EVIDENCE_BASIS = [
@@ -338,6 +363,7 @@ const EVIDENCE_BASIS = [
   ["关键指标", "", "背景", "理解公司现状；对 1–3 个月涨跌没有直接预测力"],
   ["估值与利润率", "", "背景", "估值是年级别变量；低分位不代表短期会涨，强周期股方向相反"],
   ["质量画像", "evid-weak", "背景（已检验：不预测收益）", "大盘股中五项与综合都未通过收益预测检验，只作描述"],
+  ["股本变化", "evid-strong", "已验证（6–12 个月）", "大盘股中股本变化（越少越好）6 个月按事先标准有用；期限长于 1–3 个月"],
   ["同行对比雷达", "", "背景", "选股池内相对排名，掩盖量级差异"],
   ["业务", "", "背景", ""],
   ["信息透明度", "", "背景", ""],
