@@ -227,7 +227,21 @@ const CMP_EXTRA_DEFS = {
   next_earnings: { name: "下次财报", fmt: "date", def: "yfinance 的下次财报日期（公司正式公布前可能是预估）。", read: "财报前后是个股波动最大的时候。",
     use: "持仓临近财报时评估仓位，避免意外的大幅波动超出承受能力。", value: ["高（风险）", "财报日是确定的事件风险，对安排仓位和交易时点很有用。"] },
 };
+// M88 短期综合得分（short_evidence.json，与个股页“短期证据”同一份数据；只有选股池股票）
+const SCORE_VALUE = ["中", "全市场 2019 年起样本外检验通过（4 周 IC 0.023，t 2.45；1 周 IC 0.022，t 3.1），但单只股票的实际结果离散度远大于得分，只是倾向"];
+const SCORE_DEFS = {
+  score_4w: { name: "综合得分 4 周", fmt: "pct2s", better: "high", def: "之后 4 周预期相对全市场平均的表现 = 已验证价格信号（扣除重叠的权重）+ 文献支持项（假定权重）。",
+    read: "选股池大多在 ±1% 以内；历史上全市场得分最高与最低五分之一 4 周相差约 0.7%，而单只股票 4 周实际表现的标准差约 ±11%。", use: "作为倾向参考，与财报日程、基本面一起看；详见个股页“短期证据”。", value: SCORE_VALUE },
+  score_1w: { name: "综合得分 1 周", fmt: "pct2s", better: "high", def: "之后 1 周预期相对全市场平均的表现（只用 1 周有效的信号与权重）。",
+    read: "短期回吐（近 1 周 / 1 月涨跌）占比更大；单只股票 1 周实际表现的标准差约 ±5%。", use: "更短的持有期参考。", value: SCORE_VALUE },
+  score_4w_mom: { name: "4 周 · 中期动量", fmt: "pct2s", better: "high", def: "4 周得分中来自 12-1、6-1 月动量的部分。", read: "过去 6–12 个月强的之后倾向略强。", use: "看得分来自哪里。", value: SCORE_VALUE },
+  score_4w_rev: { name: "4 周 · 短期回吐", fmt: "pct2s", better: "high", def: "4 周得分中来自近 1 周 / 1 月涨跌的部分（涨多为负、跌多为正）。", read: "近期涨得多的之后倾向小幅回吐。", use: "看得分来自哪里。", value: SCORE_VALUE },
+  score_4w_lit: { name: "4 周 · 文献部分", fmt: "pct2s", better: "high", def: "4 周得分中来自 EPS 预期修正、空头、内部人买入的部分（权重为假定，本系统未检验）。", read: "EPS 预期上调为正、空头很高为负。", use: "看得分来自哪里。",
+    value: ["低–中", "文献支持，本系统尚未检验（已进入证据前瞻账本）"] },
+};
+Object.assign(CMP_EXTRA_DEFS, SCORE_DEFS);
 const CMP_GROUPS = [
+  ["score", "短期综合得分", ["score_4w", "score_1w", "score_4w_mom", "score_4w_rev", "score_4w_lit"]],
   ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
   ["traits", "经营特征", ["op_leverage", "share_change", "cash_conversion", "capex_intensity"]],
   ["fcf_phase", "FCF 收益率上升期", ["fcf_stage_code", "fcf_kind_code", "fcf_z", "fcf_y_chg", "fcf_ps_chg", "fcf_px_chg", "fcf_y_pct"]],
@@ -273,7 +287,7 @@ function cmpGroups() {
     const keys = [...ks].sort((a, b) => valueScore(b) - valueScore(a));
     const sc = keys.map(valueScore);
     return [g, n, keys, avg(sc.slice(0, 3)), avg(sc)];
-  }).sort((a, b) => b[3] - a[3] || b[4] - a[4]);
+  }).sort((a, b) => (b[0] === "score") - (a[0] === "score") || b[3] - a[3] || b[4] - a[4]); // M88：短期综合得分固定放第一组
   CMP_SORTED = groups.map(([g, n, ks]) => [g, n, ks]);
   if (!CMP_ALL.group) { CMP_ALL.group = CMP_SORTED[0][0]; CMP_ALL.sort = CMP_SORTED[0][2][0]; CMP_ALL.dir = cmpDef(CMP_ALL.sort).better === "high" ? -1 : 1; }
   return CMP_SORTED;
@@ -284,6 +298,7 @@ function cmpFmt(v, f) {
   if (f === "date") return v ? esc(v.slice(5)) : "–";
   if (f === "fcfstage") return isNum(v) ? FCF_STAGE_ZH[v] : "–";
   if (f === "fcfkind") return isNum(v) ? FCF_KIND_ZH[v] : "–";
+  if (f === "pct2s") return isNum(v) ? pct(v, 2, true) : "–";
   return fmtMetric(v, f);
 }
 // 汇总表的“FCF 收益率上升期”一栏（compare_metrics.json；与个股页卡片同一份数据）
@@ -307,6 +322,13 @@ async function cmpAllTable(sel) {
   if (!host) return;
   const data = await load("compare_metrics.json").catch(() => null);
   if (!data) { host.innerHTML = empty("暂无数据"); return; }
+  const se = await load("short_evidence.json").catch(() => null); // M88：并入短期综合得分
+  for (const r of data.rows) {
+    const sc = se?.scores?.[r.ticker] || {};
+    const w4 = sc["4"], w1 = sc["1"];
+    Object.assign(r, { score_4w: w4?.total, score_1w: w1?.total, score_4w_mom: w4?.momentum, score_4w_rev: w4?.reversal,
+      score_4w_lit: w4 ? w4.total - w4.price : null });
+  }
   const draw = () => {
     const keys = cmpGroups().find(([g]) => g === CMP_ALL.group)[2];
     const rows = data.rows.filter((r) => (!CMP_ALL.theme || r.theme === CMP_ALL.theme) && (!CMP_ALL.tag || tagsOf(r.ticker).includes(CMP_ALL.tag)));
@@ -325,7 +347,7 @@ async function cmpAllTable(sel) {
       <span class="muted">点表头排序；悬停表头看指标说明；已选股票（${sel.length}）高亮并排在最前</span></div>
       <div class="table-wrap"><table class="cmp-all"><thead><tr>${cmpSortTh(CMP_ALL, "ticker", "股票", { tip: "按股票代码字母排序", num: false })}${keys.map(th).join("")}</tr></thead><tbody>
       ${rows.map((r) => `<tr class="${sel.includes(r.ticker) ? "sel" : ""}"><td class="nowrap"><a href="#/stock/${esc(r.ticker)}"><b>${esc(r.ticker)}</b></a>${r.cyc_tier === "strong" ? ' <span class="chip warnchip" title="强周期：P/E 高低主要反映处于周期的哪个阶段">强周期</span>' : r.cyc_tier === "medium" ? ' <span class="chip" title="中等周期性">中周期</span>' : ""}${r.fin_currency && r.fin_currency !== "USD" ? `<sup title="财报以 ${esc(r.fin_currency)} 计">†</sup>` : ""} <span class="muted">${esc(META.names_zh?.[r.ticker] || "")}</span></td>
-        ${keys.map((key) => { const d = cmpDef(key); return `<td class="num ${d.fmt === "pp" ? cls(r[key]) : ""}">${cmpFmt(r[key], d.fmt)}</td>`; }).join("")}</tr>`).join("")}
+        ${keys.map((key) => { const d = cmpDef(key); return `<td class="num ${d.fmt === "pp" || d.fmt === "pct2s" ? cls(r[key]) : ""}">${cmpFmt(r[key], d.fmt)}</td>`; }).join("")}</tr>`).join("")}
       <tr class="total"><td><b>中位数</b></td>${keys.map((key) => `<td class="num">${key === "next_earnings" ? "" : cmpFmt(med(key), cmpDef(key).fmt)}</td>`).join("")}</tr></tbody></table></div>
       <details class="howto" open><summary>本组指标的含义、用法与参考价值</summary>${metricDocTable(keys, cmpDef)}<p class="muted">${esc(METRIC_VALUE_NOTE)}</p></details>
       <p class="muted">公司数据来自 yfinance（${esc(data.asof)}），价格类按最新收盘计算；“–”表示该公司不适用或暂无数据（如银行没有毛利率、EV/EBITDA）。ETF 与黄金没有这些公司指标，不列入。† = 财报以外币计（如台积电 TWD、ASML EUR）：总额类比率已按汇率换算，P/B 与 EV/EBITDA 不显示，P/E 可能有约一成的汇率口径偏差。每个指标的含义与用法见个股页“关键指标”。</p>`;
