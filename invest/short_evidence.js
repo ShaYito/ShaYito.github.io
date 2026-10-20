@@ -198,24 +198,32 @@ const CROWD_PARTS = [
 ];
 function crowdSection(d, r, s) {
   const c = r.crowd;
-  const v2 = c && isNum(c.score2_pct);
-  const sp = v2 ? c.score2_pct : c?.score_pct;
+  const ev = d.crowd_evidence || {}, W = ev.weighted;
+  const useW = W && isNum(c?.scorew_pct); // M98：按显著度加权（金融股不在参照池，仍用四项价格类第一版）
+  const sp = useW ? c.scorew_pct : c?.score_pct;
   if (!c || !isNum(sp)) return "";
-  const ev = d.crowd_evidence || {}, ts = ev.tests || {};
-  const tb = ts[v2 ? "crowd2" : "crowd"] || {}, dd = tb.drawdown || ev.drawdown || {}, st = tb.stress || {};
+  const dd1 = (ev.tests?.crowd || {}).drawdown || ev.drawdown || {};
   const m = {};
   for (const g of s?.metrics?.groups || []) for (const it of g.items) m[it.key] = it.value;
   const top = sp >= 80;
-  const parts = CROWD_PARTS.filter(([k]) => isNum(c.raw?.[k]));
-  const tip = `预测收益：大盘股中无效；预测大幅回撤：最拥挤 20% 约为同风险股票的 ${num(dd.ratio, 2)} 倍（t ${num(dd.diff?.t, 1)}），大盘回调时 ${num(st.ratio, 2)} 倍，显著但都未达事先标准 1.5 倍`;
-  return `<h4 style="margin-top:12px">拥挤度（参考） <span class="chip basis-chip evid-weak" title="${tip}">未达事先标准</span></h4>
-    <p class="small">在大盘股中排第 <b>${num(sp, 0)}</b> 分位${top ? '：<b class="neg">处于最拥挤的 20%</b>' : ""}。<span class="muted">${top ? `历史上这一组之后半年跌超 40% 的概率约为同等价格风险股票的 ${num(dd.ratio, 2)} 倍；大盘回调期间之后 3 个月跌超 30% 的概率约为 ${num(st.ratio, 2)} 倍。` : "不在最拥挤的 20%。"}</span></p>
-    <div class="table-wrap"><table class="tbl small"><tbody>${parts.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%">${f(c.raw[k])}</td><td style="width:22%">${seBar(c.pct[k])}</td><td class="muted">${isNum(c.pct[k]) ? `第 ${num(c.pct[k], 0)} 分位` : "–"}</td></tr>`).join("")}
-      ${isNum(m.short_pct_float) ? `<tr><td>空头占流通股（无历史数据，未检验）</td><td class="num">${pct(m.short_pct_float, 1)}</td><td></td><td class="muted">10% 以上算偏高</td></tr>` : ""}</tbody></table></div>
-    <p class="muted small">${v2
-      ? `拥挤度 = 七项在大盘股中的位置等权平均：彩票型特征（Bali, Cakici & Whitelaw 2011 的 MAX、Ang et al. 2006 的特质波动、偏度）、偏离均线、换手率（Datar, Naik & Radcliffe 1998；Lee & Swaminathan 2000）、换手率突然放大、与同行业同涨同跌是否比此前一年明显增强（Lou & Polk 2022）。换手率与同行业两项每周更新（截至 ${ev.dist_asof || "–"}）。`
-      : "拥挤度 = 四项价格类在大盘股中的位置等权平均（MAX、特质波动、偏度、偏离均线）；金融股不在参照池，没有换手率与同行业两项。"}
-      检验（≥ $10B，2012 年起）：对之后 1–3 个月的收益没有预测力；对之后半年的大幅回撤有约 ${num(dd.ratio, 2)} 倍的额外提示，大盘回调期间约 ${num(st.ratio, 2)} 倍（≥ $2B 中 1.41 / 1.23 倍），显著但都未达事先定的 1.5 倍标准，所以只作参考、不计入任何分数。${srcNote(d.risk_source)}</p>`;
+  const wt = (k) => (useW ? W.weights?.[k] || 0 : null);
+  const parts = CROWD_PARTS.filter(([k]) => isNum(c.raw?.[k])).sort((x, y) => (useW ? wt(y[0]) - wt(x[0]) : 0));
+  const oo = W?.oos?.weighted || {};
+  const chip = useW && W.oos_ok
+    ? '<span class="chip basis-chip evid-strong">已验证（回撤风险）</span>'
+    : `<span class="chip basis-chip evid-weak" title="样本外（2019 年起）最拥挤 20% 之后半年跌超 40% 的概率约为同等价格风险股票的 ${num(oo.ratio, 2)} 倍（t ${num(oo.t, 1)}），未达事先标准 1.5 倍">未达事先标准</span>`;
+  const wcell = (k) => {
+    if (!useW) return "";
+    const it = W.items?.[k] || {};
+    return `<td class="num small">${wt(k) > 0 ? `<b>${pct(wt(k), 0)}</b>` : '<span class="muted">0</span>'}</td><td class="muted small">t ${num(it.t, 1)}${(it.t || 0) < 0 ? "（方向相反）" : ""}</td>`;
+  };
+  return `<h4 style="margin-top:12px">拥挤度（参考） ${chip}</h4>
+    <p class="small">在大盘股中排第 <b>${num(sp, 0)}</b> 分位${top ? '：<b class="neg">处于最拥挤的 20%</b>' : ""}。<span class="muted">${top ? `历史上这一组之后半年跌超 40% 的概率约为同等价格风险股票的 ${num(useW ? oo.ratio : dd1.ratio, 2)} 倍${useW ? "（2019 年起样本外）" : ""}。` : "不在最拥挤的 20%。"}</span></p>
+    <div class="table-wrap"><table class="tbl small">${useW ? '<thead><tr><th>指标（按显著度排序）</th><th class="num">读数</th><th></th><th>大盘股中</th><th class="num">权重</th><th>显著度</th></tr></thead>' : ""}<tbody>${parts.map(([k, n, f]) => `<tr${useW && !wt(k) ? ' class="muted"' : ""}><td style="width:28%">${n}</td><td class="num" style="width:14%">${f(c.raw[k])}</td><td style="width:18%">${seBar(c.pct[k])}</td><td class="muted">${isNum(c.pct[k]) ? `第 ${num(c.pct[k], 0)} 分位` : "–"}</td>${wcell(k)}</tr>`).join("")}
+      ${isNum(m.short_pct_float) ? `<tr><td>空头占流通股（无历史数据，未检验）</td><td class="num">${pct(m.short_pct_float, 1)}</td><td></td><td class="muted">10% 以上算偏高</td>${useW ? "<td></td><td></td>" : ""}</tr>` : ""}</tbody></table></div>
+    <p class="muted small">${useW
+      ? `拥挤度 = 各项在大盘股中的位置（正态分数）按显著度加权平均。显著度 = 该项最高 20% 的股票之后半年跌超 40% 的概率，比价格风险（四项）相同的股票高出多少的 t 值；t ≤ 0 的项权重为 0（偏度在控制波动后方向相反：右偏的股票反而更少大跌）。权重用 2012 年起全部数据估计、每周更新。检验：只用 2012–2018 年估计权重、2019 年起样本外，加权分最拥挤 20% 约为 ${num(oo.ratio, 2)} 倍（t ${num(oo.t, 1)}），等权约 ${num(W.oos?.equal?.ratio, 2)} 倍——加权更好，但未达事先定的 1.5 倍标准，所以仍只作参考、不计入任何分数。对之后 1–3 个月的收益没有预测力。换手率与同行业两项每周更新（截至 ${ev.dist_asof || "–"}）。`
+      : `拥挤度 = 四项价格类在大盘股中的位置等权平均（MAX、特质波动、偏度、偏离均线）；金融股不在参照池，没有换手率与同行业两项，也不做加权。检验：对之后半年大幅回撤约 ${num(dd1.ratio, 2)} 倍的额外提示，未达 1.5 倍标准，只作参考。`}${srcNote(d.risk_source)}</p>`;
 }
 // M97：特质波动多出的回撤提示来自哪里（读数来自 risk_source_large.json）
 function srcNote(rs) {

@@ -69,6 +69,13 @@ function etM91(m) {
       : "";
   const sr = (v) => `比 ${num(v.ratio, 2)}（前 ${num(v.ratio_early, 2)} / 后 ${num(v.ratio_late, 2)}；差值 t ${num(v.diff?.t, 1)}）`;
   const strict = Object.entries(m.crowd?.strict || {}).map(([k, v]) => `<tr><td>严格控制 · ${esc(v.name)}最高 20% → 之后半年跌超 40%${k === "lite" ? "（事先定的主候选）" : "（只报告）"}</td><td>价格风险十组内：${sr(v.group10)}<br>回归控制：${sr(v.regression)}<br><span class="muted">标准：两种控制都 ≥ 1.5、t ≥ 2、两段都 ≥ 1.3，≥ $2B 两种都 ≥ 1.3</span></td><td>${k === "lite" ? ok(v.ok) : `<span class="chip">只报告</span>${v.ok ? '<div class="small muted">数值达标，但为看过结果后挑出，不作判定</div>' : ""}`}</td></tr>`).join("");
+  const W = m.crowd?.weighted;
+  const wrows = W
+    ? [
+        ...Object.entries(W.items || {}).sort((x, y) => (y[1].full.diff.t || 0) - (x[1].full.diff.t || 0)).map(([k, v]) => `<tr><td>按显著度加权 · ${esc(v.name)}最高 20% → 之后半年跌超 40%（控制价格风险四项）</td><td>全期 比 ${num(v.full.ratio, 2)}（t ${num(v.full.diff.t, 1)}）；2012–2018 比 ${num(v.train.ratio, 2)}（t ${num(v.train.diff.t, 1)}）；权重 ${pct(W.weights_full?.[k] || 0, 0)}</td><td><span class="chip">只报告</span></td></tr>`),
+        `<tr><td>按显著度加权的拥挤度 → 之后半年跌超 40%（2012–2018 定权重，2019 起样本外）</td><td>加权 比 ${num(W.oos.weighted.ratio, 2)}（t ${num(W.oos.weighted.diff.t, 1)}）；等权对照 ${num(W.oos.equal.ratio, 2)}（t ${num(W.oos.equal.diff.t, 1)}）；标准 ≥ 1.5、t ≥ 2</td><td>${ok(W.oos_ok)}</td></tr>`,
+      ].join("")
+    : "";
   const rs = m.risk_source;
   const rsr = (v) => `比 ${num(v.ratio, 2)}（前 ${num(v.ratio_early, 2)} / 后 ${num(v.ratio_late, 2)}；t ${num(v.diff?.t, 1)}）`;
   const src = rs
@@ -83,8 +90,8 @@ function etM91(m) {
     .map((r) => `<tr><td>${esc(r.name)} · ${r.h} 周</td><td>同板块内比较，IC ${r.mean >= 0 ? "+" : ""}${num(r.mean, 3)}（t ${num(r.t, 1)}；前 ${num(r.early.t, 1)} / 后 ${num(r.late.t, 1)}${dim === "capital" ? "；方向：越少越好" : ""}）</td><td>${ok(r.verdict === "useful")}</td></tr>`)).join("");
   return `<section class="card"><h3>多维评分检验（大盘股） ${badge("derived")}</h3>
     <p class="muted">参照池 = 每个历史时点市值 ≥ $10B、股价 ≥ $5 的美股（每周约 ${num(m.per_week, 0)} 只，与选股池相当；排除金融 / 房地产），2012 年起每周；标准均在看结果前写入 PROGRESS（M91）。</p>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>检验</th><th>结果</th><th>判定</th></tr></thead><tbody>${tr}${rk}${ps}${q}${ds}${cr}${cdr}${strict}${src}${gcr}</tbody></table></div>
-    <p class="small muted">已上线：短期综合得分（默认 1 周）、价格风险、与持仓的关系（分散度）、股本变化（6–12 个月）。成长与盈利动量、资本配置综合未通过，不上线。质量只作描述性画像；价格风险加入近 3 个月波动（M97 检验通过）；拥挤度只作参考（第二版回撤提示 1.49 倍、大盘回调时 1.34 倍；精简版（特质波动 + MAX）在更严格的回归控制下 1.44 倍，均未达 1.5 倍标准）；财务困境在价格风险之外只多提示一到两成风险，不在个股页提示。</p></section>`;
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>检验</th><th>结果</th><th>判定</th></tr></thead><tbody>${tr}${rk}${ps}${q}${ds}${cr}${cdr}${strict}${wrows}${src}${gcr}</tbody></table></div>
+    <p class="small muted">已上线：短期综合得分（默认 1 周）、价格风险、与持仓的关系（分散度）、股本变化（6–12 个月）。成长与盈利动量、资本配置综合未通过，不上线。质量只作描述性画像；价格风险加入近 3 个月波动（M97 检验通过）；拥挤度按显著度加权（样本外 1.32 倍，未达 1.5，只作参考；第二版等权回撤提示 1.49 倍、大盘回调时 1.34 倍；精简版（特质波动 + MAX）在更严格的回归控制下 1.44 倍，均未达 1.5 倍标准）；财务困境在价格风险之外只多提示一到两成风险，不在个股页提示。</p></section>`;
 }
 
 PAGES.evidence = async () => {
