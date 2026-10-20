@@ -184,6 +184,7 @@ const RISK_PARTS = [
   ["vol", "近 1 年波动（年化）", (v) => pct(v, 0)],
   ["mdd", "近 1 年最大回撤", (v) => `−${pct(v, 0)}`],
   ["dbeta", "下行 β（只看大盘下跌日）", (v) => num(v, 2)],
+  ["vol3m", "近 3 个月波动（年化）", (v) => pct(v, 0)],
 ];
 // 拥挤度（M92 / M95，描述性参考）：近期是否像“彩票股”一样被追捧、资金是否涌入；检验未达事先标准，只作参考
 const CROWD_PARTS = [
@@ -214,7 +215,13 @@ function crowdSection(d, r, s) {
     <p class="muted small">${v2
       ? `拥挤度 = 七项在大盘股中的位置等权平均：彩票型特征（Bali, Cakici & Whitelaw 2011 的 MAX、Ang et al. 2006 的特质波动、偏度）、偏离均线、换手率（Datar, Naik & Radcliffe 1998；Lee & Swaminathan 2000）、换手率突然放大、与同行业同涨同跌是否比此前一年明显增强（Lou & Polk 2022）。换手率与同行业两项每周更新（截至 ${ev.dist_asof || "–"}）。`
       : "拥挤度 = 四项价格类在大盘股中的位置等权平均（MAX、特质波动、偏度、偏离均线）；金融股不在参照池，没有换手率与同行业两项。"}
-      检验（≥ $10B，2012 年起）：对之后 1–3 个月的收益没有预测力；对之后半年的大幅回撤有约 ${num(dd.ratio, 2)} 倍的额外提示，大盘回调期间约 ${num(st.ratio, 2)} 倍（≥ $2B 中 1.41 / 1.23 倍），显著但都未达事先定的 1.5 倍标准，所以只作参考、不计入任何分数。</p>`;
+      检验（≥ $10B，2012 年起）：对之后 1–3 个月的收益没有预测力；对之后半年的大幅回撤有约 ${num(dd.ratio, 2)} 倍的额外提示，大盘回调期间约 ${num(st.ratio, 2)} 倍（≥ $2B 中 1.41 / 1.23 倍），显著但都未达事先定的 1.5 倍标准，所以只作参考、不计入任何分数。${srcNote(d.risk_source)}</p>`;
+}
+// M97：特质波动多出的回撤提示来自哪里（读数来自 risk_source_large.json）
+function srcNote(rs) {
+  const p = rs?.part1;
+  if (!p?.v_mkt || !p?.v_ind) return "";
+  return `<br>其中特质波动一项：在价格风险之外约 ${num(p.v_mkt.ratio, 2)} 倍，再控制近 3 个月总波动后约 ${num(p.v_mkt.ratio_vtot, 2)} 倍——有一部分只是“近期波动更大”（价格风险已加入近 3 个月波动）；再剔除同行业的共同波动后降到 ${num(p.v_ind.ratio_vtot, 2)} 倍——剩下的提示有相当一部分来自整个板块一起大起大落，而不是公司自身。`;
 }
 
 async function fillRiskCard(t, s) {
@@ -226,17 +233,19 @@ async function fillRiskCard(t, s) {
   const p = r.score_pct;
   const lv = p >= 80 ? ["neg", "高"] : p >= 60 ? ["", "偏高"] : p >= 40 ? ["", "中等"] : p >= 20 ? ["", "偏低"] : ["pos", "低"];
   const ev = d.evidence || {};
-  const e1 = ev["risk:fvol"], e2 = ev["risk:fdd"];
+  const four = (d.keys || []).includes("vol3m");
+  const e1 = (four && ev["risk4:fvol"]) || ev["risk:fvol"], e2 = (four && ev["risk4:fdd"]) || ev["risk:fdd"];
+  const parts = RISK_PARTS.filter(([k]) => k !== "vol3m" || four);
   el.innerHTML = `<h3>价格风险 ${badge("derived")}</h3>
     <p>在当前市值 ≥ $${num((d.min_cap || 1e10) / 1e9, 0)}B 的 ${(d.dist_n || 0).toLocaleString()} 只美股中排第 <b>${num(p, 0)}</b> 分位：风险<b class="${lv[0]}">${lv[1]}</b>
       <span class="muted small">（0 = 最稳，100 = 波动最大）</span> ${seBar(p)}</p>
-    <div class="table-wrap"><table class="tbl"><tbody>${RISK_PARTS.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%"><b>${isNum(r.raw[k]) ? f(r.raw[k]) : "–"}</b></td>
+    <div class="table-wrap"><table class="tbl"><tbody>${parts.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%"><b>${isNum(r.raw[k]) ? f(r.raw[k]) : "–"}</b></td>
       <td style="width:22%">${seBar(r.pct[k])}</td><td class="muted small" style="white-space:normal">${isNum(r.pct[k]) ? `大盘股中第 ${num(r.pct[k], 0)} 分位` : "数据不足（上市不满约 2 年）"}</td></tr>`).join("")}</tbody></table></div>
     <p class="small">怎么用：<b>用来决定仓位大小和能承受的波动，不预测涨跌。</b>风险越高，同样金额的仓位带来的账户波动越大；按“近 1 年波动”粗略估计，正常情况下一个月的涨跌幅度约为 ±${isNum(r.raw.vol) ? pct(r.raw.vol / Math.sqrt(12), 0) : "–"}（一个标准差）。</p>
     ${crowdSection(d, r, s)}
     <details class="small"><summary>检验与读法</summary>
-      <p>检验（当时市值 ≥ $10B 的美股，2012 年起每周）：综合分与之后 3 个月实际波动的排序相关 ${e1 ? `${num(e1.ic, 2)}（t ${num(e1.t, 0)}）` : "–"}、与之后半年最大回撤 ${e2 ? `${num(e2.ic, 2)}（t ${num(e2.t, 0)}）` : "–"}，2019 年前后都稳定——波动有很强的持续性，这是比预测涨跌可靠得多的事。单项中“近 1 年波动”最强。</p>
-      <p>综合分 = 三项各自在参照池中的位置（正态分数）等权平均。下行 β = 只用大盘下跌的日子估计的 β，衡量大盘跌时它跌多少（Ang, Chen & Xing 2006）。分布每周更新（截至 ${esc(d.dist_asof)}），个股读数每天更新（截至 ${esc(d.asof)}）。</p>
+      <p>检验（当时市值 ≥ $10B 的美股，2012 年起每周）：综合分与之后 3 个月实际波动的排序相关 ${e1 ? `${num(e1.ic, 2)}（t ${num(e1.t, 0)}）` : "–"}、与之后半年最大回撤 ${e2 ? `${num(e2.ic, 2)}（t ${num(e2.t, 0)}）` : "–"}，2019 年前后都稳定——波动有很强的持续性，这是比预测涨跌可靠得多的事。单项中“近 1 年波动”最强。${four && ev["risk4:fvol"] ? `2026-10-20 起加入“近 3 个月波动”：两个排序相关分别从 ${num(ev["risk4:fvol"].ic3, 2)} / ${num(ev["risk4:fdd"]?.ic3, 2)} 提高到 ${num(ev["risk4:fvol"].ic, 2)} / ${num(ev["risk4:fdd"]?.ic, 2)}，前后两段都提高（事先标准：都提高 ≥ 0.02）——近期波动比一年平均更能反映接下来的风险。` : ""}</p>
+      <p>综合分 = ${four ? "四" : "三"}项各自在参照池中的位置（正态分数）等权平均。下行 β = 只用大盘下跌的日子估计的 β，衡量大盘跌时它跌多少（Ang, Chen & Xing 2006）。分布每周更新（截至 ${esc(d.dist_asof)}），个股读数每天更新（截至 ${esc(d.asof)}）。</p>
       <p>局限：突发事件（财报、监管、并购）带来的跳跃无法从过去的波动里看出——财报前后的幅度见上方“财报”与“期权预期波动”。</p>
     </details>`;
 }
