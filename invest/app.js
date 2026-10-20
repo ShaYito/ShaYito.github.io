@@ -207,7 +207,7 @@ const NAV_GROUPS = {
   overview: [],
   holdings: [],
   stock: [],
-  market: [["performance", "相对表现"], ["risk", "风险与集中度"]],
+  market: [["performance", "相对表现"], ["risk", "风险与集中度"], ["evidence", "证据检验"]],
   news: [["news", "新闻"], ["macro", "宏观与异动"], ["retail", "散户热度"], ["sentiment", "情绪维度"]],
   chain: [],
   infra: [["infra", "总览"], ["infra-tech", "按技术"]],

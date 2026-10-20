@@ -56,6 +56,7 @@ async function fillShortEvidence(t) {
     <div class="table-wrap"><table class="tbl"><thead><tr><th>证据</th><th>当前读数</th><th>全市场分位</th><th>倾向</th><th title="${(d.test.stocks || 0).toLocaleString()} 只美股，${esc(d.test.start?.slice(0, 4) || "")} 年起每周截面">检验 IC（t）</th></tr></thead>
     <tbody>${rows.map(({ sig, v, p, tilt }) => `<tr><td title="${esc(sig.name)}">${esc(sig.name.replace(/（[^）]*）/g, ""))}</td><td>${isNum(v) ? (SE_FMT[sig.key] || ((x) => num(x, 2)))(v) : "–"}</td><td>${seBar(p)}</td>
       <td><span class="${tilt.cls}"><b>${tilt.text}</b></span><div class="muted small">${esc(tilt.note || "")}</div></td><td class="small">${seBasis(sig)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="small"><a href="#/evidence">全部证据的检验结果（含选股池前瞻账本） →</a></p>
     <details class="small"><summary>怎么读、量级与局限</summary>
       <p><b>只是倾向。</b>这些信号的 IC 只有 0.01–0.03：在全市场几千只股票里平均来看站得住（按事先写下的标准：全样本 |t| ≥ 2 且多重比较校正后显著、2019 年前后两段同向、科技股子样本同向、五等分最高减最低与 IC 同号），但对单只股票的解释力很小，不能单独决定买卖。量级参考：动量最高与最低五分之一之后 13 周平均相差约 1.7–1.9%；近 1 周涨跌最高与最低五分之一之后 1 周相差约 0.2%。</p>
       <p><b>“偏有利 / 偏不利”</b>：按检验得到的方向换算，处于全市场最有利 / 最不利的 20% 时标出；其余为中性。动量与近期涨跌方向相反（中期延续、短期回吐），同一只股票常常同时出现两种倾向，按你的持有期限看对应的行。</p>
