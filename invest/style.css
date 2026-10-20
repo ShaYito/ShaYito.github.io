@@ -577,3 +577,9 @@ details.brief-report > summary { cursor: pointer; font-weight: 600; }
 td.rw-weak, span.rw-weak { color: var(--muted); }
 td.rw-strong { font-weight: 700; }
 sup.rw-earn { font-size: 10px; color: var(--ink-2); margin-left: 2px; font-weight: 400; }
+/* 个股页“短期证据（已验证）”与三层分组（P3） */
+.se-bar { position: relative; display: inline-block; width: 90px; height: 6px; border-radius: 3px; vertical-align: middle;
+  background: var(--chip); } /* 不着色：反转类信号低分位才有利，颜色会误导；倾向看右侧文字 */
+.se-bar > span { position: absolute; top: -3px; width: 3px; height: 12px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
+.stock-main.fold-weak > section.card.weak { display: none; }
+.chip.basis-chip { font-size: 11px; font-weight: 500; vertical-align: middle; }

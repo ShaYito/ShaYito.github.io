@@ -257,13 +257,14 @@ function buildSectionNav() {
   SEC_OBS.observe(main, { attributes: true, attributeFilter: ["hidden"], subtree: true });
   const label = (h) => {
     const c = h.cloneNode(true);
-    c.querySelectorAll(".badge, .muted, span").forEach((x) => x.remove());
+    c.querySelectorAll(".badge, .muted, span, button").forEach((x) => x.remove());
     return c.textContent.replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g, " ").trim().slice(0, 14);
   };
   const items = [];
   // data-nav="名称"：导航中显示的名称（分组标题带此属性时作为普通栏目）；data-nav-skip：该元素（或其中的卡片）不出现在导航中
   main.querySelectorAll(":scope > h3.section-title, :scope > section.card, :scope > .grid > section.card").forEach((el, i) => {
     if (el.closest("[data-nav-skip]")) return;
+    if (el.hidden || (el.classList.contains("weak") && main.classList.contains("fold-weak"))) return; // 未显示 / 已收起的卡片不进导航
     const h = el.matches("h3") ? el : el.querySelector(":scope > h3");
     if (!h) return;
     const text = el.dataset.nav || label(h);
@@ -1228,24 +1229,29 @@ PAGES.stock = async (r) => {
     <div class="stock-layout">${stockSidebar(t)}<div class="stock-main">
     <h2>${esc(t)} ${esc(nameZh)} <span class="tg-row">${tagNames(t)}</span> <span class="muted">${esc(themeName(s.theme))} · 主题基准 ${esc(s.benchmark)}${inChain ? ` · <a href="#/chain?t=${t}">在 AI 产业链中的位置 →</a>` : ""} · <a href="#/holdings?tab=buyplan&t=${t}">加入买入计划</a></span></h2>
     ${myPositionLine(t, s)}
-    ${hardAlertCard(t, hardAlerts)}
-    <section class="card" id="pt-card" data-nav="同行财报追踪" hidden></section>
-    ${diversifyCard(s)}
-    ${howto(STOCK_HOWTO)}${briefCard(t, briefRow, [...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], reports)}
+    ${layerTitle("layer-short", "短期证据（1 周 – 3 个月）", "经检验有用的信号与近期事件风险")}
+    <section class="card" id="se-card" data-nav="已验证信号" hidden></section>
     <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}<div id="k-info" class="k-info muted">把鼠标移到图上的标记（📍 新闻、◆▲○ 转折点、紫色瓶颈信号、你的交易）上，或点击标记，这里显示详细内容。</div></section>
-    ${relCard()}${swingsStockCard(s)}${metricsCard(s)}${valuationCard(s)}${phaseCard(s)}${runwayCard(s)}
-    <section class="card" id="radar-card" data-nav="同行雷达" hidden></section>${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}${targetsCard(s)}
+    ${relCard()}${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}
+    <section class="card" id="pt-card" data-nav="同行财报追踪" hidden></section>${runwayCard(s)}
+    ${layerTitle("layer-bg", "背景：现状、估值与业务", "帮助理解为什么涨跌、处在什么状态；对 1–3 个月涨跌没有直接预测力")}
+    ${howto(STOCK_HOWTO)}${briefCard(t, briefRow, [...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], reports)}
+    ${swingsStockCard(s)}${metricsCard(s)}${valuationCard(s)}
+    <section class="card" id="radar-card" data-nav="同行雷达" hidden></section>
     ${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${segSection(sc, t, "geography")}<section class="card" id="tr-card" data-nav="信息透明度" hidden></section>${segGraphCard(t, graphData)}
     <section class="card" id="infra-card" data-nav="AI 基础设施" hidden></section>
     <section class="card" id="bn-card" data-nav="相关瓶颈" hidden></section>
     ${insiderCard(s, t)}
-    <section class="card" id="sp-card" data-nav="新闻情绪" hidden></section>
     <section class="card" id="retail-card" data-nav="散户热度" hidden></section>
+    ${diversifyCard(s)}
     <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     <div class="grid" data-nav-skip>
       ${card("相关事件（点击展开）", stockEventsHtml(s.events))}
       ${card("每日新闻情绪（相对平常水平，−1 ~ 1）", Object.keys(s.sentiment).length ? `${chartDiv("c-sent", "short")}<p class="muted">${rich("0 = 该打分来源的平常水平（已扣除财经新闻整体偏乐观的倾向）；浅色柱 = 当天少于 3 篇，仅供参考。情绪描述的是正在发生什么，实测对下一周涨跌没有预测力（见[[sentiment|新闻情绪]]）。")}</p>` : empty("近期无相关新闻"))}
     </div>
+    ${layerTitle("layer-weak", "已检验无效或证据弱", "对 1–3 个月的判断参考价值低，默认收起", true)}
+    ${hardAlertCard(t, hardAlerts)}${phaseCard(s)}${targetsCard(s)}
+    <section class="card" id="sp-card" data-nav="新闻情绪" hidden></section>
     </div></div>`;
   if (byId("c-sg")) drawSegGraph(byId("c-sg"), t, graphData, sc);
   if (sc) {
@@ -1270,6 +1276,8 @@ PAGES.stock = async (r) => {
   fillInfraCard(t); // AI 基础设施（infra_page.js，M61）
   fillTransparencyCard(t); // 信息透明度（transparency.js，M71）
   fillPeerTracker(t); // 同行财报追踪（peer_tracker.js，M77；只有目标公司显示）
+  fillShortEvidence(t); // 短期证据（已验证）（short_evidence.js，P3）
+  stockLayers(); // 三层分组、弱证据收起与“短期依据”标签（short_evidence.js，P3）
   const bnOv = bnStockOverlay(bnD, t, s, nearest);
   const bnShow = { sig: true, leg: true };
   try { const v = JSON.parse(localStorage.getItem("invest.k.bn") || "null"); if (v) Object.assign(bnShow, v); } catch { /* 忽略 */ }
