@@ -208,6 +208,32 @@ async function fillRiskCard(t) {
     </details>`;
 }
 
+// ---------- 个股页“质量画像”（M91；数据 quality_profile.json）：同板块大盘股中的位置，描述性（检验未通过，不给综合分）----------
+const QP_ITEMS = {
+  gpa: ["毛利 ÷ 总资产", (v) => pct(v, 0), "high", "每 1 美元资产带来多少毛利（Novy-Marx 2013）"],
+  opa: ["营业利润 ÷ 总资产", (v) => pct(v, 0), "high", "近 4 季营业利润相对资产规模"],
+  mstd: ["营业利润率波动", (v) => `${num(v * 100, 1)} 个百分点`, "low", "近 12 季营业利润率的标准差：越低越稳定"],
+  accr: ["应计", (v) => pct(v, 1, true), "low", "（净利润 − 经营现金流）÷ 总资产：越高说明利润中没变成现金的部分越多（Sloan 1996）"],
+  lev: ["负债 ÷ 总资产", (v) => pct(v, 0), "low", "大量回购也会推高账面负债率，不一定代表风险高"],
+};
+async function fillQualityCard(t) {
+  const el = byId("qp-card");
+  const d = await load("quality_profile.json").catch(() => null);
+  const r = d?.available ? d.stocks?.[t] : null;
+  if (!el || !r) return;
+  el.hidden = false;
+  const verdict = (k) => { const x = d.tests?.[k]?.["52"]; return x ? `12 个月 IC ${x.ic >= 0 ? "+" : ""}${num(x.ic, 3)}（t ${num(x.t, 1)}）` : "–"; };
+  el.innerHTML = `<h3>质量画像（同板块比较） ${badge("derived")}</h3>
+    <p class="small muted">在${esc(r.sector || "同板块")}的大盘股（当时市值 ≥ $10B）中的位置。<b>这些指标经检验对之后 6–12 个月的相对收益没有显著预测力</b>，只用来了解公司的盈利能力、稳定性与资产负债结构。</p>
+    <div class="table-wrap"><table class="tbl"><tbody>${Object.entries(QP_ITEMS).map(([k, [n, f, good, tip]]) => { const it = r.items[k] || {};
+      return `<tr title="${esc(tip)}"><td style="width:24%">${n} <span class="muted small">（${good === "high" ? "越高越好" : "越低越好"}）</span></td><td class="num" style="width:16%"><b>${isNum(it.raw) ? f(it.raw) : "–"}</b></td>
+        <td style="width:22%">${seBar(it.pct)}</td><td class="muted small" style="white-space:normal">${isNum(it.pct) ? `同板块第 ${num(it.pct, 0)} 分位` : "无数据"} · 检验 ${verdict(k)}</td></tr>`; }).join("")}</tbody></table></div>
+    <details class="small"><summary>检验与局限</summary>
+      <p>检验（当时市值 ≥ $10B 的美股，2012 年起每周，同板块内比较；事先标准同短期证据）：五项与等权综合都未通过。利润率稳定性最接近（12 个月 t 约 3，但分组不单调、科技股中很弱）；负债率方向与预期相反（负债高的之后反而更好）；质量综合 t 约 1.4。≥ $2B 的股票中结果相同。</p>
+      <p>数据：资产负债表与年度毛利来自 SEC XBRL frames（返回最后申报值，可能经修订），一律按期末后 90 天才计入；利润与现金流为首次披露口径。约一半公司不披露毛利科目（用收入 − 营业成本补），外国公司与银行保险不计算。数据截至 ${esc(d.asof)}。</p>
+    </details>`;
+}
+
 /* ---------- 个股页三层分组与“短期依据”标签 ---------- */
 // [标题开头, 标签类, 标签文字, 悬停说明]；按卡片标题（h3 文本）开头匹配
 const EVIDENCE_BASIS = [
@@ -224,6 +250,7 @@ const EVIDENCE_BASIS = [
   ["最近", "", "描述（未检验）", "按本股走势切分的最近几轮，样本少，容易读出不存在的规律"],
   ["关键指标", "", "背景", "理解公司现状；对 1–3 个月涨跌没有直接预测力"],
   ["估值与利润率", "", "背景", "估值是年级别变量；低分位不代表短期会涨，强周期股方向相反"],
+  ["质量画像", "evid-weak", "背景（已检验：不预测收益）", "大盘股中五项与综合都未通过收益预测检验，只作描述"],
   ["同行对比雷达", "", "背景", "选股池内相对排名，掩盖量级差异"],
   ["业务", "", "背景", ""],
   ["信息透明度", "", "背景", ""],

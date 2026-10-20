@@ -48,10 +48,24 @@ function etLedger(L) {
       <p>局限：选股池约 70 只、事后挑选、集中在 AI 硬件，每周截面很小，噪声大；结果只说明选股池内部谁相对更强，不说明大盘方向。价格类信号已在全市场检验过（上表），这里作为对照：如果它们在选股池里也成立，说明账本的方法可信。</p></details></section>`;
 }
 
+// M91：多维评分检验（当时市值 ≥ $10B 的大盘股，与选股池相当）
+function etM91(m) {
+  if (!m) return "";
+  const ok = (b) => (b ? '<span class="chip evid-strong">通过</span>' : '<span class="chip evid-against">未通过</span>');
+  const tr = Object.entries(m.short_transfer || {}).map(([h, v]) => `<tr><td>短期综合得分 · ${h} 周</td><td>全市场 2012–2018 估计的权重，大盘股 2019 起样本外 IC ${num(v.oos.mean, 3)}（t ${num(v.oos.t, 1)}）</td><td>${ok(v.oos_ok)}</td></tr>`).join("");
+  const q = (m.quality || []).filter((r) => r.h === 52).map((r) => `<tr><td>质量 · ${esc(r.name)}（12 个月）</td><td>同板块内比较，IC ${r.mean >= 0 ? "+" : ""}${num(r.mean, 3)}（t ${num(r.t, 1)}；前 ${num(r.early.t, 1)} / 后 ${num(r.late.t, 1)}）</td><td>${ok(r.verdict === "useful")}</td></tr>`).join("");
+  const rk = (m.risk || []).filter((r) => r.key === "risk").map((r) => `<tr><td>价格风险综合分 → ${r.target === "fvol" ? "之后 3 个月实际波动" : "之后半年最大回撤"}</td><td>排序相关 ${num(r.mean, 2)}（t ${num(r.t, 0)}；前 ${num(r.early.mean, 2)} / 后 ${num(r.late.mean, 2)}）</td><td>${ok(r.ok)}</td></tr>`).join("");
+  const ds = Object.entries(m.distress || {}).map(([k, v]) => `<tr><td>财务困境 · ${k === "z" ? "Altman Z < 1.81" : "Z'' < 1.1（非制造业版）"}</td><td>同价格风险组内，之后半年跌超 40% 的发生率比 ${num(v.ratio, 2)}（差值 t ${num(v.diff.t, 1)}；困境区占 ${pct(v.flag_share, 0)}）</td><td>${ok(v.ok)}</td></tr>`).join("");
+  return `<section class="card"><h3>多维评分检验（大盘股） ${badge("derived")}</h3>
+    <p class="muted">参照池 = 每个历史时点市值 ≥ $10B、股价 ≥ $5 的美股（每周约 ${num(m.per_week, 0)} 只，与选股池相当；排除金融 / 房地产），2012 年起每周；标准均在看结果前写入 PROGRESS（M91）。</p>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>检验</th><th>结果</th><th>判定</th></tr></thead><tbody>${tr}${rk}${q}${ds}</tbody></table></div>
+    <p class="small muted">已上线：短期综合得分（默认 1 周）、价格风险。质量只作描述性画像；财务困境在价格风险之外只多提示一到两成风险，未达到事先标准（≥ 1.5 倍），不在个股页提示。</p></section>`;
+}
+
 PAGES.evidence = async () => {
   const d = await load("evidence_tests.json");
   app().innerHTML = `<h2>证据检验 <span class="muted small">哪些证据对 1 周 – 3 个月的判断真的有用</span></h2>
-    ${etP1(d.p1)}${etLedger(d.ledger)}
+    ${etP1(d.p1)}${etM91(d.m91)}${etLedger(d.ledger)}
     <h3 class="section-title">其他已检验的研究（行业研究相关，期限多为 6–12 个月）</h3>
     <div id="et-hard">${empty("加载中…")}</div>`;
   // 财报硬数据回测、全市场大样本重测、细分找规律（hard_page.js；M87 从技术页移来）

@@ -1243,6 +1243,7 @@ PAGES.stock = async (r) => {
     ${layerTitle("layer-bg", "背景：现状、估值与业务", "帮助理解为什么涨跌、处在什么状态；对 1–3 个月涨跌没有直接预测力")}
     ${howto(STOCK_HOWTO)}${briefCard(t, briefRow, [...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], reports)}
     ${swingsStockCard(s)}${metricsCard(s)}${valuationCard(s)}
+    <section class="card" id="qp-card" data-nav="质量画像" hidden></section>
     <section class="card" id="radar-card" data-nav="同行雷达" hidden></section>
     ${profitGrowthCard(sc, t)}${segSection(sc, t, "business")}${segSection(sc, t, "geography")}<section class="card" id="tr-card" data-nav="信息透明度" hidden></section>${segGraphCard(t, graphData)}
     <section class="card" id="infra-card" data-nav="AI 基础设施" hidden></section>
@@ -1286,6 +1287,7 @@ PAGES.stock = async (r) => {
   fillPeerTracker(t); // 同行财报追踪（peer_tracker.js，M77；只有目标公司显示）
   fillShortEvidence(t, s); // 短期证据（已验证 + 文献支持）（short_evidence.js，P3 / M87）
   fillRiskCard(t); // 价格风险（short_evidence.js，M91）
+  fillQualityCard(t); // 质量画像（short_evidence.js，M91，描述性）
   stockLayers(); // 三层分组、弱证据收起与“短期依据”标签（short_evidence.js，P3）
   const bnOv = bnStockOverlay(bnD, t, s, nearest);
   const bnShow = { sig: true, leg: true };
