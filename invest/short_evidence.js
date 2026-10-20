@@ -231,10 +231,10 @@ async function fillRiskCard(t, s) {
 }
 
 // Nasdaq 板块名 → 中文（质量画像、股本变化等同板块比较的卡片用）
-const SECTOR_ZH = { Technology: "科技", "Consumer Discretionary": "可选消费", "Consumer Staples": "必需消费", Industrials: "工业",
+const SE_SECTOR_ZH = { Technology: "科技", "Consumer Discretionary": "可选消费", "Consumer Staples": "必需消费", Industrials: "工业",
   "Health Care": "医疗", Utilities: "公用事业", Energy: "能源", "Basic Materials": "原材料", Telecommunications: "电信",
   Finance: "金融", "Real Estate": "房地产" };
-const sectorZh = (x) => (x ? `${SECTOR_ZH[x] || x}板块` : "同板块");
+const sectorZh = (x) => (x ? `${SE_SECTOR_ZH[x] || x}板块` : "同板块");
 
 // ---------- 个股页“质量画像”（M91；数据 quality_profile.json）：同板块大盘股中的位置，描述性（检验未通过，不给综合分）----------
 const QP_ITEMS = {
