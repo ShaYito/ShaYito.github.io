@@ -83,7 +83,7 @@ const SE_PARTS = [
   ["reversal", "短期回吐", "近 1 周 / 1 月的涨跌：涨多的之后倾向小幅回吐、跌多的小幅反弹", "price"],
   ["eps", "EPS 预期修正", "下财年 EPS 一致预期 30 天变化与上调 / 下调家数（选股池内比较）", "lit"],
   ["short", "空头", "空头占流通股 5% 以下不计，越高扣得越多", "lit"],
-  ["insider", "内部人买入", "近 90 天有内部人公开市场买入时加分", "lit"],
+  ["insider", "内部人买入", "近 90 天有金额 ≥ $100K 或高管的公开市场买入时加分（小额董事买入不计）", "lit"],
 ];
 function seHorizon(d) {
   const hs = Object.keys(d.score_meta || {});
