@@ -170,6 +170,8 @@ PAGES.compare = async (r) => {
   byId("cmp-go-sw")?.addEventListener("click", (e) => {
     e.preventDefault();
     const el = byId("cmp-sw");
+    const d = byId("cmp-sw-d");
+    if (d && !d.open) d.open = true;
     if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - (tb?.offsetHeight || 0) - (qk?.offsetHeight || 0) - 10);
   });
   document.querySelectorAll("#cmp-p button").forEach((b) => (b.onclick = () => apply({ p: b.dataset.v })));
@@ -623,7 +625,8 @@ async function cmpSwings(sel, color) {
   const d5 = (d) => d.slice(2);  // 26-10-05
   const per = ok.map((t) => { const x = w.stocks[t];
     return `<li><span class="dot" style="background:${color[t]}"></span><b>${esc(t)}</b>（阈值 ${pct(x.th, 0)}）：${x.periods.map((r, i) => `${i + 1} ↑${d5(r.rise[0])}→${d5(r.rise[1])} ↓→${d5(r.decline[1])}${r.ongoing ? "（进行中）" : ""}`).join("；")}${x.rising_since ? `；自 ${d5(x.rising_since)} 起的上涨未结束，未计入` : ""}</li>`; }).join("");
-  box.innerHTML = `<h3>上涨 / 下跌相对大盘（最近 ${w.n} 轮）${valueChip("低–中")}${badge("derived")}</h3>
+  // M87：走势特征描述、未经检验，默认折叠（展开后重算图表宽度）
+  box.innerHTML = `<details id="cmp-sw-d"><summary><h3 style="display:inline">上涨 / 下跌相对大盘（最近 ${w.n} 轮）${valueChip("低–中")}${badge("derived")} <span class="chip basis-chip" title="按本股走势切分的最近几轮，样本少，未经检验">描述（未检验）</span></h3> <span class="muted small">点击展开</span></summary>
     <p class="muted">每只股票按<b>自己的股价走势</b>切出最近 ${w.n} 轮“上涨段 + 随后的下跌段”（各股时段不同），每轮一个点：横轴 = 上涨段涨跌 − ${esc(w.bench)} 同期涨跌，纵轴 = 下跌段涨跌 − ${esc(w.bench)} 同期涨跌（单位：百分点）。
     因为下跌段是按各股自己的跌势切出来的，纵轴通常为负：<b>越靠右 = 涨时比大盘涨得越多；越靠上 = 跌时比大盘跌得越少</b>，往右上方移动 = “涨得多、跌得少”在改善。
     点按时间顺序标 1–${w.n} 并连线，最后一点最大。股票用左侧勾选或上方快捷按钮选择。</p>
@@ -631,7 +634,8 @@ async function cmpSwings(sel, color) {
     ${skip.length ? `<p class="muted small">${skip.map(esc).join("、")} 不在选股池（ETF 等），不计算。</p>` : ""}
     ${ok.length ? `<p class="muted small"><b>各折线使用的 ${w.n} 个时段</b>（↑ 上涨段起止，↓ 下跌段终点；阈值 = 股价从高 / 低点反向变动多少才算拐点，取 ${w.vol_mult} × 该股近 3 年年化波动，限制在 ${pct(w.th_min, 0)}–${pct(w.th_max, 0)}）：</p>
     <ul class="small" style="margin-top:0;list-style:none;padding-left:0">${per}</ul>` : ""}
-    <p class="muted small">各股、各轮时长不同，横轴的数值范围也因此不同；连线只表示时间顺序，不代表中间的路径。单只股票的明细见个股页“最近 5 轮涨跌”。只反映过去的走势特征，不代表之后会重复。</p>`;
+    <p class="muted small">各股、各轮时长不同，横轴的数值范围也因此不同；连线只表示时间顺序，不代表中间的路径。单只股票的明细见个股页“最近 5 轮涨跌”。只反映过去的走势特征，不代表之后会重复。</p></details>`;
+  byId("cmp-sw-d")?.addEventListener("toggle", () => window.dispatchEvent(new Event("resize")));
   if (!ok.length) return;
   const series = ok.map((t) => { const x = w.stocks[t]; return {
     name: t, type: "line", color: color[t], lineStyle: { width: 1.5 }, connectNulls: true,

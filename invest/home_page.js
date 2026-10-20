@@ -1,5 +1,6 @@
 /* 总览（首页）：只放事实与高置信信息。
-   顺序：市场现状（M70，AI 每日归纳）→ 我的持仓（账户曲线 + 各持仓走势与成本价）→ 近期日程 → 市场 → 本周涨跌 → 近期要闻（M43 起不再显示系统模型建议）。
+   顺序（M87 按作用大小重排）：市场现状（AI 每日归纳）→ 我的持仓 → 近期日程（含财报期权预期波动）→ 短期信号极端名单 → 近期要闻 / 本周涨跌 → 市场 → 内部人买入。
+   “本周目标价变动”已删除（检验无效）；“回调期间相对强弱”移到 市场 → 相对表现。
    持仓数据只在本机计算：本机账本优先，否则用个人数据包里的账本（解锁后），都没有时提示录入。 */
 
 const HOME_HOWTO = [
@@ -36,17 +37,16 @@ PAGES.overview = async () => {
     ${howto(HOME_HOWTO)}${insightBox(homeInsights(h, mine, held), 6)}
     ${homeHoldings(mine)}
     ${homeSchedule(h, held, watch)}
-    ${homeInsiderBuys(h, held, watch)}
-    ${homeTargetMoves(h, held, watch)}
-    <section class="card"><h3>市场 ${badge("fact")}</h3>${homeMarket(h)}</section>
-    ${homePullback(h.pullback, held)}
+    <section class="card" id="se-home" hidden></section>
     <div class="grid two">
-      ${card("选股池本周涨跌（近 5 个交易日）", homeMovers(h, held), "", ["fact"])}
       ${card("近期要闻", homeHeadlines(h, held), "", ["fact", "model"])}
-    </div>`;
+      ${card("选股池本周涨跌（近 5 个交易日）", homeMovers(h, held), "", ["fact"])}
+    </div>
+    <section class="card"><h3>市场 ${badge("fact")}</h3>${homeMarket(h)}</section>
+    ${homeInsiderBuys(h, held, watch)}`;
   if (mine?.book) drawHomeHoldings(mine);
   drawSparks(h);
-  drawPullback(h.pullback);
+  fillShortExtremes(held); // 短期信号极端名单（M87，short_evidence.js）
   byId("sched-low-btn")?.addEventListener("click", (ev) => {
     const on = byId("sched-card").classList.toggle("show-low");
     try { localStorage.setItem(SCHED_LOW_KEY, on ? "1" : "0"); } catch { /* 无存储时只本次生效 */ }
@@ -64,7 +64,7 @@ function homeInsights(h, mine, held) {
   const soon = (h.schedule || []).filter((e) => e.ticker && held.has(e.ticker) && e.kind === "earnings");
   if (soon.length) {
     const days = (d) => Math.round((new Date(`${d}T12:00:00Z`) - new Date(`${h.asof}T12:00:00Z`)) / 864e5);
-    out.push({ level: "high", kind: "fact", text: `你持有的 ${soon.slice(0, 4).map((e) => `${e.ticker}（${e.date}，${days(e.date)} 天后）`).join("、")} 即将发布财报：财报前后是个股波动最大的时候。` });
+    out.push({ level: "high", kind: "fact", text: `你持有的 ${soon.slice(0, 4).map((e) => `${e.ticker}（${e.date}，${days(e.date)} 天后${e.exp_move ? `，期权预期 ±${pct(e.exp_move.move, 0)}` : ""}）`).join("、")} 即将发布财报：财报前后是个股波动最大的时候。` });
   }
   const spy = (h.market || []).find((m) => m.ticker === "SPY");
   if (spy && isNum(spy.vs_ma200)) out.push({ level: spy.vs_ma200 < 0 ? "high" : "info", kind: "fact", text: `SPY ${spy.vs_ma200 >= 0 ? "高于" : "低于"} [[ma|200 日均线]] ${pct(Math.abs(spy.vs_ma200), 1)}，距 52 周高点 ${pct(spy.from_high, 1)}。` });
@@ -161,7 +161,8 @@ function homeSchedule(h, held, watch) {
   const what = (e) => (e.kind === "earnings" || e.kind === "ex_dividend"
     ? `${tick(e)} <span class="muted">${esc(META.names_zh?.[e.ticker] || "")}</span>`
     : `${e.tier === "high" ? `<b>${esc(e.name)}</b>` : esc(e.name)}${e.ticker ? ` ${tick(e)}` : ""}`);
-  const line = (e) => `<span class="${low(e) ? "sched-low" : ""}"><span class="sched ${e.kind} ${e.tier || ""}">${esc(SCHED_ZH[e.kind] || e.kind)}</span> ${what(e)}${e.est ? ' <span class="muted small">（预估）</span>' : ""} ${tag(e)}</span>`;
+  const mv = (e) => (e.exp_move ? ` <span class="small exp-move" title="期权市场定价：到 ${esc(e.exp_move.expiry)}（${e.exp_move.days} 天，含财报日）股价约 1 个标准差的波动幅度（平值跨式期权估算）">预期 ±${pct(e.exp_move.move, 1)}</span>` : "");
+  const line = (e) => `<span class="${low(e) ? "sched-low" : ""}"><span class="sched ${e.kind} ${e.tier || ""}">${esc(SCHED_ZH[e.kind] || e.kind)}</span> ${what(e)}${e.est ? ' <span class="muted small">（预估）</span>' : ""}${mv(e)} ${tag(e)}</span>`;
   const nLow = show.filter(low).length;
   const body = Object.keys(byDate).length
     ? `<div class="table-wrap"><table class="sched-table"><tbody>${Object.entries(byDate).map(([d, list]) => `<tr class="${list.every(low) ? "sched-low" : ""}"><td class="nowrap"><b>${esc(d.slice(5))}</b> <span class="muted">周${wd(d)}</span></td>
@@ -171,7 +172,7 @@ function homeSchedule(h, held, watch) {
   try { showLow = localStorage.getItem(SCHED_LOW_KEY) === "1"; } catch { /* 无存储时默认收起 */ }
   const lowBtn = nLow ? `<button type="button" class="ghost small" id="sched-low-btn">${showLow ? "收起次要事件" : `显示次要事件（${nLow}）`}</button>` : "";
   return `<section class="card sched-card ${showLow ? "show-low" : ""}" id="sched-card"><h3>近期日程（未来 ${h.schedule_days} 天）${badge("fact")} ${lowBtn}</h3>${body}
-    <p class="muted">${rich(`<b>加粗</b> = 对大盘影响最大的事件（FOMC、CPI、非农、PCE、GDP 初值等）；次要事件（每周初请失业金、月度期权到期）默认收起。财报日来自 yfinance（公司未正式公布前可能是预估日期）；除息日只列已公布的且与你相关的；FOMC、CPI / 非农 / PPI / JOLTS、GDP / PCE 来自美联储、美国劳工统计局、经济分析局官方日历，零售销售 / 消费者信心 / 初请失业金来自 FRED 发布日程；标“预估”的是按惯例推算（ISM PMI = 当月第 1 / 3 个交易日，FOMC 纪要 = 决议后 3 周，台积电月营收 = 10 日前，韩国出口 = 每月 1 日）；四巫日为季度期权与期货同日到期、标普指数季度调整生效，收盘前后成交量常放大。${mineFirst ? "“持有”按你的账本。" : ""}除息日前一天收盘持有才能拿到这次分红；除息当天股价会扣除分红金额，属于正常现象。`)}</p></section>`;
+    <p class="muted">${rich(`<b>加粗</b> = 对大盘影响最大的事件（FOMC、CPI、非农、PCE、GDP 初值等）；次要事件（每周初请失业金、月度期权到期）默认收起。财报日来自 yfinance（公司未正式公布前可能是预估日期）；“预期 ±x%”= 期权市场为财报日之后第一个到期日定价的约 1 个标准差波动幅度（含财报前的正常交易日，到期日越晚越偏大），用来估计这次财报可能带来多大的涨跌，不预测方向；除息日只列已公布的且与你相关的；FOMC、CPI / 非农 / PPI / JOLTS、GDP / PCE 来自美联储、美国劳工统计局、经济分析局官方日历，零售销售 / 消费者信心 / 初请失业金来自 FRED 发布日程；标“预估”的是按惯例推算（ISM PMI = 当月第 1 / 3 个交易日，FOMC 纪要 = 决议后 3 周，台积电月营收 = 10 日前，韩国出口 = 每月 1 日）；四巫日为季度期权与期货同日到期、标普指数季度调整生效，收盘前后成交量常放大。${mineFirst ? "“持有”按你的账本。" : ""}除息日前一天收盘持有才能拿到这次分红；除息当天股价会扣除分红金额，属于正常现象。`)}</p></section>`;
 }
 
 // ---------- 市场 ----------
@@ -217,23 +218,6 @@ function homeHeadlines(h, held) {
     <p class="muted">标题与摘要来自新闻原文；“利好 / 利空”是 AI 的判断${list.some((e) => e.tier && e.tier !== "gemini" && e.tier !== "groq") ? "（部分为规则降级）" : ""}，仅供参考。<a href="#/news">全部新闻 →</a></p>`;
 }
 
-// ---------- 本周目标价变动（近 7 天；与每周操作节奏最相关的分析师信息）----------
-const MOVE_ZH = { raise: "上调", lower: "下调", initiate: "首次给出" };
-function homeTargetMoves(h, held, watch) {
-  const list = h.target_moves || [];
-  if (!list.length) return `<section class="card"><h3>本周目标价变动 ${badge("fact")}</h3>${empty("近 7 天没有机构上调或下调选股池股票的目标价")}</section>`;
-  const rank = (m) => (held.has(m.ticker) ? 0 : isPlanned(m.ticker) ? 1 : watch.has(m.ticker) ? 2 : 3);
-  const rows = [...list].sort((a, b) => rank(a) - rank(b) || (b.raises + b.lowers + b.initiates) - (a.raises + a.lowers + a.initiates));
-  const tag = (t) => holdChip(t, held, watch, true);
-  return `<section class="card"><h3>本周目标价变动（近 7 天）${badge("fact")}</h3>
-    <div class="table-wrap"><table><thead><tr><th>股票</th><th class="num">上调</th><th class="num">下调</th><th class="num">首次</th><th class="num">调整幅度中位数</th><th>明细</th></tr></thead><tbody>
-    ${rows.slice(0, 15).map((m) => `<tr><td class="nowrap"><a href="#/stock/${esc(m.ticker)}"><b>${esc(m.ticker)}</b></a> <span class="muted">${esc(META.names_zh?.[m.ticker] || "")}</span>${tag(m.ticker)}</td>
-      <td class="num ${m.raises ? "pos" : ""}">${m.raises || ""}</td><td class="num ${m.lowers ? "neg" : ""}">${m.lowers || ""}</td><td class="num">${m.initiates || ""}</td>
-      <td class="num ${cls(m.median_change)}">${pct(m.median_change, 1, true)}</td>
-      <td><details><summary class="muted">${m.items.length} 条</summary>${m.items.map((i) => `<div class="muted">${esc(i.date.slice(5))} ${esc(i.firm)}：${esc(MOVE_ZH[i.kind])} ${i.prior ? `${num(i.prior, 0)} → ` : ""}${num(i.target, 0)}${i.grade ? `（${esc(i.grade)}）` : ""}</div>`).join("")}</details></td></tr>`).join("")}</tbody></table></div>
-    <p class="muted">${rich("目标价的“变化”比“水平”更有信息量：多家机构在同一周集中上调或下调，通常跟着财报或重要新闻。维持原目标价的重申不计入。")}${h.revision_test ? ` ${esc(revisionTestText(h.revision_test))}` : ""}</p></section>`;
-}
-
 // ---------- 内部人公开市场买入（SEC Form 4，经 yfinance）----------
 const insiderMoney = (v) => (!isNum(v) || v <= 0 ? "–" : usdAmt(v, v >= 1e6 ? 1 : 0));
 function homeInsiderBuys(h, held, watch) {
@@ -253,8 +237,7 @@ function homeInsiderBuys(h, held, watch) {
     <p class="muted">${rich("高管与董事用自己的钱在公开市场买入自家股票，申报在交易后 2 个工作日内（SEC Form 4）。与卖出不同（卖出常因分散资产、缴税或事先约定的计划），买入通常意味着内部人认为股价被低估；研究中，金额较大、由核心高管买入、或多人在同一时期集中买入的情况更有信息量，但单笔买入的预测力有限，也不代表一定上涨。股票授予、行权不计入。详细记录见各股票页“内部人交易”。")}</p></section>`;
 }
 
-
-// ---------------- 回调期间相对强弱（M79） ----------------
+// ---------- 回调期间相对强弱（M79；M87 起显示在 市场 → 相对表现）----------
 function homePullback(p, held) {
   if (!p?.available) return "";
   const title = "回调期间相对强弱";

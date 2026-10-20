@@ -208,19 +208,21 @@ const NAV_GROUPS = {
   holdings: [],
   stock: [],
   market: [["performance", "相对表现"], ["risk", "风险与集中度"], ["evidence", "证据检验"]],
-  news: [["news", "新闻"], ["macro", "宏观与异动"], ["retail", "散户热度"], ["sentiment", "情绪维度"]],
+  news: [["news", "新闻"], ["macro", "宏观与异动"], ["retail", "情绪与关注"]], // M87：散户热度 + 新闻情绪合并为一个子标签（页内切换）
   chain: [],
-  infra: [["infra", "总览"], ["infra-tech", "按技术"]],
+  // M87：技术 / 基建 / 未上市并入“行业研究”（中长期背景，对 1–3 个月涨跌作用低）
+  research: [["tech", "技术"], ["infra", "基建"], ["infra-tech", "基建 · 按技术"], ["private", "未上市公司"]],
 };
 // M43：系统模型（配置建议 / 评分矩阵 / 信号 × 新闻 / 回测 / 模型说明 / 模拟经营）已停用，旧链接回到总览
 const RETIRED_PAGES = new Set(["lab", "advice", "matrix", "signal-news", "backtest", "model", "sim"]);
-const PAGE_GROUP = { compare: "stock", glossary: "glossary" };
+const PAGE_GROUP = { compare: "stock", glossary: "glossary", bottleneck: "research", sentiment: "news" };
+const SUBNAV_ALIAS = { sentiment: "retail" }; // 页内切换的页面：子标签高亮到同一项
 for (const [g, subs] of Object.entries(NAV_GROUPS)) for (const [p] of subs) PAGE_GROUP[p] = g;
 function renderSubnav(page, group) {
   const el = byId("subnav");
   const subs = NAV_GROUPS[group] || [];
   el.hidden = subs.length < 2;
-  el.innerHTML = subs.map(([p, n]) => `<a href="#/${p}" class="${p === page ? "on" : ""}">${n}</a>`).join("");
+  el.innerHTML = subs.map(([p, n]) => `<a href="#/${p}" class="${p === (SUBNAV_ALIAS[page] || page) ? "on" : ""}">${n}</a>`).join("");
 }
 // 个股 / ETF / 多股对比的左侧栏：切换股票时保留它的滚动位置（页面会整体重绘）
 let SIDE_SCROLL = null;
@@ -1164,10 +1166,13 @@ function costMarkLine(cost, t) {
   return { yAxis: cost, lineStyle: { color: palette()[6], type: "solid", width: 1.6 },
     label: { show: true, position: "insideEndTop", formatter: `你的平均成本 ${costEst(t) ? "≈" : ""}${num(cost, 2)}`, color: css("--ink"), fontSize: 11 } };
 }
+// M87：K 线上的分析师目标价线默认关闭（目标价对 1–3 个月涨跌检验无效，且容易形成锚定），勾选后本机记住
+const K_TGT_KEY = "invest.k.targets";
+function kTargetsOn() { try { return localStorage.getItem(K_TGT_KEY) === "1"; } catch { return false; } }
 // 分析师目标价横线（当前的 12 个月目标价：中位数与按准确度加权，见“分析师目标价”卡片）；两者接近时标签一上一下错开
 function targetMarkLines(s) {
   const a = s.analyst_targets;
-  if (!a || !isNum(a.median_target)) return [];
+  if (!kTargetsOn() || !a || !isNum(a.median_target)) return [];
   const both = isNum(a.weighted_target);
   const near = both && Math.abs(a.weighted_target / a.median_target - 1) < 0.04;
   const medHigher = !both || a.median_target >= a.weighted_target;
@@ -1231,7 +1236,7 @@ PAGES.stock = async (r) => {
     ${myPositionLine(t, s)}
     ${layerTitle("layer-short", "短期证据（1 周 – 3 个月）", "经检验有用的信号与近期事件风险")}
     <section class="card" id="se-card" data-nav="已验证信号" hidden></section>
-    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}<div id="k-info" class="k-info muted">把鼠标移到图上的标记（📍 新闻、◆▲○ 转折点、紫色瓶颈信号、你的交易）上，或点击标记，这里显示详细内容。</div></section>
+    <section class="card"><h3>价格走势与标注 ${badge("fact")}${badge("derived")}${badge("model")}</h3><p class="muted">K 线与均线为${term("fact", "事实")}数据（${pxLabel(s)}）；转折点位置与涨跌拆分为${term("derived", "计算")}；新闻事件判断与转折点归因为 ${term("model", "AI 推断")}。标记：📍 新闻深度分析事件；◆ 转折点·公司事件驱动（有归因）；▲ 转折点·市场/板块驱动；○ 转折点·证据不足；竖线：财报日；${myTrades(t).length ? "蓝色“买” / 红色“卖”圆点：你的交易（按成交价）；" : ""}${myCost(t) ? `紫色实线：你的平均成本${s.div_factor && priceMode() === "adj" ? "（复权价越早越偏低，成本线请与近期价格对比，或切换到实际价格）" : ""}。` : ""}${s.analyst_targets && kTargetsOn() ? "粉色虚线 / 金色点线：分析师目标价中位数 / 按准确度加权（当前的 12 个月目标价，不是历史上各时点的值；详见下方“分析师目标价”）。" : ""}点击标记查看详情。归因为推断，非因果证明。</p><div class="row"><span class="muted">区间</span>${kPeriodSeg()}${priceModeToggle(s)}${s.analyst_targets ? `<label class="small" title="分析师目标价对 1–3 个月涨跌检验无效，且容易形成锚定，默认不画"><input type="checkbox" id="k-tgt" ${kTargetsOn() ? "checked" : ""}> 显示分析师目标价线</label>` : ""}</div>${s.div_factor ? `<p class="muted">${esc(priceModeNote(s))}</p>` : ""}<div id="k-bn-ctl"></div>${chartDiv("c-k", "tall")}<div id="k-info" class="k-info muted">把鼠标移到图上的标记（📍 新闻、◆▲○ 转折点、紫色瓶颈信号、你的交易）上，或点击标记，这里显示详细内容。</div></section>
     ${relCard()}${earningsCard(s)}${earningsWindowCard(s)}${revisionsCard(s)}
     <section class="card" id="pt-card" data-nav="同行财报追踪" hidden></section>${runwayCard(s)}
     ${layerTitle("layer-bg", "背景：现状、估值与业务", "帮助理解为什么涨跌、处在什么状态；对 1–3 个月涨跌没有直接预测力")}
@@ -1244,14 +1249,12 @@ PAGES.stock = async (r) => {
     ${insiderCard(s, t)}
     <section class="card" id="retail-card" data-nav="散户热度" hidden></section>
     ${diversifyCard(s)}
-    <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
-    <div class="grid" data-nav-skip>
-      ${card("相关事件（点击展开）", stockEventsHtml(s.events))}
-      ${card("每日新闻情绪（相对平常水平，−1 ~ 1）", Object.keys(s.sentiment).length ? `${chartDiv("c-sent", "short")}<p class="muted">${rich("0 = 该打分来源的平常水平（已扣除财经新闻整体偏乐观的倾向）；浅色柱 = 当天少于 3 篇，仅供参考。情绪描述的是正在发生什么，实测对下一周涨跌没有预测力（见[[sentiment|新闻情绪]]）。")}</p>` : empty("近期无相关新闻"))}
-    </div>
+    ${card("相关事件（点击展开）", stockEventsHtml(s.events))}
     ${layerTitle("layer-weak", "已检验无效或证据弱", "对 1–3 个月的判断参考价值低，默认收起", true)}
     ${hardAlertCard(t, hardAlerts)}${phaseCard(s)}${targetsCard(s)}
     <section class="card" id="sp-card" data-nav="新闻情绪" hidden></section>
+    ${card("每日新闻情绪（相对平常水平，−1 ~ 1）", Object.keys(s.sentiment).length ? `${chartDiv("c-sent", "short")}<p class="muted">${rich("0 = 该打分来源的平常水平（已扣除财经新闻整体偏乐观的倾向）；浅色柱 = 当天少于 3 篇，仅供参考。情绪描述的是正在发生什么，实测对下一周涨跌没有预测力（见[[sentiment|新闻情绪]]）。")}</p>` : empty("近期无相关新闻"))}
+    <section class="card" id="tp-card" data-nav="转折点"><h3>${term("turning_point", "转折点")}详情 ${badge("derived")}${badge("model")}</h3><div id="tp-detail">${turningSummary(s.turning || [])}</div></section>
     </div></div>`;
   if (byId("c-sg")) drawSegGraph(byId("c-sg"), t, graphData, sc);
   if (sc) {
@@ -1260,6 +1263,10 @@ PAGES.stock = async (r) => {
   }
   const dirColor = { positive: "#0ca30c", negative: "#d03b3b" };
   bindPriceMode();
+  byId("k-tgt")?.addEventListener("change", async (e) => {
+    try { localStorage.setItem(K_TGT_KEY, e.target.checked ? "1" : "0"); } catch { /* 忽略 */ }
+    const y = window.scrollY; await route(); window.scrollTo(0, y);
+  });
   drawEarnings(s); drawEarningsWindow(s); drawRevisions(s); drawTargets(s); drawProfitGrowth(sc);
   drawDiversify(s);
   drawSwingsStock(s);
@@ -1276,7 +1283,7 @@ PAGES.stock = async (r) => {
   fillInfraCard(t); // AI 基础设施（infra_page.js，M61）
   fillTransparencyCard(t); // 信息透明度（transparency.js，M71）
   fillPeerTracker(t); // 同行财报追踪（peer_tracker.js，M77；只有目标公司显示）
-  fillShortEvidence(t); // 短期证据（已验证）（short_evidence.js，P3）
+  fillShortEvidence(t, s); // 短期证据（已验证 + 文献支持）（short_evidence.js，P3 / M87）
   stockLayers(); // 三层分组、弱证据收起与“短期依据”标签（short_evidence.js，P3）
   const bnOv = bnStockOverlay(bnD, t, s, nearest);
   const bnShow = { sig: true, leg: true };
@@ -1302,7 +1309,7 @@ PAGES.stock = async (r) => {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     grid: { ...K_GRID_X, top: 36, bottom: 60 },
     xAxis: { type: "category", data: s.dates, boundaryGap: true },
-    yAxis: yWithLines([cost, s.analyst_targets?.median_target, s.analyst_targets?.weighted_target]),
+    yAxis: yWithLines(kTargetsOn() ? [cost, s.analyst_targets?.median_target, s.analyst_targets?.weighted_target] : [cost]),
     dataZoom: [{ type: "inside", startValue: kPeriodStart(nK, kPeriod()), endValue: nK - 1 },
       { type: "slider", startValue: kPeriodStart(nK, kPeriod()), endValue: nK - 1, height: 18, bottom: 10 }],
     series: [
@@ -1423,9 +1430,16 @@ PAGES.performance = async (r) => {
     ${howto(PERF_HOWTO)}${insightBox(perfInsights(ranking, per, META))}
     <section class="card"><div class="seg" id="p-seg">${Object.keys(PERIODS).map((k) => `<button type="button" data-p="${k}" class="${k === per ? "on" : ""}">${k}</button>`).join("")}</div></section>
     ${card(`区间超额收益排名（相对 SPY，${per}）`, chartDiv("c-rank", "tall"))}
+    <div id="pb-host"></div>
     <p class="muted">主题小图：● 持仓为粗线，★ 关注列表为实线，其余股票为细淡线；悬停图例可单独高亮</p>
     <div class="grid two">${META.themes.map((th) => card(`${th.name}（基准 ${p.benchmarks[th.key]}，虚线；SPY 点线）`, chartDiv(`c-th-${th.key}`))).join("")}</div>`;
   document.querySelectorAll("#p-seg button").forEach((b) => (b.onclick = () => { location.hash = `#/performance?period=${b.dataset.p}`; }));
+  load("home.json").then((h) => { // 回调期间相对强弱（M79；M87 从总览移来）
+    const host = byId("pb-host");
+    if (!host || !h?.pullback) return;
+    host.innerHTML = homePullback(h.pullback, new Set(META.universe.map((u) => u.ticker).filter(isHeld)));
+    drawPullback(h.pullback);
+  }).catch(() => {});
   mkChart(byId("c-rank"), { legend: { show: false }, tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => pct(v, 1, true) },
     grid: { left: 80, right: 50, top: 10, bottom: 30 }, xAxis: { type: "value", axisLabel: { formatter: (v) => pct(v, 0) } },
     yAxis: { type: "category", data: ranking.map((x) => tickerLabel(x.t)), inverse: true, axisLabel: { color: (v, i) => themeColor(ranking[i]?.theme) } },

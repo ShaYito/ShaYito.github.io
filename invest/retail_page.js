@@ -88,10 +88,16 @@ const RETAIL_HOWTO = [
   "看多比例 ≥ 85% 或 ≤ 35%、讨论量是平时 2.5 倍以上会标为异动。散户一致看多往往出现在短期高点附近——把它当作拥挤度指标。",
 ];
 
+// M87：新闻 →“情绪与关注”：散户热度与新闻情绪两页合并为一个子标签，页内切换；两者对 1–3 个月涨跌的作用都低
+function attentionSwitch(cur) {
+  return `<div class="row"><div class="seg">${[["retail", "散户热度"], ["sentiment", "新闻情绪"]].map(([p, n]) => `<a class="${p === cur ? "on" : ""}" href="#/${p}" style="padding:3px 12px;text-decoration:none">${n}</a>`).join("")}</div>
+    <span class="chip basis-chip evid-against" title="新闻情绪：本系统检验与下周相对收益相关 0.004；散户关注：文献显示关注度突增后短期偏反转">短期：已检验无效 / 文献偏反向</span>
+    <span class="muted small">用来了解市场在关注什么、情绪是否极端，不用来判断涨跌。</span></div>`;
+}
 PAGES.retail = async (r) => {
   const d = await load("retail.json");
   const dg = await load("retail_digest.json").catch(() => null);
-  if (!d.asof) { app().innerHTML = `<h2>散户热度</h2>${card("散户热度", empty("尚无数据：每日推送开始记录后显示。"))}`; return; }
+  if (!d.asof) { app().innerHTML = `${attentionSwitch("retail")}<h2>散户热度</h2>${card("散户热度", empty("尚无数据：每日推送开始记录后显示。"))}`; return; }
   const sortKey = r.query.sort || "mentions";
   const val = (x) => ({ mentions: x.mentions, surge: isNum(x.mentions) && x.mentions_base ? x.mentions / x.mentions_base : null, bull: x.bull_ratio, activity: x.per_hour, reddit: x.reddit_posts })[sortKey];
   const market = (d.market || []).map((t) => (d.rows || []).find((x) => x.ticker === t)).filter(Boolean);
@@ -105,7 +111,7 @@ PAGES.retail = async (r) => {
     <td class="num">${num(x.per_hour, 1)}</td>${hasReddit ? `<td class="num">${isNum(x.reddit_posts) ? x.reddit_posts : "–"}</td>` : ""}
     <td>${dg?.rows?.[x.ticker]?.view ? `<span class="chip" title="${esc(dg.rows[x.ticker].view.summary)}">${TONE_ZH[dg.rows[x.ticker].view.tone]}</span>` : "<span class=\"muted\">–</span>"}</td>
     <td class="num">${isNum(dg?.rows?.[x.ticker]?.spec_ratio) ? pct(dg.rows[x.ticker].spec_ratio, 0) : "–"}</td></tr>`;
-  app().innerHTML = `<h2>散户热度 <span class="muted">${esc(d.asof)} · 已记录 ${d.history_days + 1} 天</span></h2>
+  app().innerHTML = `${attentionSwitch("retail")}<h2>散户热度 <span class="muted">${esc(d.asof)} · 已记录 ${d.history_days + 1} 天</span></h2>
     ${howto(RETAIL_HOWTO)}
     ${market.length ? card("大盘散户情绪（Stocktwits）", `<p>${market.map((x) => `<b>${esc(x.ticker)}</b> 看多 ${pct(x.bull_ratio, 0)}<span class="muted">（${x.tagged} 条有标注${isNum(x.bull_base) ? `，平时 ${pct(x.bull_base, 0)}` : ""}）</span>`).join(" · ")}</p>`, "", ["fact"]) : ""}
     ${(d.alerts || []).length ? card(`异动（${d.alerts.length}）`, `<ul>${d.alerts.map((a) => `<li><a href="#/stock/${a.ticker}">${esc(a.ticker)}</a>：${esc(a.text)}</li>`).join("")}</ul>`, "", ["derived"]) : ""}

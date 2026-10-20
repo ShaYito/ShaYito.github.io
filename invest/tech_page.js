@@ -112,12 +112,11 @@ PAGES.tech = async (r) => {
     ${howto(TECH_HOWTO)}
     <div id="rm-entry"></div>
     ${card("瓶颈时间线", `${techKindLegend()}${chartDiv("c-tk-tl", "tall")}<div id="tk-tl-info" class="k-info muted">悬停或点击图上的点查看信号内容；点击左侧技术名进入该技术。</div>`, "", ["fact"])}
-    <div id="hd-bt"></div>
+    <p class="muted small">财报硬数据回测、全市场大样本重测与细分找规律已移到 <a href="#/evidence">市场 → 证据检验</a>（M87：所有检验结果集中一处）。</p>
     <section class="card"><h3>各项技术 ${badge("fact")}${badge("derived")}</h3><div class="tk-grid">${ai.map((t) => techCardHtml(d, t)).join("")}</div></section>
     ${hist.length ? `<section class="card"><h3>历史对照：非 AI 紧缺周期 ${badge("fact")}${badge("derived")}</h3><p class="muted small">AI 之前的几轮紧缺，不在上方时间线里；卡片走势从第一轮紧缺所在年份的年初开始。</p><div class="tk-grid">${hist.map((t) => techCardHtml(d, t)).join("")}</div></section>` : ""}`;
   drawTechTimeline(d, ai);
   roadmapEntryHtml().then((h) => { const el = byId("rm-entry"); if (el) el.innerHTML = h; });
-  hardBacktestHtml().then((h) => { const el = byId("hd-bt"); if (el) el.innerHTML = h; }); // 财报硬数据回测（M69）
   for (const t of ts) {
     const eq = techEqual(d, t, "index", techCardStart(t));
     mkChart(byId(`tk-sp-${t.id}`), { animation: false, grid: { left: 2, right: 2, top: 4, bottom: 2 }, xAxis: { type: "time", show: false }, yAxis: { type: "log", show: false, scale: true },

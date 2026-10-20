@@ -40,7 +40,44 @@ function seBasis(sig) {
   return sig.by_h.map((r) => `<div class="${r.verdict === "useful" ? "" : "muted"}" title="${r.verdict === "useful" ? "按事先标准有用" : r.verdict === "weak" ? "方向一致但不显著" : "无效"}">${r.h} 周 ${r.ic >= 0 ? "+" : ""}${num(r.ic, 3)}（t ${num(r.t, 1)}）${r.verdict === "useful" ? " ✓" : ""}</div>`).join("");
 }
 
-async function fillShortEvidence(t) {
+// “文献支持（本系统未检验）”（M87）：公开研究中对 1–3 个月有一定作用、本系统尚未检验（或在前瞻账本中积累）的证据
+async function seLiterature(t, s) {
+  if (!s) return "";
+  const rows = [];
+  const tr = s.earnings_q?.eps_trend?.["+1y"], rv = s.earnings_q?.eps_revisions?.["+1y"];
+  if (tr && isNum(tr.current) && isNum(tr.d30) && tr.d30 !== 0) {
+    const c = tr.current / Math.abs(tr.d30) - (tr.d30 > 0 ? 1 : -1);
+    const up = rv?.up30 ?? 0, dn = rv?.down30 ?? 0;
+    const lab = c >= 0.005 ? ["pos", "上调"] : c <= -0.005 ? ["neg", "下调"] : ["", "基本不变"];
+    rows.push(["下财年 EPS 预期修正（30 天）", `<span class="${lab[0]}">${pct(c, 1, true)}（${lab[1]}）</span>${up + dn ? `；${up} 家上调 / ${dn} 家下调` : ""}`,
+      "分析师上调盈利预测后 1–3 个月倾向延续（Chan, Jegadeesh & Lakonishok 1996 等）；本系统前瞻账本积累中"]);
+  }
+  const m = {};
+  for (const g of s.metrics?.groups || []) for (const it of g.items) m[it.key] = it;
+  const sp = m.short_pct_float?.value, dtc = m.days_to_cover?.value;
+  if (isNum(sp) || isNum(dtc)) {
+    const hi = (isNum(sp) && sp >= 0.1) || (isNum(dtc) && dtc >= 5);
+    rows.push(["空头", `${isNum(sp) ? `占流通股 ${pct(sp, 1)}` : ""}${isNum(dtc) ? `，回补约 ${num(dtc, 1)} 天` : ""}${hi ? ' <span class="neg">（偏高）</span>' : ' <span class="muted">（不高）</span>'}`,
+      "空头比例 / 回补天数很高的股票之后倾向偏弱（Asquith, Pathak & Ritter 2005；Hong et al. 2016），主要在空头极高时有意义"]);
+  }
+  const lo = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+  const buys = (s.insider || []).filter((x) => x.kind === "purchase" && x.date >= lo);
+  const sum = buys.reduce((a, x) => a + (x.value || 0), 0);
+  rows.push(["内部人公开市场买入（近 90 天）", buys.length ? `<span class="pos">${buys.length} 笔，合计 ${insiderMoney(sum)}</span>（${esc(buys.slice(0, 2).map((x) => x.position || x.insider).join("、"))}）` : '<span class="muted">没有</span>',
+    "内部人主动买入之后倾向略强，信号主要来自小盘股与非例行买入（Lakonishok & Lee 2001；Cohen, Malloy & Pomorski 2012）；卖出多为例行，信息量低"]);
+  const nx = s.earnings_q?.next?.datetime?.slice(0, 10);
+  if (nx) {
+    const days = Math.round((new Date(`${nx}T12:00:00Z`) - Date.now()) / 864e5);
+    const ev = (await load("home.json").catch(() => null))?.schedule?.find((e) => e.kind === "earnings" && e.ticker === t)?.exp_move;
+    rows.push(["下次财报", `${esc(nx)}（${days >= 0 ? `${days} 天后` : "已过"}）${ev ? `；期权预期到 ${esc(ev.expiry)} 波动约 <b>±${pct(ev.move, 1)}</b>` : ""}`,
+      "财报前后是个股波动最大的时候；期权隐含波动对之后实际波动的预测较好（Christensen & Prabhala 1998）。只说明幅度，不说明方向"]);
+  }
+  if (!rows.length) return "";
+  return `<h4 style="margin-top:12px">文献支持（本系统未检验） <span class="chip basis-chip evid-mid" title="公开研究中对 1–3 个月有一定作用；本系统尚未检验，EPS 修正等已进入前瞻账本">短期：文献支持</span></h4>
+    <div class="table-wrap"><table class="tbl"><tbody>${rows.map(([a, b, c]) => `<tr><td style="width:24%">${a}</td><td style="width:36%">${b}</td><td class="muted small" style="white-space:normal">${c}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+async function fillShortEvidence(t, s) {
   const el = byId("se-card");
   const d = await seData();
   const r = d?.available ? d.stocks?.[t] : null;
@@ -56,6 +93,7 @@ async function fillShortEvidence(t) {
     <div class="table-wrap"><table class="tbl"><thead><tr><th>证据</th><th>当前读数</th><th>全市场分位</th><th>倾向</th><th title="${(d.test.stocks || 0).toLocaleString()} 只美股，${esc(d.test.start?.slice(0, 4) || "")} 年起每周截面">检验 IC（t）</th></tr></thead>
     <tbody>${rows.map(({ sig, v, p, tilt }) => `<tr><td title="${esc(sig.name)}">${esc(sig.name.replace(/（[^）]*）/g, ""))}</td><td>${isNum(v) ? (SE_FMT[sig.key] || ((x) => num(x, 2)))(v) : "–"}</td><td>${seBar(p)}</td>
       <td><span class="${tilt.cls}"><b>${tilt.text}</b></span><div class="muted small">${esc(tilt.note || "")}</div></td><td class="small">${seBasis(sig)}</td></tr>`).join("")}</tbody></table></div>
+    ${await seLiterature(t, s)}
     <p class="small"><a href="#/evidence">全部证据的检验结果（含选股池前瞻账本） →</a></p>
     <details class="small"><summary>怎么读、量级与局限</summary>
       <p><b>只是倾向。</b>这些信号的 IC 只有 0.01–0.03：在全市场几千只股票里平均来看站得住（按事先写下的标准：全样本 |t| ≥ 2 且多重比较校正后显著、2019 年前后两段同向、科技股子样本同向、五等分最高减最低与 IC 同号），但对单只股票的解释力很小，不能单独决定买卖。量级参考：动量最高与最低五分之一之后 13 周平均相差约 1.7–1.9%；近 1 周涨跌最高与最低五分之一之后 1 周相差约 0.2%。</p>
@@ -63,6 +101,27 @@ async function fillShortEvidence(t) {
       <p><b>读数口径</b>：与检验相同的公式，用网站行情（复权收盘，截至 ${esc(d.asof)}）计算；动量与近期涨跌已减去 SPY 同期涨跌，再与全市场 ${(d.dist_n || 0).toLocaleString()} 只股票（截至 ${esc(d.dist_asof)}，每周更新）比较。剔除大盘的一周倍数 = 近 5 日剔除 β 后的累计 ÷（此前一年剔除 β 后的日波动 × √5），与多股对比页的倍数同一思路。</p>
       <p><b>局限</b>：股票池是现在仍上市的公司（退市的输家不在其中）；未扣交易成本；检验的是“同一周所有股票相互比较”，不预测大盘涨跌。财报反应后漂移（PEAD）、近 3 月剔除 β 累计、回调期间抗跌程度经检验无效或方向相反，未列入。详见 docs/SYSTEM_REVIEW.md 第四节。</p>
     </details>`;
+}
+
+// 总览“短期信号极端名单”（M87）：选股池中 ≥ 2 项已验证信号同时处于全市场最有利 / 最不利 20% 的股票
+async function fillShortExtremes(held) {
+  const el = byId("se-home");
+  const d = await seData();
+  if (!el || !d?.available) return;
+  const short = (n) => n.replace(/（[^）]*）/g, "");
+  const rows = Object.entries(d.stocks).map(([t, r]) => {
+    const tilts = d.signals.map((sig) => ({ sig, tilt: seTilt(sig, r[sig.key]?.pct) }));
+    return { t, fav: tilts.filter((x) => x.tilt.text === "偏有利"), bad: tilts.filter((x) => x.tilt.text === "偏不利") };
+  });
+  const list = (key) => rows.filter((x) => x[key].length >= 2).sort((a, b) => b[key].length - a[key].length || a.t.localeCompare(b.t));
+  const li = (x, key) => `<li><a href="#/stock/${esc(x.t)}"><b>${esc(x.t)}</b></a> <span class="muted">${esc(META.names_zh?.[x.t] || "")}</span>${held.has(x.t) ? ' <span class="chip holding">持有</span>' : isPlanned(x.t) ? ' <span class="chip">计划</span>' : ""}
+    <span class="small muted">${x[key].map((y) => esc(short(y.sig.name))).join("、")}</span></li>`;
+  const good = list("fav"), bad = list("bad");
+  el.hidden = false;
+  el.innerHTML = `<h3>短期信号处于极端的股票 ${badge("derived")} <span class="chip basis-chip evid-strong" title="P1 大样本检验按事先标准有用">短期：已验证</span></h3>
+    <div class="grid two"><div><h4 class="pos">多项偏有利（${good.length}）</h4>${good.length ? `<ul class="plain">${good.map((x) => li(x, "fav")).join("")}</ul>` : empty("没有")}</div>
+      <div><h4 class="neg">多项偏不利（${bad.length}）</h4>${bad.length ? `<ul class="plain">${bad.map((x) => li(x, "bad")).join("")}</ul>` : empty("没有")}</div></div>
+    <p class="muted small">选股池中至少 2 项已验证信号同时处于全市场最有利（或最不利）20% 的股票，截至 ${esc(d.asof)}。动量（中期延续）与近期涨跌（短期回吐）方向相反，常同时出现，按持有期限看。每项只是很小的倾向（IC 0.01–0.03），不是买卖信号。<a href="#/evidence">检验结果 →</a></p>`;
 }
 
 /* ---------- 个股页三层分组与“短期依据”标签 ---------- */
@@ -93,6 +152,8 @@ const EVIDENCE_BASIS = [
   ["FCF 收益率上升期", "evid-against", "短期：已检验很弱", "阶段标签 1 周近似抛硬币；仅 A−B 类 13 周约 +1.8%"],
   ["分析师目标价", "evid-against", "短期：已检验无效", "目标价变动 1 / 4 周 IC≈0；机构准确度无持续性"],
   ["新闻情绪", "evid-against", "短期：已检验无效", "与下周相对收益相关 0.004；情绪跟着股价走"],
+  ["每日新闻情绪", "evid-against", "短期：已检验无效", "与下周相对收益相关 0.004；情绪跟着股价走"],
+  ["相关事件", "", "描述", "近期新闻事件；“利好 / 利空”为 AI 判断"],
 ];
 const FOLD_KEY = "invest.stock.foldWeak";
 function foldWeakOn() { try { return localStorage.getItem(FOLD_KEY) !== "0"; } catch { return true; } }

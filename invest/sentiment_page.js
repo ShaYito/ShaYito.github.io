@@ -58,6 +58,6 @@ const SP_HOWTO = [
   "“需要留意”只标出约前 3–5% 的极端情况（阈值按历史分布设定），例如情绪明显偏正而股价反向下跌（可能消息已被消化或有更强的力量）。点击列名排序。",
 ];
 PAGES.sentiment = async (r) => {
-  app().innerHTML = `<h2>新闻情绪：更多维度</h2>${howto(SP_HOWTO)}<div id="sp-table"></div>`;
+  app().innerHTML = `${attentionSwitch("sentiment")}<h2>新闻情绪：更多维度</h2>${howto(SP_HOWTO)}<div id="sp-table"></div>`;
   await fillSentimentTable(r.query.sp);
 };

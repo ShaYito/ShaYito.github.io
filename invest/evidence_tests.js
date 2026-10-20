@@ -51,5 +51,9 @@ function etLedger(L) {
 PAGES.evidence = async () => {
   const d = await load("evidence_tests.json");
   app().innerHTML = `<h2>证据检验 <span class="muted small">哪些证据对 1 周 – 3 个月的判断真的有用</span></h2>
-    ${etP1(d.p1)}${etLedger(d.ledger)}`;
+    ${etP1(d.p1)}${etLedger(d.ledger)}
+    <h3 class="section-title">其他已检验的研究（行业研究相关，期限多为 6–12 个月）</h3>
+    <div id="et-hard">${empty("加载中…")}</div>`;
+  // 财报硬数据回测、全市场大样本重测、细分找规律（hard_page.js；M87 从技术页移来）
+  hardBacktestHtml().then((h) => { const el = byId("et-hard"); if (el) el.innerHTML = h || empty("尚无数据"); }).catch(() => {});
 };
