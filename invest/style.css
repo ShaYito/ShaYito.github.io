@@ -587,3 +587,7 @@ sup.rw-earn { font-size: 10px; color: var(--ink-2); margin-left: 2px; font-weigh
 ul.plain { list-style: none; padding-left: 0; margin: 4px 0; } ul.plain li { margin: 3px 0; }
 .seg a { border: 1px solid var(--border); color: var(--ink-2); border-radius: 8px; }
 .seg a.on { background: var(--chip); color: var(--ink); font-weight: 600; }
+.se-score { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.se-cbar { position: relative; display: block; height: 10px; background: linear-gradient(90deg, transparent calc(50% - 0.5px), var(--border) calc(50% - 0.5px), var(--border) calc(50% + 0.5px), transparent calc(50% + 0.5px)); }
+.se-cbar > span { position: absolute; top: 0; height: 10px; border-radius: 2px; }
+.pos-bg { background: var(--good); } .neg-bg { background: var(--bad); }

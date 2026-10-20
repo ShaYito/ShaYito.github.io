@@ -77,51 +77,90 @@ async function seLiterature(t, s) {
     <div class="table-wrap"><table class="tbl"><tbody>${rows.map(([a, b, c]) => `<tr><td style="width:24%">${a}</td><td style="width:36%">${b}</td><td class="muted small" style="white-space:normal">${c}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
+const SE_H_KEY = "invest.se.h";
+const SE_PARTS = [
+  ["momentum", "中期动量", "过去 6–12 个月相对大盘的强弱（12-1、6-1 月动量）：强的之后倾向略强", "price"],
+  ["reversal", "短期回吐", "近 1 周 / 1 月的涨跌：涨多的之后倾向小幅回吐、跌多的小幅反弹", "price"],
+  ["eps", "EPS 预期修正", "下财年 EPS 一致预期 30 天变化与上调 / 下调家数（选股池内比较）", "lit"],
+  ["short", "空头", "空头占流通股 5% 以下不计，越高扣得越多", "lit"],
+  ["insider", "内部人买入", "近 90 天有内部人公开市场买入时加分", "lit"],
+];
+function seHorizon(d) {
+  const hs = Object.keys(d.score_meta || {});
+  let h = d.score_default_h;
+  try { h = localStorage.getItem(SE_H_KEY) || h; } catch { /* 忽略 */ }
+  return hs.includes(h) ? h : hs[0];
+}
+// 综合得分块（M88）：总分 = 预期相对全市场平均的表现；各分量按贡献大小画条形（长度可比），不等高
+function seScoreBlock(d, t) {
+  const h = seHorizon(d);
+  const sc = d.scores?.[t]?.[h], m = d.score_meta?.[h];
+  if (!sc || !m) return "";
+  const parts = SE_PARTS.map(([k, n, tip, kind]) => ({ k, n, tip, kind, v: kind === "price" ? sc[k] : sc.lit?.[k] }));
+  const mx = Math.max(0.002, ...parts.map((x) => Math.abs(x.v || 0)));
+  const bar = (v) => { const w = Math.round((Math.abs(v || 0) / mx) * 50); return `<span class="se-cbar"><span class="${v >= 0 ? "pos-bg" : "neg-bg"}" style="${v >= 0 ? `left:50%;width:${w}%` : `left:${50 - w}%;width:${w}%`}"></span></span>`; };
+  const q = m.oos_quintiles || [];
+  const hs = Object.keys(d.score_meta);
+  return `<div class="se-score">
+    <div class="row"><b>短期综合得分</b>${hs.length > 1 ? `<div class="seg" id="se-h">${hs.map((x) => `<button type="button" data-h="${x}" class="${x === h ? "on" : ""}">${x} 周</button>`).join("")}</div>` : ""}</div>
+    <p style="margin:6px 0">之后 ${h} 周预期相对全市场平均 <b class="${cls(sc.total)}" style="font-size:20px">${pct(sc.total, 2, true)}</b>
+      <span class="muted small">（价格部分 ${pct(sc.price, 2, true)}，全市场第 ${num(sc.price_pct, 0)} 分位；文献部分 ${pct(sc.total - sc.price, 2, true)}）</span></p>
+    <table class="tbl se-parts"><tbody>${parts.map((x) => `<tr title="${esc(x.tip)}"><td style="width:24%">${esc(x.n)} ${x.kind === "price" ? '<span class="chip basis-chip evid-strong">已验证</span>' : '<span class="chip basis-chip evid-mid">文献</span>'}</td>
+      <td style="width:46%">${bar(x.v)}</td><td class="num ${cls(x.v)}" style="width:14%">${isNum(x.v) ? pct(x.v, 2, true) : '<span class="muted">无数据</span>'}</td><td class="muted small" style="white-space:normal">${esc(x.tip)}</td></tr>`).join("")}</tbody></table>
+    <p class="small">样本外检验（2012–2018 年估计权重，2019 年起检验）：得分最高五分之一之后 ${h} 周平均相对 <span class="pos">${pct(q[4], 2, true)}</span>，最低五分之一 <span class="neg">${pct(q[0], 2, true)}</span>（IC ${num(m.oos.mean, 3)}，t ${num(m.oos.t, 1)}）。
+      <b>但单只股票 ${h} 周实际表现的标准差约 ±${pct(m.xs_sd, 0)}</b>，得分只解释其中很小一部分：它是在很多只股票上平均才显现的倾向，不能单独决定买卖。</p>
+  </div>`;
+}
+
 async function fillShortEvidence(t, s) {
   const el = byId("se-card");
   const d = await seData();
   const r = d?.available ? d.stocks?.[t] : null;
   if (!el || !r) return;
   el.hidden = false;
+  const h = seHorizon(d), m = d.score_meta?.[h];
+  const w = m?.weights || {};
   const rows = d.signals.map((sig) => ({ sig, v: r[sig.key]?.v, p: r[sig.key]?.pct, tilt: seTilt(sig, r[sig.key]?.pct) }));
-  const fav = rows.filter((x) => x.tilt.text === "偏有利"), bad = rows.filter((x) => x.tilt.text === "偏不利");
-  const names = (xs) => xs.map((x) => esc(x.sig.name.replace(/（[^）]*）/g, ""))).join("、");
-  const summary = !fav.length && !bad.length ? "各项都在全市场中间，没有明显倾向"
-    : [fav.length ? `<span class="pos">偏有利 ${fav.length} 项</span>（${names(fav)}）` : "", bad.length ? `<span class="neg">偏不利 ${bad.length} 项</span>（${names(bad)}）` : ""].filter(Boolean).join("；");
-  el.innerHTML = `<h3>短期证据（已验证） ${badge("fact")}${badge("derived")}</h3>
-    <p>${summary}。<span class="muted small">动量两项、近期涨跌两项高度相关，不能当成独立的几票相加。</span></p>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>证据</th><th>当前读数</th><th>全市场分位</th><th>倾向</th><th title="${(d.test.stocks || 0).toLocaleString()} 只美股，${esc(d.test.start?.slice(0, 4) || "")} 年起每周截面">检验 IC（t）</th></tr></thead>
+  const wCell = (k) => (w[k] ? `${w[k] > 0 ? "+" : "−"}${num(Math.abs(w[k]) * 100, 2)}%` : '<span class="muted" title="与其他信号重复或在该期限无效，不另计权重">不计</span>');
+  el.innerHTML = `<h3>短期证据 ${badge("fact")}${badge("derived")}</h3>
+    ${seScoreBlock(d, t)}
+    <details class="small"><summary>各信号读数与权重（${rows.length} 项已验证价格信号）</summary>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>证据</th><th>当前读数</th><th>全市场分位</th><th>倾向</th><th title="每高 1 个标准差（正态分数），之后 ${h} 周预期相对表现变化多少；多元回归已扣除信号之间的重叠">权重（${h} 周）</th><th title="${(d.test.stocks || 0).toLocaleString()} 只美股，${esc(d.test.start?.slice(0, 4) || "")} 年起每周截面">单项检验 IC（t）</th></tr></thead>
     <tbody>${rows.map(({ sig, v, p, tilt }) => `<tr><td title="${esc(sig.name)}">${esc(sig.name.replace(/（[^）]*）/g, ""))}</td><td>${isNum(v) ? (SE_FMT[sig.key] || ((x) => num(x, 2)))(v) : "–"}</td><td>${seBar(p)}</td>
-      <td><span class="${tilt.cls}"><b>${tilt.text}</b></span><div class="muted small">${esc(tilt.note || "")}</div></td><td class="small">${seBasis(sig)}</td></tr>`).join("")}</tbody></table></div>
+      <td><span class="${tilt.cls}"><b>${tilt.text}</b></span><div class="muted small">${esc(tilt.note || "")}</div></td><td class="num">${wCell(sig.key)}</td><td class="small">${seBasis(sig)}</td></tr>`).join("")}</tbody></table></div>
+    </details>
     ${await seLiterature(t, s)}
     <p class="small"><a href="#/evidence">全部证据的检验结果（含选股池前瞻账本） →</a></p>
-    <details class="small"><summary>怎么读、量级与局限</summary>
-      <p><b>只是倾向。</b>这些信号的 IC 只有 0.01–0.03：在全市场几千只股票里平均来看站得住（按事先写下的标准：全样本 |t| ≥ 2 且多重比较校正后显著、2019 年前后两段同向、科技股子样本同向、五等分最高减最低与 IC 同号），但对单只股票的解释力很小，不能单独决定买卖。量级参考：动量最高与最低五分之一之后 13 周平均相差约 1.7–1.9%；近 1 周涨跌最高与最低五分之一之后 1 周相差约 0.2%。</p>
-      <p><b>“偏有利 / 偏不利”</b>：按检验得到的方向换算，处于全市场最有利 / 最不利的 20% 时标出；其余为中性。动量与近期涨跌方向相反（中期延续、短期回吐），同一只股票常常同时出现两种倾向，按你的持有期限看对应的行。</p>
-      <p><b>读数口径</b>：与检验相同的公式，用网站行情（复权收盘，截至 ${esc(d.asof)}）计算；动量与近期涨跌已减去 SPY 同期涨跌，再与全市场 ${(d.dist_n || 0).toLocaleString()} 只股票（截至 ${esc(d.dist_asof)}，每周更新）比较。剔除大盘的一周倍数 = 近 5 日剔除 β 后的累计 ÷（此前一年剔除 β 后的日波动 × √5），与多股对比页的倍数同一思路。</p>
-      <p><b>局限</b>：股票池是现在仍上市的公司（退市的输家不在其中）；未扣交易成本；检验的是“同一周所有股票相互比较”，不预测大盘涨跌。财报反应后漂移（PEAD）、近 3 月剔除 β 累计、回调期间抗跌程度经检验无效或方向相反，未列入。详见 docs/SYSTEM_REVIEW.md 第四节。</p>
+    <details class="small"><summary>得分怎么算、局限</summary>
+      <p><b>价格部分</b>（已验证）：每个信号先换算成在全市场的位置（正态分数），乘以权重后相加。权重来自 2,500+ 只美股、2012 年起每周的多元回归（Fama-MacBeth），同时放进所有信号，<b>自动扣除彼此重叠的部分</b>（例如近 1 周涨跌与剔除 β 的一周倍数几乎重复，只计一次）；只用该期限经事先检验有用的信号，方向与单项检验一致。13 周的综合得分未通过样本外检验，不显示。</p>
+      <p><b>文献部分</b>（本系统未检验）：EPS 预期修正、空头、内部人买入的权重 = 假定 IC（取文献常见水平的约一半：${Object.entries(d.lit_ic || {}).map(([k, v]) => `${({ eps: "EPS 修正", short: "空头", insider: "内部人" })[k] || k} ${v}`).join("、")}）× 该期限单只股票表现的离散程度；EPS 修正只能在选股池内比较。这些项已进入证据前瞻账本，之后用实际数据检验、再调整权重。财报期权预期波动不分方向，不计入得分。</p>
+      <p><b>局限</b>：股票池是现在仍上市的公司（幸存者偏差）；未扣交易成本；预测的是相对全市场平均，不预测大盘涨跌；“全市场分位”的分布每周更新（截至 ${esc(d.dist_asof)}），个股读数每天更新（截至 ${esc(d.asof)}）。</p>
     </details>`;
+  byId("se-h")?.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+    try { localStorage.setItem(SE_H_KEY, b.dataset.h); } catch { /* 忽略 */ }
+    fillShortEvidence(t, s);
+  }));
 }
 
-// 总览“短期信号极端名单”（M87）：选股池中 ≥ 2 项已验证信号同时处于全市场最有利 / 最不利 20% 的股票
+// 总览“短期综合得分：最高 / 最低”（M88，替代 M87 的“极端名单”）：选股池按综合得分排序，各列前 6 只
 async function fillShortExtremes(held) {
   const el = byId("se-home");
   const d = await seData();
-  if (!el || !d?.available) return;
-  const short = (n) => n.replace(/（[^）]*）/g, "");
-  const rows = Object.entries(d.stocks).map(([t, r]) => {
-    const tilts = d.signals.map((sig) => ({ sig, tilt: seTilt(sig, r[sig.key]?.pct) }));
-    return { t, fav: tilts.filter((x) => x.tilt.text === "偏有利"), bad: tilts.filter((x) => x.tilt.text === "偏不利") };
-  });
-  const list = (key) => rows.filter((x) => x[key].length >= 2).sort((a, b) => b[key].length - a[key].length || a.t.localeCompare(b.t));
-  const li = (x, key) => `<li><a href="#/stock/${esc(x.t)}"><b>${esc(x.t)}</b></a> <span class="muted">${esc(META.names_zh?.[x.t] || "")}</span>${held.has(x.t) ? ' <span class="chip holding">持有</span>' : isPlanned(x.t) ? ' <span class="chip">计划</span>' : ""}
-    <span class="small muted">${x[key].map((y) => esc(short(y.sig.name))).join("、")}</span></li>`;
-  const good = list("fav"), bad = list("bad");
+  if (!el || !d?.available || !d.scores) return;
+  const h = seHorizon(d), m = d.score_meta?.[h];
+  if (!m) return;
+  const rows = Object.entries(d.scores).filter(([, v]) => v[h]).map(([t, v]) => ({ t, ...v[h] }));
+  rows.sort((a, b) => b.total - a.total);
+  const main = (x) => { const ps = SE_PARTS.map(([k, n, , kind]) => [n, kind === "price" ? x[k] : x.lit?.[k]]).filter(([, v]) => isNum(v) && v !== 0);
+    ps.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])); return ps.slice(0, 2).map(([n, v]) => `${n} ${pct(v, 2, true)}`).join("、"); };
+  const li = (x) => `<li><a href="#/stock/${esc(x.t)}"><b>${esc(x.t)}</b></a> <span class="muted">${esc(META.names_zh?.[x.t] || "")}</span>${held.has(x.t) ? ' <span class="chip holding">持有</span>' : isPlanned(x.t) ? ' <span class="chip">计划</span>' : ""}
+    <b class="${cls(x.total)}">${pct(x.total, 2, true)}</b> <span class="small muted">${esc(main(x))}</span></li>`;
+  const n = 6;
   el.hidden = false;
-  el.innerHTML = `<h3>短期信号处于极端的股票 ${badge("derived")} <span class="chip basis-chip evid-strong" title="P1 大样本检验按事先标准有用">短期：已验证</span></h3>
-    <div class="grid two"><div><h4 class="pos">多项偏有利（${good.length}）</h4>${good.length ? `<ul class="plain">${good.map((x) => li(x, "fav")).join("")}</ul>` : empty("没有")}</div>
-      <div><h4 class="neg">多项偏不利（${bad.length}）</h4>${bad.length ? `<ul class="plain">${bad.map((x) => li(x, "bad")).join("")}</ul>` : empty("没有")}</div></div>
-    <p class="muted small">选股池中至少 2 项已验证信号同时处于全市场最有利（或最不利）20% 的股票，截至 ${esc(d.asof)}。动量（中期延续）与近期涨跌（短期回吐）方向相反，常同时出现，按持有期限看。每项只是很小的倾向（IC 0.01–0.03），不是买卖信号。<a href="#/evidence">检验结果 →</a></p>`;
+  el.innerHTML = `<h3>短期综合得分：选股池最高 / 最低（之后 ${h} 周） ${badge("derived")} <span class="chip basis-chip evid-strong" title="价格部分经全市场样本外检验；文献部分为假定权重">短期：已验证 + 文献</span></h3>
+    <div class="grid two"><div><h4 class="pos">最高</h4><ul class="plain">${rows.slice(0, n).map(li).join("")}</ul></div>
+      <div><h4 class="neg">最低</h4><ul class="plain">${rows.slice(-n).reverse().map(li).join("")}</ul></div></div>
+    <p class="muted small">得分 = 之后 ${h} 周预期相对全市场平均的表现（截至 ${esc(d.asof)}），后面列出贡献最大的两项。历史上全市场得分最高与最低五分之一相差约 ${pct((m.oos_quintiles[4] - m.oos_quintiles[0]), 1)}，而单只股票的实际结果标准差约 ±${pct(m.xs_sd, 0)}：只是倾向，不是买卖信号。<a href="#/evidence">检验结果 →</a></p>`;
 }
 
 /* ---------- 个股页三层分组与“短期依据”标签 ---------- */
