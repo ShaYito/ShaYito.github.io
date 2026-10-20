@@ -228,10 +228,11 @@ const CMP_EXTRA_DEFS = {
     use: "持仓临近财报时评估仓位，避免意外的大幅波动超出承受能力。", value: ["高（风险）", "财报日是确定的事件风险，对安排仓位和交易时点很有用。"] },
 };
 // M88 短期综合得分（short_evidence.json，与个股页“短期证据”同一份数据；只有选股池股票）
-const SCORE_VALUE = ["中", "全市场 2019 年起样本外检验通过（4 周 IC 0.023，t 2.45；1 周 IC 0.022，t 3.1），但单只股票的实际结果离散度远大于得分，只是倾向"];
+const SCORE_VALUE = ["中", "1 周：全市场与大盘股（≥ $10B）2019 年起样本外均通过（大盘股 IC 0.022，t 2.5）；单只股票的实际结果离散度远大于得分，只是倾向"];
+const SCORE_VALUE_4W = ["低–中", "4 周：全市场样本外通过（t 2.45），但大盘股（≥ $10B）中未通过（IC 0.019，t 1.5）：对选股池这类大盘股证据较弱"];
 const SCORE_DEFS = {
-  score_4w: { name: "综合得分 4 周", fmt: "pct2s", better: "high", def: "之后 4 周预期相对全市场平均的表现 = 已验证价格信号（扣除重叠的权重）+ 文献支持项（假定权重）。",
-    read: "选股池大多在 ±1% 以内；历史上全市场得分最高与最低五分之一 4 周相差约 0.7%，而单只股票 4 周实际表现的标准差约 ±11%。", use: "作为倾向参考，与财报日程、基本面一起看；详见个股页“短期证据”。", value: SCORE_VALUE },
+  score_4w: { name: "综合得分 4 周 ⚠", fmt: "pct2s", better: "high", def: "之后 4 周预期相对全市场平均的表现 = 已验证价格信号（扣除重叠的权重）+ 文献支持项（假定权重）。",
+    read: "选股池大多在 ±1% 以内；历史上全市场得分最高与最低五分之一 4 周相差约 0.7%，而单只股票 4 周实际表现的标准差约 ±11%。", use: "作为倾向参考，与财报日程、基本面一起看；详见个股页“短期证据”。", value: SCORE_VALUE_4W },
   score_1w: { name: "综合得分 1 周", fmt: "pct2s", better: "high", def: "之后 1 周预期相对全市场平均的表现（只用 1 周有效的信号与权重）。",
     read: "短期回吐（近 1 周 / 1 月涨跌）占比更大；单只股票 1 周实际表现的标准差约 ±5%。", use: "更短的持有期参考。", value: SCORE_VALUE },
   score_4w_mom: { name: "4 周 · 中期动量", fmt: "pct2s", better: "high", def: "4 周得分中来自 12-1、6-1 月动量的部分。", read: "过去 6–12 个月强的之后倾向略强。", use: "看得分来自哪里。", value: SCORE_VALUE },
@@ -241,7 +242,7 @@ const SCORE_DEFS = {
 };
 Object.assign(CMP_EXTRA_DEFS, SCORE_DEFS);
 const CMP_GROUPS = [
-  ["score", "短期综合得分", ["score_4w", "score_1w", "score_4w_mom", "score_4w_rev", "score_4w_lit"]],
+  ["score", "短期综合得分", ["score_1w", "score_4w", "score_4w_mom", "score_4w_rev", "score_4w_lit"]],
   ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
   ["traits", "经营特征", ["op_leverage", "share_change", "cash_conversion", "capex_intensity"]],
   ["fcf_phase", "FCF 收益率上升期", ["fcf_stage_code", "fcf_kind_code", "fcf_z", "fcf_y_chg", "fcf_ps_chg", "fcf_px_chg", "fcf_y_pct"]],

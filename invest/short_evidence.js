@@ -97,21 +97,37 @@ function seScoreBlock(d, t) {
   const sc = d.scores?.[t]?.[h], m = d.score_meta?.[h];
   if (!sc || !m) return "";
   const parts = SE_PARTS.map(([k, n, tip, kind]) => ({ k, n, tip, kind, v: kind === "price" ? sc[k] : sc.lit?.[k] }));
+  // M91：价格分量在中大盘股（≥ $2B）/ 大盘股（≥ $10B）参照池中的单项检验
+  const SUBV = d.subsets?.signals || {};
+  const grpKeys = { momentum: ["mom_12_1", "mom_6_1"], reversal: ["rev_1m", "rev_1w", "resid_1w_z"] };
+  const subOk = (k, tag) => (grpKeys[k] || []).some((x) => SUBV[x]?.[tag]?.[h]?.verdict === "useful");
+  const priceChip = (k) => subOk(k, "large") ? '<span class="chip basis-chip evid-strong" title="全市场与大盘股（≥ $10B）检验均有用">已验证（含大盘股）</span>'
+    : subOk(k, "mid") ? '<span class="chip basis-chip evid-strong" title="全市场与中大盘股（≥ $2B）检验有用；大盘股（≥ $10B）中方向一致但不显著（样本少）">已验证（中大盘股）</span>'
+      : '<span class="chip basis-chip evid-weak" title="全市场检验有用，但在中大盘股（≥ $2B）与大盘股（≥ $10B）中不显著：效果主要来自小盘股">全市场有效，大盘股不显著</span>';
   const mx = Math.max(0.002, ...parts.map((x) => Math.abs(x.v || 0)));
   const bar = (v) => { const w = Math.round((Math.abs(v || 0) / mx) * 50); return `<span class="se-cbar"><span class="${v >= 0 ? "pos-bg" : "neg-bg"}" style="${v >= 0 ? `left:50%;width:${w}%` : `left:${50 - w}%;width:${w}%`}"></span></span>`; };
   const q = m.oos_quintiles || [];
   const hs = Object.keys(d.score_meta);
   return `<div class="se-score">
-    <div class="row"><b>短期综合得分</b>${hs.length > 1 ? `<div class="seg" id="se-h">${hs.map((x) => `<button type="button" data-h="${x}" class="${x === h ? "on" : ""}">${x} 周</button>`).join("")}</div>` : ""}</div>
+    <div class="row"><b>短期综合得分</b>${hs.length > 1 ? `<div class="seg" id="se-h">${hs.map((x) => { const L = d.subsets?.score?.[x]?.large; return `<button type="button" data-h="${x}" class="${x === h ? "on" : ""}" title="${L ? (L.ok ? "大盘股样本外通过" : "大盘股样本外未通过") : ""}">${x} 周${L && !L.ok ? " ⚠" : ""}</button>`; }).join("")}</div>` : ""}</div>
     <p style="margin:6px 0">之后 ${h} 周预期相对全市场平均 <b class="${cls(sc.total)}" style="font-size:20px">${pct(sc.total, 2, true)}</b>
       <span class="muted small">（价格部分 ${pct(sc.price, 2, true)}，全市场第 ${num(sc.price_pct, 0)} 分位；文献部分 ${pct(sc.total - sc.price, 2, true)}）</span></p>
-    <table class="tbl se-parts"><tbody>${parts.map((x) => `<tr title="${esc(x.tip)}"><td style="width:24%">${esc(x.n)} ${x.kind === "price" ? '<span class="chip basis-chip evid-strong">已验证</span>' : '<span class="chip basis-chip evid-mid">文献</span>'}</td>
+    <table class="tbl se-parts"><tbody>${parts.map((x) => `<tr title="${esc(x.tip)}"><td style="width:24%">${esc(x.n)} ${x.kind === "price" ? priceChip(x.k) : '<span class="chip basis-chip evid-mid">文献</span>'}</td>
       <td style="width:46%">${bar(x.v)}</td><td class="num ${cls(x.v)}" style="width:14%">${isNum(x.v) ? pct(x.v, 2, true) : '<span class="muted">无数据</span>'}</td><td class="muted small" style="white-space:normal">${esc(x.tip)}</td></tr>`).join("")}</tbody></table>
-    <p class="small">样本外检验（2012–2018 年估计权重，2019 年起检验）：得分最高五分之一之后 ${h} 周平均相对 <span class="pos">${pct(q[4], 2, true)}</span>，最低五分之一 <span class="neg">${pct(q[0], 2, true)}</span>（IC ${num(m.oos.mean, 3)}，t ${num(m.oos.t, 1)}）。
+    ${(() => { const L = d.subsets?.score?.[h]?.large; if (!L) return "";
+      return L.ok ? `<p class="small">✓ 大盘股检验：在当时市值 ≥ $10B 的股票中（与选股池相当），同样的权重 2019 年起样本外 IC ${num(L.ic, 3)}（t ${num(L.t, 1)}），通过。</p>`
+        : `<p class="small warn">⚠ 大盘股检验未通过：在当时市值 ≥ $10B 的股票中（与选股池相当），2019 年起样本外 IC ${num(L.ic, 3)}（t ${num(L.t, 1)}），方向一致但不显著。对选股池这类大盘股，${h} 周得分的证据较弱，建议以 1 周得分为主。</p>`; })()}
+    <p class="small">全市场样本外检验（2012–2018 年估计权重，2019 年起检验）：得分最高五分之一之后 ${h} 周平均相对 <span class="pos">${pct(q[4], 2, true)}</span>，最低五分之一 <span class="neg">${pct(q[0], 2, true)}</span>（IC ${num(m.oos.mean, 3)}，t ${num(m.oos.t, 1)}）。
       <b>但单只股票 ${h} 周实际表现的标准差约 ±${pct(m.xs_sd, 0)}</b>，得分只解释其中很小一部分：它是在很多只股票上平均才显现的倾向，不能单独决定买卖。</p>
   </div>`;
 }
 
+function seSub(d, k, h) {
+  const v = d.subsets?.signals?.[k] || {};
+  const lab = { useful: "有用", weak: "方向一致但弱", none: "无效" };
+  const one = (tag, n) => { const r = v[tag]?.[h]; return r ? `${n} ${lab[r.verdict] || r.verdict}（t ${num(r.t, 1)}）` : `${n} –`; };
+  return `${one("mid", "≥$2B")}<br>${one("large", "≥$10B")}`;
+}
 async function fillShortEvidence(t, s) {
   const el = byId("se-card");
   const d = await seData();
@@ -125,9 +141,9 @@ async function fillShortEvidence(t, s) {
   el.innerHTML = `<h3>短期证据 ${badge("fact")}${badge("derived")}</h3>
     ${seScoreBlock(d, t)}
     <details class="small"><summary>各信号读数与权重（${rows.length} 项已验证价格信号）</summary>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>证据</th><th>当前读数</th><th>全市场分位</th><th>倾向</th><th title="每高 1 个标准差（正态分数），之后 ${h} 周预期相对表现变化多少；多元回归已扣除信号之间的重叠">权重（${h} 周）</th><th title="${(d.test.stocks || 0).toLocaleString()} 只美股，${esc(d.test.start?.slice(0, 4) || "")} 年起每周截面">单项检验 IC（t）</th></tr></thead>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>证据</th><th>当前读数</th><th>全市场分位</th><th>倾向</th><th title="每高 1 个标准差（正态分数），之后 ${h} 周预期相对表现变化多少；多元回归已扣除信号之间的重叠">权重（${h} 周）</th><th title="${(d.test.stocks || 0).toLocaleString()} 只美股，${esc(d.test.start?.slice(0, 4) || "")} 年起每周截面">全市场检验 IC（t）</th><th title="同样的事先标准，只用当时市值 ≥ $2B / ≥ $10B 的股票（M91）">中大盘 / 大盘股（${h} 周）</th></tr></thead>
     <tbody>${rows.map(({ sig, v, p, tilt }) => `<tr><td title="${esc(sig.name)}">${esc(sig.name.replace(/（[^）]*）/g, ""))}</td><td>${isNum(v) ? (SE_FMT[sig.key] || ((x) => num(x, 2)))(v) : "–"}</td><td>${seBar(p)}</td>
-      <td><span class="${tilt.cls}"><b>${tilt.text}</b></span><div class="muted small">${esc(tilt.note || "")}</div></td><td class="num">${wCell(sig.key)}</td><td class="small">${seBasis(sig)}</td></tr>`).join("")}</tbody></table></div>
+      <td><span class="${tilt.cls}"><b>${tilt.text}</b></span><div class="muted small">${esc(tilt.note || "")}</div></td><td class="num">${wCell(sig.key)}</td><td class="small">${seBasis(sig)}</td><td class="small">${seSub(d, sig.key, h)}</td></tr>`).join("")}</tbody></table></div>
     </details>
     ${await seLiterature(t, s)}
     <p class="small"><a href="#/evidence">全部证据的检验结果（含选股池前瞻账本） →</a></p>
