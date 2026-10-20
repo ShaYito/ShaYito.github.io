@@ -56,16 +56,24 @@ function etM91(m) {
   const q = (m.quality || []).filter((r) => r.h === 52).map((r) => `<tr><td>质量 · ${esc(r.name)}（12 个月）</td><td>同板块内比较，IC ${r.mean >= 0 ? "+" : ""}${num(r.mean, 3)}（t ${num(r.t, 1)}；前 ${num(r.early.t, 1)} / 后 ${num(r.late.t, 1)}）</td><td>${ok(r.verdict === "useful")}</td></tr>`).join("");
   const rk = (m.risk || []).filter((r) => r.key === "risk").map((r) => `<tr><td>价格风险综合分 → ${r.target === "fvol" ? "之后 3 个月实际波动" : "之后半年最大回撤"}</td><td>排序相关 ${num(r.mean, 2)}（t ${num(r.t, 0)}；前 ${num(r.early.mean, 2)} / 后 ${num(r.late.mean, 2)}）</td><td>${ok(r.ok)}</td></tr>`).join("");
   const ds = Object.entries(m.distress || {}).map(([k, v]) => `<tr><td>财务困境 · ${k === "z" ? "Altman Z < 1.81" : "Z'' < 1.1（非制造业版）"}</td><td>同价格风险组内，之后半年跌超 40% 的发生率比 ${num(v.ratio, 2)}（差值 t ${num(v.diff.t, 1)}；困境区占 ${pct(v.flag_share, 0)}）</td><td>${ok(v.ok)}</td></tr>`).join("");
-  const cr = (m.crowd?.rows || []).filter((r) => r.key === "crowd").map((r) => `<tr><td>拥挤度综合 → 之后 ${r.h} 周收益</td><td>越不拥挤越好的方向，IC ${r.mean >= 0 ? "+" : ""}${num(r.mean, 3)}（t ${num(r.t, 1)}）</td><td>${ok(r.verdict === "useful")}</td></tr>`).join("");
-  const cd = m.crowd?.drawdown;
-  const cdr = cd ? `<tr><td>拥挤度最高 20% → 之后半年跌超 40%</td><td>同价格风险组内发生率比 ${num(cd.ratio, 2)}（差值 t ${num(cd.diff?.t, 1)}；标准 ≥ 1.5）</td><td>${ok(cd.ok)}</td></tr>` : "";
+  const cr = (m.crowd?.rows || []).filter((r) => r.key === "crowd" || r.key === "crowd2").map((r) => `<tr><td>${esc(r.name)} → 之后 ${r.h} 周收益</td><td>越不拥挤越好的方向，IC ${r.mean >= 0 ? "+" : ""}${num(r.mean, 3)}（t ${num(r.t, 1)}）</td><td>${ok(r.verdict === "useful")}</td></tr>`).join("");
+  const cts = m.crowd?.tests;
+  const ddRow = (lab, v) => `同价格风险组内${lab}发生率比 ${num(v.ratio, 2)}（差值 t ${num(v.diff?.t, 1)}；前 ${v.early?.mean >= 0 ? "+" : ""}${pct(v.early?.mean, 1)} / 后 ${v.late?.mean >= 0 ? "+" : ""}${pct(v.late?.mean, 1)}；标准 ≥ 1.5）`;
+  const cdr = cts
+    ? Object.entries(cts).flatMap(([k, v]) => [
+        `<tr><td>${esc(v.name)}最高 20% → 之后半年跌超 40%</td><td>${ddRow("", v.drawdown)}</td><td>${ok(v.drawdown.ok)}</td></tr>`,
+        `<tr><td>${esc(v.name)}最高 20% → 大盘回调时之后 3 个月跌超 30%</td><td>${ddRow(`（${(m.crowd.stress_episodes || []).length} 次回调）`, v.stress)}</td><td>${ok(v.stress.ok)}</td></tr>`,
+      ]).join("")
+    : m.crowd?.drawdown
+      ? `<tr><td>拥挤度最高 20% → 之后半年跌超 40%</td><td>同价格风险组内发生率比 ${num(m.crowd.drawdown.ratio, 2)}（差值 t ${num(m.crowd.drawdown.diff?.t, 1)}；标准 ≥ 1.5）</td><td>${ok(m.crowd.drawdown.ok)}</td></tr>`
+      : "";
   const ps = Object.entries(m.persistence || {}).map(([k, v]) => `<tr><td>分散度 · ${k === "corr" ? "过去 1 年相关 → 之后 3 个月相关" : "下行相关（大盘下跌日）的持续性"}</td><td>排序相关 ${num(v.mean, 2)}（t ${num(v.t, 0)}；前 ${num(v.early?.mean, 2)} / 后 ${num(v.late?.mean, 2)}；标准 ≥ 0.5）</td><td>${ok(v.ok)}</td></tr>`).join("");
   const gcr = Object.entries(m.growth_capital || {}).flatMap(([dim, rows]) => rows.filter((r) => r.key === dim || r.key === "issue")
     .map((r) => `<tr><td>${esc(r.name)} · ${r.h} 周</td><td>同板块内比较，IC ${r.mean >= 0 ? "+" : ""}${num(r.mean, 3)}（t ${num(r.t, 1)}；前 ${num(r.early.t, 1)} / 后 ${num(r.late.t, 1)}${dim === "capital" ? "；方向：越少越好" : ""}）</td><td>${ok(r.verdict === "useful")}</td></tr>`)).join("");
   return `<section class="card"><h3>多维评分检验（大盘股） ${badge("derived")}</h3>
     <p class="muted">参照池 = 每个历史时点市值 ≥ $10B、股价 ≥ $5 的美股（每周约 ${num(m.per_week, 0)} 只，与选股池相当；排除金融 / 房地产），2012 年起每周；标准均在看结果前写入 PROGRESS（M91）。</p>
     <div class="table-wrap"><table class="tbl"><thead><tr><th>检验</th><th>结果</th><th>判定</th></tr></thead><tbody>${tr}${rk}${ps}${q}${ds}${cr}${cdr}${gcr}</tbody></table></div>
-    <p class="small muted">已上线：短期综合得分（默认 1 周）、价格风险、与持仓的关系（分散度）、股本变化（6–12 个月）。成长与盈利动量、资本配置综合未通过，不上线。质量只作描述性画像；拥挤度只作参考（回撤提示约 1.4 倍，未达 1.5 倍标准）；财务困境在价格风险之外只多提示一到两成风险，不在个股页提示。</p></section>`;
+    <p class="small muted">已上线：短期综合得分（默认 1 周）、价格风险、与持仓的关系（分散度）、股本变化（6–12 个月）。成长与盈利动量、资本配置综合未通过，不上线。质量只作描述性画像；拥挤度只作参考（第二版加入换手率与同行业同涨同跌后，回撤提示 1.49 倍、大盘回调时 1.34 倍，均未达 1.5 倍标准）；财务困境在价格风险之外只多提示一到两成风险，不在个股页提示。</p></section>`;
 }
 
 PAGES.evidence = async () => {

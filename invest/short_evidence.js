@@ -185,25 +185,36 @@ const RISK_PARTS = [
   ["mdd", "近 1 年最大回撤", (v) => `−${pct(v, 0)}`],
   ["dbeta", "下行 β（只看大盘下跌日）", (v) => num(v, 2)],
 ];
-// 拥挤度（M92，描述性参考）：近期是否像“彩票股”一样被追捧；检验未达事先标准，只作参考
+// 拥挤度（M92 / M95，描述性参考）：近期是否像“彩票股”一样被追捧、资金是否涌入；检验未达事先标准，只作参考
 const CROWD_PARTS = [
   ["max5", "近 1 月最大 5 日涨幅均值", (v) => pct(v, 1, true)],
   ["ivol", "特质波动（日，剔除大盘）", (v) => pct(v, 1)],
   ["skew", "近 3 月收益偏度", (v) => num(v, 2)],
   ["ext", "偏离 200 日均线", (v) => pct(v, 0, true)],
+  ["turn", "近 1 月日均换手率（成交额 ÷ 市值）", (v) => pct(Math.exp(v), 2)],
+  ["abturn", "换手率相对此前一年", (v) => `${num(Math.exp(v), 2)} 倍`],
+  ["comove", "与同行业同涨同跌（相对此前一年的变化）", (v) => num(v, 2, true)],
 ];
 function crowdSection(d, r, s) {
   const c = r.crowd;
-  if (!c || !isNum(c.score_pct)) return "";
-  const ev = d.crowd_evidence || {}, dd = ev.drawdown || {};
+  const v2 = c && isNum(c.score2_pct);
+  const sp = v2 ? c.score2_pct : c?.score_pct;
+  if (!c || !isNum(sp)) return "";
+  const ev = d.crowd_evidence || {}, ts = ev.tests || {};
+  const tb = ts[v2 ? "crowd2" : "crowd"] || {}, dd = tb.drawdown || ev.drawdown || {}, st = tb.stress || {};
   const m = {};
   for (const g of s?.metrics?.groups || []) for (const it of g.items) m[it.key] = it.value;
-  const top = c.score_pct >= 80;
-  return `<h4 style="margin-top:12px">拥挤度（参考） <span class="chip basis-chip evid-weak" title="预测收益：大盘股中无效；预测大幅回撤：最拥挤 20% 约为同风险股票的 ${num(dd.ratio, 2)} 倍（t ${num(dd.diff?.t, 1)}），显著但未达事先标准 1.5 倍">未达事先标准</span></h4>
-    <p class="small">在大盘股中排第 <b>${num(c.score_pct, 0)}</b> 分位${top ? '：<b class="neg">处于最拥挤的 20%</b>' : ""}。<span class="muted">${top ? `历史上这一组之后半年跌超 40% 的概率约为同等价格风险股票的 ${num(dd.ratio, 1)} 倍。` : "不在最拥挤的 20%。"}</span></p>
-    <div class="table-wrap"><table class="tbl small"><tbody>${CROWD_PARTS.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%">${isNum(c.raw[k]) ? f(c.raw[k]) : "–"}</td><td style="width:22%">${seBar(c.pct[k])}</td><td class="muted">${isNum(c.pct[k]) ? `第 ${num(c.pct[k], 0)} 分位` : "–"}</td></tr>`).join("")}
+  const top = sp >= 80;
+  const parts = CROWD_PARTS.filter(([k]) => isNum(c.raw?.[k]));
+  const tip = `预测收益：大盘股中无效；预测大幅回撤：最拥挤 20% 约为同风险股票的 ${num(dd.ratio, 2)} 倍（t ${num(dd.diff?.t, 1)}），大盘回调时 ${num(st.ratio, 2)} 倍，显著但都未达事先标准 1.5 倍`;
+  return `<h4 style="margin-top:12px">拥挤度（参考） <span class="chip basis-chip evid-weak" title="${tip}">未达事先标准</span></h4>
+    <p class="small">在大盘股中排第 <b>${num(sp, 0)}</b> 分位${top ? '：<b class="neg">处于最拥挤的 20%</b>' : ""}。<span class="muted">${top ? `历史上这一组之后半年跌超 40% 的概率约为同等价格风险股票的 ${num(dd.ratio, 2)} 倍；大盘回调期间之后 3 个月跌超 30% 的概率约为 ${num(st.ratio, 2)} 倍。` : "不在最拥挤的 20%。"}</span></p>
+    <div class="table-wrap"><table class="tbl small"><tbody>${parts.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%">${f(c.raw[k])}</td><td style="width:22%">${seBar(c.pct[k])}</td><td class="muted">${isNum(c.pct[k]) ? `第 ${num(c.pct[k], 0)} 分位` : "–"}</td></tr>`).join("")}
       ${isNum(m.short_pct_float) ? `<tr><td>空头占流通股（无历史数据，未检验）</td><td class="num">${pct(m.short_pct_float, 1)}</td><td></td><td class="muted">10% 以上算偏高</td></tr>` : ""}</tbody></table></div>
-    <p class="muted small">拥挤度 = 四项在大盘股中的位置等权平均（Bali, Cakici & Whitelaw 2011 的 MAX、Ang et al. 2006 的特质波动、偏度、偏离均线）。检验（≥ $10B，2012 年起）：对之后 1–3 个月的收益没有预测力；对之后半年的大幅回撤有约 1.4 倍的额外提示（≥ $2B 中 1.35 倍），显著但未达事先定的 1.5 倍标准，所以只作参考、不计入任何分数。</p>`;
+    <p class="muted small">${v2
+      ? `拥挤度 = 七项在大盘股中的位置等权平均：彩票型特征（Bali, Cakici & Whitelaw 2011 的 MAX、Ang et al. 2006 的特质波动、偏度）、偏离均线、换手率（Datar, Naik & Radcliffe 1998；Lee & Swaminathan 2000）、换手率突然放大、与同行业同涨同跌是否比此前一年明显增强（Lou & Polk 2022）。换手率与同行业两项每周更新（截至 ${ev.dist_asof || "–"}）。`
+      : "拥挤度 = 四项价格类在大盘股中的位置等权平均（MAX、特质波动、偏度、偏离均线）；金融股不在参照池，没有换手率与同行业两项。"}
+      检验（≥ $10B，2012 年起）：对之后 1–3 个月的收益没有预测力；对之后半年的大幅回撤有约 ${num(dd.ratio, 2)} 倍的额外提示，大盘回调期间约 ${num(st.ratio, 2)} 倍（≥ $2B 中 1.41 / 1.23 倍），显著但都未达事先定的 1.5 倍标准，所以只作参考、不计入任何分数。</p>`;
 }
 
 async function fillRiskCard(t, s) {
