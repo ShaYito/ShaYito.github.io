@@ -232,6 +232,96 @@ function srcNote(rs) {
   return `<br>其中特质波动一项：在价格风险之外约 ${num(p.v_mkt.ratio, 2)} 倍，再控制近 3 个月总波动后约 ${num(p.v_mkt.ratio_vtot, 2)} 倍——有一部分只是“近期波动更大”（价格风险已加入近 3 个月波动）；再剔除同行业的共同波动后降到 ${num(p.v_ind.ratio_vtot, 2)} 倍——剩下的提示有相当一部分来自整个板块一起大起大落，而不是公司自身。`;
 }
 
+// ---------- M104 风险面板：概率校准、风险变化与四层拆分、财报波动（数据：risk_scores.json + stocks/<t>.json 的 risk_panel）----------
+const RP_LAYERS = [["mkt", "大盘"], ["ai", "AI 主题"], ["ind", "行业"], ["idio", "个股"]];
+const rpBin = (p) => Math.min(10, Math.max(1, Math.ceil(p / 10)));
+function rpConclusion(d, r) {
+  const cal = d.calibration;
+  if (!cal || !isNum(r.score_pct)) return "";
+  const b = rpBin(r.score_pct);
+  const now = (cal.recent || []).find((x) => x.bin === b), all = (cal.all || []).find((x) => x.bin === b);
+  if (!now || !all) return "";
+  return `<div class="xs-heads">
+      <div><span class="muted">一个月的正常涨跌范围</span><div class="big">${pct(now.ret_p10, 0)} ~ ${pct(now.ret_p90, 0, true)}</div><span class="muted small">同组股票 80% 的月份落在这个范围</span></div>
+      <div><span class="muted">半年内跌超 30% 的历史频率</span><div class="big ${now.dd30 >= 0.3 ? "neg" : ""}">${pct(now.dd30, 0)}</div><span class="muted small">跌超 20%：${pct(now.dd20, 0)} · 跌超 40%：${pct(now.dd40, 0)}</span></div></div>
+    <p class="muted small">依据：在大盘股中按价格风险分十组，这只股票在第 ${b} 组（1 = 最稳）；数字是这一组股票 2022 年以来的实际频率，不是对这只股票的单独预测。十组从低到高严格递增（排序已验证），但水平随市场环境变化：同一组全期（2012 年起）跌超 30% 的频率为 ${pct(all.dd30, 0)}，2019 年以前更低。</p>`;
+}
+function rpSummary(x) {
+  const h = x.hist, n = x.weeks.length;
+  const ago = (arr, y) => { for (let i = n - 1 - Math.round(52 * y); i >= 0; i--) if (isNum(arr[i])) return arr[i]; return null; };
+  const last = (arr) => { for (let i = n - 1; i >= 0; i--) if (isNum(arr[i])) return arr[i]; return null; };
+  const p0 = ago(h.risk_pct, 3), p1 = ago(h.risk_pct, 1), pn = last(h.risk_pct);
+  const v0 = ago(h.vol, 3), vn = last(h.vol), b0 = ago(h.beta, 3), bn = last(h.beta);
+  const parts = [];
+  if (isNum(pn)) parts.push(`价格风险分位：3 年前 ${isNum(p0) ? num(p0 * 100, 0) : "–"} → 1 年前 ${isNum(p1) ? num(p1 * 100, 0) : "–"} → 现在 <b>${num(pn * 100, 0)}</b>`);
+  if (isNum(vn) && isNum(v0)) parts.push(`年化波动 ${pct(v0, 0)} → <b>${pct(vn, 0)}</b>`);
+  if (isNum(bn) && isNum(b0)) parts.push(`大盘 β ${num(b0, 2)} → <b>${num(bn, 2)}</b>`);
+  const sh = RP_LAYERS.map(([k, name]) => [name, ago(h[k], 3), last(h[k])]).filter(([, a, b]) => isNum(a) && isNum(b));
+  const big = sh.sort((a, b) => Math.abs(b[2] - b[1]) - Math.abs(a[2] - a[1]))[0];
+  let verdict = "";
+  if (isNum(p0) && isNum(pn)) {
+    const dp = (pn - p0) * 100;
+    verdict = dp >= 25 ? "近 3 年风险明显上升" : dp <= -25 ? "近 3 年风险明显下降" : "近 3 年风险位置大致不变";
+    if (big && Math.abs(big[2] - big[1]) >= 0.1) verdict += `；构成上变化最大的是“${big[0]}”层（占比 ${pct(big[1], 0)} → ${pct(big[2], 0)}）`;
+  }
+  const why = isNum(pn) ? "" : "（这只股票不在价格风险的参照池里——金融板块或市值曾低于 $10B，没有分位历史）";
+  return `<p>${verdict ? `<b>${verdict}</b>。` : ""}<span class="small">${parts.join("；")}。${why}</span></p>`;
+}
+function rpLayerTable(x) {
+  const a = x.now?.["1y"], b = x.now?.["3m"];
+  if (!a) return "";
+  const beta = a.beta || {};
+  const note = {
+    mkt: !isNum(beta.mkt) ? "–" : beta.mkt >= 0 ? `β ${num(beta.mkt, 2)}：大盘涨跌 1% 时平均同向 ${num(beta.mkt, 2)}%` : `β ${num(beta.mkt, 2)}：与大盘<b>反向</b>，大盘涨 1% 时平均跌 ${num(-beta.mkt, 2)}%`,
+    ai: !isNum(beta.ai) ? "–" : beta.ai >= 0 ? `β ${num(beta.ai, 2)}：随 AI 股相对大盘的强弱同向` : `β ${num(beta.ai, 2)}：与 AI 股相对强弱<b>反向</b>（AI 股相对下跌时它反而相对上涨）`,
+    ind: x.industry ? `${esc(x.industry)}（${x.n_peers} 只同行）${isNum(beta.ind) && beta.ind < 0 ? "，β 为负" : ""}` : "同行不足，未设行业层",
+    idio: `公司自身；其中财报日占 ${isNum(a.earn) ? pct(a.earn, 0) : "–"}`,
+  };
+  return `<div class="table-wrap"><table class="tbl small"><thead><tr><th>层次</th><th class="num">近 1 年占比</th><th class="num">近 3 个月</th><th>说明</th></tr></thead><tbody>
+    ${RP_LAYERS.map(([k, n]) => `<tr><td>${n}</td><td class="num"><b>${pct(a.share?.[k], 0)}</b></td><td class="num">${b ? pct(b.share?.[k], 0) : "–"}</td><td style="white-space:normal">${note[k]}</td></tr>`).join("")}
+    <tr class="total"><td>年化总波动</td><td class="num"><b>${pct(a.vol, 0)}</b></td><td class="num">${b ? pct(b.vol, 0) : "–"}</td><td class="muted">四层占比 = 各层对总波动（方差）的贡献，合计 100%</td></tr></tbody></table></div>`;
+}
+function rpAttribution(x, weeks) {
+  const n = x.weeks.length;
+  const from = weeks === "ytd" ? x.weeks.findIndex((w) => w.slice(0, 4) === x.weeks[n - 1].slice(0, 4)) : Math.max(0, n - weeks);
+  const sum = Object.fromEntries(RP_LAYERS.map(([k]) => [k, x.contrib[k].slice(from).reduce((s, v) => s + (isNum(v) ? v : 0), 0)]));
+  const tot = Object.values(sum).reduce((s, v) => s + v, 0);
+  const mx = Math.max(...Object.values(sum).map(Math.abs), 1e-9);
+  return `<table class="tbl small"><tbody>${RP_LAYERS.map(([k, name]) => `<tr><td style="width:18%">${name}</td><td class="num ${sum[k] >= 0 ? "pos" : "neg"}" style="width:14%">${pct(sum[k], 1, true)}</td>
+    <td><span class="metric-bar" style="width:${Math.round((Math.abs(sum[k]) / mx) * 100)}%;background:var(${sum[k] >= 0 ? "--good" : "--bad"})"></span></td></tr>`).join("")}
+    <tr class="total"><td>合计</td><td class="num ${tot >= 0 ? "pos" : "neg"}"><b>${pct(tot, 1, true)}</b></td><td class="muted">按日收益相加（与复利涨跌略有差别）</td></tr></tbody></table>`;
+}
+function rpHistChart(x) {
+  const el = byId("c-rp-hist");
+  if (!el) return;
+  const h = x.hist, col = palette();
+  mkChart(el, {
+    tooltip: { trigger: "axis", valueFormatter: (v) => (isNum(v) ? `${num(v, 0)}%` : "–") },
+    legend: { top: 0 },
+    grid: { left: 44, right: 48, top: 30, bottom: 28 },
+    xAxis: { type: "time" },
+    yAxis: [{ type: "value", min: 0, max: 100, name: "占比 / 分位" }, { type: "value", name: "年化波动", axisLabel: { formatter: "{value}%" }, splitLine: { show: false } }],
+    series: [
+      ...RP_LAYERS.map(([k, name], i) => ({ name, type: "line", stack: "s", areaStyle: { opacity: 0.55 }, showSymbol: false, lineStyle: { width: 0 },
+        color: [col[0], col[3], col[2], col[6]][i], data: x.weeks.map((w, j) => [w, isNum(h[k][j]) ? h[k][j] * 100 : null]) })),
+      { name: "价格风险分位", type: "line", showSymbol: false, lineStyle: { width: 2, type: "dashed" }, color: col[7], data: x.weeks.map((w, j) => [w, isNum(h.risk_pct[j]) ? h.risk_pct[j] * 100 : null]) },
+      { name: "年化波动", type: "line", yAxisIndex: 1, showSymbol: false, lineStyle: { width: 2 }, color: col[1], data: x.weeks.map((w, j) => [w, isNum(h.vol[j]) ? h.vol[j] * 100 : null]) },
+    ],
+  });
+}
+function rpEarnings(x, d, next) {
+  const m = x?.earn_move, T = d.earn_move_test;
+  if (!m) return "";
+  const ratio = isNum(m.normal) && m.normal > 0 ? m.median / m.normal : null;
+  return `<h4 style="margin-top:12px">财报前后 <span class="chip basis-chip evid-strong">已验证</span></h4>
+    <p>预计财报后两天的波动约 <b>±${pct(m.median, 1)}</b>（此前 ${m.n} 次财报的中位数，相对大盘）${isNum(m.normal) ? `；平时两天约 ±${pct(m.normal, 1)}，财报约是平时的 <b>${num(ratio, 1)}</b> 倍` : ""}。${next ? `下次财报：<b>${esc(next)}</b>（公司公布前可能是预估日期）。` : ""}</p>
+    <p class="muted small">此前各次：${(m.events || []).map(([day, v]) => `${esc(day.slice(0, 7))} ±${pct(v, 1)}`).join("，")}。检验：${T ? `${(T.n_events || 0).toLocaleString()} 次财报中，过去 8 次的中位数与下一次幅度的秩相关 ${num(T.ic_A?.mean, 2)}（t ${num(T.ic_A?.t, 0)}），2019 年前后 ${num(T.early?.mean, 2)} / ${num(T.late?.mean, 2)}；控制平时波动后仍显著——财报动得大的股票，下次通常也动得大。` : ""}方向（涨还是跌）无法预测；坏消息平均跌约 3%、好消息平均涨约 1%，同样大小的意外，坏消息的冲击更大。估值高低不会放大财报后的下跌（已检验）。</p>`;
+}
+
+function rpNotes(d, x) {
+  const M = d.model_test?.dd30;
+  return `<p><b>风险面板（2026-10-21）</b>：① 概率来自价格风险十分位的历史频率（大盘股，2012 年起每周；同一组 2019 年前后水平差别大，所以以 2022 年起为主）。② 四层拆分：近 1 年日收益依次对大盘（SPY 去掉本股权重）、AI 主题篮子（选股池中半导体 / 云与 AI 平台 / AI 基础设施 ${d.layers_meta?.ai_n ?? ""} 只等权，不含本股；先扣掉大盘）、同行业（Yahoo 行业分类、市值 ≥ $2B、不含本股；先扣掉前两层）回归，剩下的是个股；顺序会影响结果。AI 层衡量的是“AI 股相对大盘的强弱”，防御股常为负 β（AI 股相对下跌时它们相对上涨）。金融股的同行不在行情数据中，行业层用金融板块代替。描述性，不是预测。③ 财报波动：已验证（见上）。④ 价格风险之外加入拥挤度、估值偏离、Altman Z 的联合模型：样本外没有让概率更准${M ? `（log loss ${num(M.logloss_base, 4)} → ${num(M.logloss_full, 4)}）` : ""}，未采用；这些指标只作描述。</p>`;
+}
 async function fillRiskCard(t, s) {
   const el = byId("risk-card");
   const d = await load("risk_scores.json").catch(() => null);
@@ -244,18 +334,39 @@ async function fillRiskCard(t, s) {
   const four = (d.keys || []).includes("vol3m");
   const e1 = (four && ev["risk4:fvol"]) || ev["risk:fvol"], e2 = (four && ev["risk4:fdd"]) || ev["risk:fdd"];
   const parts = RISK_PARTS.filter(([k]) => k !== "vol3m" || four);
-  el.innerHTML = `<h3>价格风险 ${badge("derived")}</h3>
+  const x = s?.risk_panel;
+  const next = x?.earn_move ? (await load("compare_metrics.json").catch(() => null))?.rows?.find((row) => row.ticker === t)?.next_earnings : null;
+  el.innerHTML = `<h3>风险面板 ${badge("derived")}</h3>
+    ${rpConclusion(d, r)}
     <p>在当前市值 ≥ $${num((d.min_cap || 1e10) / 1e9, 0)}B 的 ${(d.dist_n || 0).toLocaleString()} 只美股中排第 <b>${num(p, 0)}</b> 分位：风险<b class="${lv[0]}">${lv[1]}</b>
       <span class="muted small">（0 = 最稳，100 = 波动最大）</span> ${seBar(p)}</p>
     <div class="table-wrap"><table class="tbl"><tbody>${parts.map(([k, n, f]) => `<tr><td style="width:30%">${n}</td><td class="num" style="width:18%"><b>${isNum(r.raw[k]) ? f(r.raw[k]) : "–"}</b></td>
       <td style="width:22%">${seBar(r.pct[k])}</td><td class="muted small" style="white-space:normal">${isNum(r.pct[k]) ? `大盘股中第 ${num(r.pct[k], 0)} 分位` : "数据不足（上市不满约 2 年）"}</td></tr>`).join("")}</tbody></table></div>
     <p class="small">怎么用：<b>用来决定仓位大小和能承受的波动，不预测涨跌。</b>风险越高，同样金额的仓位带来的账户波动越大；按“近 1 年波动”粗略估计，正常情况下一个月的涨跌幅度约为 ±${isNum(r.raw.vol) ? pct(r.raw.vol / Math.sqrt(12), 0) : "–"}（一个标准差）。</p>
+    ${x?.hist ? `<h4 style="margin-top:12px">风险变化与来源（大盘 / AI 主题 / 行业 / 个股）</h4>
+      ${rpSummary(x)}
+      <div id="c-rp-hist" class="chart" style="height:280px"></div>
+      <p class="muted small">面积 = 近 1 年（滚动）各层对总波动的贡献占比，合计 100%；虚线 = 价格风险在大盘股中的分位（不足 $10B 的时期没有）；实线 = 年化波动（右轴）。</p>
+      ${rpLayerTable(x)}
+      <div class="row" style="margin-top:8px"><b>涨跌归因</b><div class="seg" id="rp-attr">${[[4, "近 1 个月"], [13, "近 3 个月"], ["ytd", "今年以来"], [52, "近 1 年"]].map(([k, l], i) => `<button type="button" data-k="${k}" class="${i === 1 ? "on" : ""}">${l}</button>`).join("")}</div></div>
+      <div id="rp-attr-body">${rpAttribution(x, 13)}</div>` : ""}
+    ${rpEarnings(x, d, next)}
     ${crowdSection(d, r, s)}
     <details class="small"><summary>检验与读法</summary>
       <p>检验（当时市值 ≥ $10B 的美股，2012 年起每周）：综合分与之后 3 个月实际波动的排序相关 ${e1 ? `${num(e1.ic, 2)}（t ${num(e1.t, 0)}）` : "–"}、与之后半年最大回撤 ${e2 ? `${num(e2.ic, 2)}（t ${num(e2.t, 0)}）` : "–"}，2019 年前后都稳定——波动有很强的持续性，这是比预测涨跌可靠得多的事。单项中“近 1 年波动”最强。${four && ev["risk4:fvol"] ? `2026-10-20 起加入“近 3 个月波动”：两个排序相关分别从 ${num(ev["risk4:fvol"].ic3, 2)} / ${num(ev["risk4:fdd"]?.ic3, 2)} 提高到 ${num(ev["risk4:fvol"].ic, 2)} / ${num(ev["risk4:fdd"]?.ic, 2)}，前后两段都提高（事先标准：都提高 ≥ 0.02）——近期波动比一年平均更能反映接下来的风险。` : ""}</p>
       <p>综合分 = ${four ? "四" : "三"}项各自在参照池中的位置（正态分数）等权平均。下行 β = 只用大盘下跌的日子估计的 β，衡量大盘跌时它跌多少（Ang, Chen & Xing 2006）。分布每周更新（截至 ${esc(d.dist_asof)}），个股读数每天更新（截至 ${esc(d.asof)}）。</p>
-      <p>局限：突发事件（财报、监管、并购）带来的跳跃无法从过去的波动里看出——财报前后的幅度见上方“财报”与“期权预期波动”。</p>
+      <p>局限：突发事件（财报、监管、并购）带来的跳跃无法从过去的波动里看出——财报前后的幅度见上方“财报前后”与“期权预期波动”。</p>
+      ${rpNotes(d, x)}
     </details>`;
+  if (x?.hist) {
+    rpHistChart(x);
+    byId("rp-attr")?.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      byId("rp-attr").querySelectorAll("button").forEach((y) => y.classList.toggle("on", y === b));
+      byId("rp-attr-body").innerHTML = rpAttribution(x, b.dataset.k === "ytd" ? "ytd" : Number(b.dataset.k));
+    });
+  }
 }
 
 // Nasdaq 板块名 → 中文（质量画像、股本变化等同板块比较的卡片用）
