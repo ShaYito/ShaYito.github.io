@@ -415,6 +415,50 @@ function xsValCard(s) {
       <p class="muted">口径：收入、利润、现金流来自 SEC 季报近 4 季合计（财报截至 ${esc(x.end || "–")}；SEC companyfacts 漏收的近期 10-Q 已用 frames 补上，现金流补不了时用早一季的数据）；市值来自 Yahoo（${esc(M.asof || "–")}）。营业利润率 > ${pct(M.om_hi, 0)} 的部分按 ${pct(M.om_hi, 0)} 计（避免线性外推）。银行、保险、REIT（收入不是合适的估值基数）与没有 SEC 美元季报的外国公司不在参照池中。行业分类用 Yahoo（Morningstar）口径。</p>
     </div></details></section>`;
 }
+// ---------------- 重资产程度（M103，描述性；数据：stocks/<t>.json 的 asset_xs，来自 run_asset_intensity.py）----------------
+const AI_FMT = { capex_rev: (v) => pct(v, 1), dep_rev: (v) => pct(v, 1), fixed_rev: (v) => (isNum(v) ? `$${num(v, 2)}` : "–"),
+  ppe_assets: (v) => pct(v, 0), ppe_rev: (v) => (isNum(v) ? `$${num(v, 2)}` : "–"), asset_turn: (v) => (isNum(v) ? `${num(v, 2)} 倍` : "–"),
+  capex_dep: (v) => (isNum(v) ? `${num(v, 2)} 倍` : "–"), gm: (v) => pct(v, 0), rnd_rev: (v) => pct(v, 1), inv_days: (v) => (isNum(v) ? `${num(v, 0)} 天` : "–") };
+const AI_HINT = { capex_rev: "每 $1 收入每年要投入多少资本开支", dep_rev: "过去投下的固定资产每年折旧多少（不含并购无形资产摊销）",
+  fixed_rev: "每 $1 收入占用多少固定资产（含租来的门店 / 机房等）", ppe_assets: "资产里有多少是厂房、设备、数据中心等实物" };
+const AI_AUX = ["asset_turn", "capex_dep", "ppe_rev", "gm", "rnd_rev", "inv_days"];
+const AI_AUX_HINT = { asset_turn: "每 $1 总资产带来多少收入；越低越重", capex_dep: "> 1 = 投资多于折旧，在扩张；≈ 1 = 维持；< 1 = 在收缩或投资不足",
+  ppe_rev: "不含经营租赁的固定资产 / 收入", gm: "硬件 / 制造通常 30–60%，软件 70–90%", rnd_rev: "轻资产公司常把投入放在研发（费用化，不进固定资产）",
+  inv_days: "库存够卖多少天；硬件 / 制造业的库存周期风险" };
+const AI_DEP_SRC = { dep: "单独的折旧科目", net: "折旧摊销合计 − 无形资产摊销", dna: "只有折旧摊销合计（可能含部分摊销，偏高）" };
+const aiTier = (v) => (v >= 80 ? ["重资产", "neg"] : v >= 60 ? ["偏重", "neg"] : v >= 40 ? ["中等", ""] : v >= 20 ? ["偏轻", "pos"] : ["轻资产", "pos"]);
+function assetCard(s) {
+  const x = s.asset_xs;
+  if (!x) return "";
+  const head = `<h3>重资产程度 ${badge("derived")}</h3>`;
+  if (x.skip) return `<section class="card" id="ai-card" data-nav="重资产程度">${head}${empty(`未计算：${x.skip}`)}</section>`;
+  const M = x.meta || {}, L = M.metrics || {}, U = M.universe_median || {}, S = x.sector_median || {};
+  if (!isNum(x.score)) return `<section class="card" id="ai-card" data-nav="重资产程度">${head}${empty(`数据不足：4 项中只有 ${x.n_components} 项可算`)}</section>`;
+  const [tier, tone] = aiTier(x.score);
+  const ind = x.peers?.industry, sec = x.peers?.sector;
+  const grp = (g, label) => (g ? `<div><span class="muted">同${label}（${esc(g.name)}，${g.n} 家）</span><div class="big">第 ${g.rank ?? "–"} 名</div><span class="muted small">${label}中位数 ${num(g.median, 0)} 分 · 最重 ${g.top.map(esc).join(" / ")} · 最轻 ${g.bottom.map(esc).join(" / ")}</span></div>` : "");
+  const rows = (M.components || []).map((k) => {
+    const p = x[`${k}_pct`];
+    return `<tr><td>${esc(L[k] || k)}${k === "capex_rev" && x.capex_years ? `<span class="muted small">（近 ${x.capex_years} 年）</span>` : ""}<div class="muted small">${esc(AI_HINT[k] || "")}</div></td>
+      <td class="num">${AI_FMT[k](x[k])}</td><td class="num">${AI_FMT[k](S[k])}</td><td class="num">${AI_FMT[k](U[k])}</td>
+      <td class="num">${isNum(p) ? `${num(p, 0)} <span class="metric-bar" style="width:${Math.round(p * 0.6)}px"></span>` : "–"}</td></tr>`;
+  }).join("");
+  const aux = AI_AUX.map((k) => `<tr><td>${esc(L[k] || k)}<div class="muted small">${esc(AI_AUX_HINT[k] || "")}</div></td><td class="num">${AI_FMT[k](x[k])}</td><td class="num">${AI_FMT[k](S[k])}</td><td class="num">${AI_FMT[k](U[k])}</td></tr>`).join("");
+  const notes = [];
+  if (isNum(x.capex_dep) && x.capex_dep >= 1.5) notes.push(`资本开支是折旧的 ${num(x.capex_dep, 1)} 倍：正在扩张，未来几年折旧会明显增加、压低利润率；扩张期的回报要看之后的收入能否跟上。`);
+  if (x.dep_src === "dna") notes.push("折旧一项用的是“折旧摊销合计”（公司没有单独报告无形资产摊销），并购多的公司会偏高。");
+  return `<section class="card" id="ai-card" data-nav="重资产程度">${head}
+    <p class="muted">做 $1 生意要占用多少厂房、设备、数据中心，每年要投入多少资本开支。和全市场市值 ≥ $2B 的 ${M.n ?? "–"} 家公司（不含银行、保险、REIT）比较：4 项各自在全市场的百分位取平均，0–100，越高越重。只作画像，不是买卖信号。</p>
+    <div class="xs-heads"><div><span class="muted">重资产得分</span><div class="big ${tone}">${num(x.score, 0)} · ${tier}</div><span class="muted small">比全市场 ${num(x.score_pct, 0)}% 的公司更重</span></div>${grp(ind, "行业")}${grp(sec, "板块")}</div>
+    <div class="table-wrap"><table class="tbl small"><thead><tr><th>组成</th><th class="num">本股</th><th class="num">同板块中位数</th><th class="num">全市场中位数</th><th class="num">全市场百分位</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${notes.length ? `<div class="warn-box">${notes.map((n) => `<p>💡 ${esc(n)}</p>`).join("")}</div>` : ""}
+    <details><summary>辅助画像（不计入得分）：资产周转、扩张程度、软件 / 硬件特征</summary><div class="table-wrap"><table class="tbl small"><thead><tr><th>指标</th><th class="num">本股</th><th class="num">同板块中位数</th><th class="num">全市场中位数</th></tr></thead><tbody>${aux}</tbody></table></div></details>
+    <details class="howto"><summary>怎么读与口径</summary><div class="val-guide">
+      <p><b>重资产本身不是好坏</b>：关键是投进去的钱回报够不够（看上方 ROIC）。重资产 + 高 ROIC = 资本开支成了护城河（对手跟不上）；重资产 + 低 ROIC = 投入在消耗价值。重资产公司利润里能变成现金的比例更低（折旧、资本开支大），增长要先花钱，周期性也更强：行业一起扩产后容易供给过剩。估值时 EV/EBITDA 会让重资产公司显得便宜（EBITDA 不扣资本开支），应看 FCF。</p>
+      <p><b>几种常见的误读</b>：收入暴增时（如存储周期高点），按收入算的 3 项会被摊薄、显得变轻，资本开支因此用近 ${M.capex_years ?? 3} 年平均；产能放在合资工厂（权益法投资）的公司（如 SNDK 与 Kioxia），工厂不计入自身固定资产，会显得偏轻；靠研发而不是厂房投入的公司（芯片设计、软件），投入记在费用里，见辅助画像的“研发 / 收入”。</p>
+      <p class="muted">口径：SEC 季报近 4 季合计（财报截至 ${esc(x.end || "–")}）；固定资产优先用含融资租赁资产的科目，没有净值科目时用原值 − 累计折旧；折旧来源：${esc(AI_DEP_SRC[x.dep_src] || "缺失")}。4 项之间的一致性：第一主成分解释 ${pct(M.consistency?.pc1_share, 0)}，Cronbach α ${num(M.consistency?.cronbach_alpha, 2)}（测的是同一件事）。行业分类用 Yahoo（Morningstar）口径。数据日期 ${esc(M.asof || "–")}，每周日更新。</p>
+    </div></details></section>`;
+}
 // FCF 栏辅助：金额（美元）、悬停文字、SEC 与 Yahoo 对比表（2026-10-14）
 const usdB = (x) => (!isNum(x) ? "–" : Math.abs(x) >= 1e9 ? `${x < 0 ? "−" : ""}$${num(Math.abs(x) / 1e9, 2)}B` : `${x < 0 ? "−" : ""}$${num(Math.abs(x) / 1e6, 0)}M`);
 const FCF_KIND = { q: "单季", ttm: "近 4 季", fy: "财年" };
