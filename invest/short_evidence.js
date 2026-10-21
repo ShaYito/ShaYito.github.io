@@ -445,3 +445,26 @@ function stockLayers() {
     main._basisObs.observe(main, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
   }
 }
+
+// ---------- 个股页“机构持仓（13F）”（M99，描述性；数据 inst13f.json）----------
+async function fillInstCard(t) {
+  const el = byId("inst-card");
+  const d = await load("inst13f.json").catch(() => null);
+  const r = d?.available ? d.stocks?.[t] : null;
+  if (!el || !r) return;
+  el.hidden = false;
+  const tt = d.test || {}, dd = tt.drawdown || {}, st = tt.stress || {}, mid = tt.mid || {};
+  const pp = (v) => (isNum(v) ? `${v >= 0 ? "+" : "−"}${num(Math.abs(v) * 100, 1)} 个百分点` : "–");
+  const kind = (x) => (x.short === true ? '<span class="neg">短线</span>' : x.short === false ? "其他" : '<span class="muted">未分类</span>');
+  const chg = (x) => (x.new ? '<span class="pos">新进</span>' : isNum(x.chg) ? pct(x.chg, 1, true) : "–");
+  el.innerHTML = `<h3>机构持仓（13F） ${badge("derived")} <span class="chip basis-chip evid-weak" title="短线主动资金持股最高 20% 之后半年大跌的概率，在价格风险与拥挤度之外约为 ${num(dd.ratio, 2)} 倍，未达事先 1.5 倍标准">只作描述</span></h3>
+    <p>截至 <b>${esc(r.period)}</b>（季末后约 45 天才公开，有延迟）：<b>${(r.holders || 0).toLocaleString()}</b> 家机构持有（较上季 ${isNum(r.d_holders) ? pct(Math.exp(r.d_holders) - 1, 1, true) : "–"}），合计持股 <b>${pct(r.io, 0)}</b>；
+      其中短线主动资金持股 <b>${pct(r.sto, 1)}</b>（占机构持股 ${pct(r.sto_share, 0)}，较上季 ${pp(r.d_sto)}）。</p>
+    <div class="table-wrap"><table class="tbl small"><thead><tr><th>持仓最大的机构</th><th class="num">持仓市值</th><th class="num">股数较上季</th><th>类型</th></tr></thead>
+      <tbody>${(r.top || []).map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${usdAmt(x.value)}</td><td class="num">${chg(x)}</td><td>${kind(x)}</td></tr>`).join("")}</tbody></table></div>
+    <details class="small"><summary>指标定义、检验与局限</summary>
+      <p><b>短线主动资金</b> = 近 4 个季度换手率（Gaspar, Massa & Matos 2005：买入与卖出中较小者 ÷ 平均持仓，剔除资金进出）在全部 13F 申报机构中最高的三分之一（Yan & Zhang 2009）。这一类既有对冲基金、量化基金，也有换手较高的主动型共同基金（如 T. Rowe Price、Wellington），不等同于“对冲基金”；指数基金换手低，归入“其他”；新出现的申报实体满一年前“未分类”（如 2026 年起 Vanguard 改由子公司申报）。全市场短线资金约占机构持仓的 ${pct(d.short_value_share, 0)}。</p>
+      <p>检验（当时市值 ≥ $10B 的美股，${esc(d.start || "")} 起每周，事先写下标准）：短线主动资金持股比例最高 20% 的股票，在价格风险与拥挤度之外，之后半年跌超 40% 的概率约为其他股票的 ${num(dd.ratio, 2)} 倍（t ${num(dd.t, 1)}；2019 年前 ${num(dd.early, 2)} / 后 ${num(dd.late, 2)}），≥ $2B 中 ${num(mid.ratio, 2)} 倍，大盘回调时 ${num(st.ratio, 2)} 倍——都未达 1.5 倍标准；对之后 1–3 个月的收益也没有预测力。机构家数变化、持股比例等其他指标同样未通过。所以这里只作描述：了解谁在持有、是否有大机构明显加减仓。</p>
+      <p>局限：只含管理资产 ≥ $100M 机构的美股多头持仓，看不到空头、期权与散户；持股比例按市值估算，被借出卖空的股票会被双方都计入（超过 100% 时截断，超过 120% 视为数据错误不显示）；ADR 与金融股不显示。数据来自 SEC Form 13F Data Sets。</p>
+    </details>`;
+}

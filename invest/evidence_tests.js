@@ -76,6 +76,10 @@ function etM91(m) {
         `<tr><td>按显著度加权的拥挤度 → 之后半年跌超 40%（2012–2018 定权重，2019 起样本外）</td><td>加权 比 ${num(W.oos.weighted.ratio, 2)}（t ${num(W.oos.weighted.diff.t, 1)}）；等权对照 ${num(W.oos.equal.ratio, 2)}（t ${num(W.oos.equal.diff.t, 1)}）；标准 ≥ 1.5、t ≥ 2</td><td>${ok(W.oos_ok)}</td></tr>`,
       ].join("")
     : "";
+  const it = m.inst13f;
+  const irowsFn = () => it
+    ? Object.entries(it.tests || {}).map(([k, v]) => `<tr><td>13F · ${esc(v.name)}最高 20% → 之后半年跌超 40%（控制价格风险与拥挤度；${esc(it.start || "")} 起）</td><td>回归控制：${rsr(v.drawdown)}；大盘回调时 ${num(v.stress?.ratio, 2)}</td><td>${k === "sto" ? ok(v.drawdown.ok) : '<span class="chip">只报告</span>'}</td></tr>`).join("")
+    : "";
   const rs = m.risk_source;
   const rsr = (v) => `比 ${num(v.ratio, 2)}（前 ${num(v.ratio_early, 2)} / 后 ${num(v.ratio_late, 2)}；t ${num(v.diff?.t, 1)}）`;
   const src = rs
@@ -90,7 +94,7 @@ function etM91(m) {
     .map((r) => `<tr><td>${esc(r.name)} · ${r.h} 周</td><td>同板块内比较，IC ${r.mean >= 0 ? "+" : ""}${num(r.mean, 3)}（t ${num(r.t, 1)}；前 ${num(r.early.t, 1)} / 后 ${num(r.late.t, 1)}${dim === "capital" ? "；方向：越少越好" : ""}）</td><td>${ok(r.verdict === "useful")}</td></tr>`)).join("");
   return `<section class="card"><h3>多维评分检验（大盘股） ${badge("derived")}</h3>
     <p class="muted">参照池 = 每个历史时点市值 ≥ $10B、股价 ≥ $5 的美股（每周约 ${num(m.per_week, 0)} 只，与选股池相当；排除金融 / 房地产），2012 年起每周；标准均在看结果前写入 PROGRESS（M91）。</p>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>检验</th><th>结果</th><th>判定</th></tr></thead><tbody>${tr}${rk}${ps}${q}${ds}${cr}${cdr}${strict}${wrows}${src}${gcr}</tbody></table></div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>检验</th><th>结果</th><th>判定</th></tr></thead><tbody>${tr}${rk}${ps}${q}${ds}${cr}${cdr}${strict}${wrows}${irowsFn()}${src}${gcr}</tbody></table></div>
     <p class="small muted">已上线：短期综合得分（默认 1 周）、价格风险、与持仓的关系（分散度）、股本变化（6–12 个月）。成长与盈利动量、资本配置综合未通过，不上线。质量只作描述性画像；价格风险加入近 3 个月波动（M97 检验通过）；拥挤度按显著度加权（样本外 1.35 倍，未达 1.5，只作参考；第二版等权在五组控制下 1.51 倍、刚过标准，但更严格的十组 / 回归控制下 1.35 / 1.19 倍，大盘回调时 1.37 倍；精简版（特质波动 + MAX）回归控制下 1.43 倍）；市值数据 2026-10-20 修复后全部重测；财务困境在价格风险之外只多提示一到两成风险，不在个股页提示。</p></section>`;
 }
 
