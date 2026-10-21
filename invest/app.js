@@ -1243,7 +1243,7 @@ PAGES.stock = async (r) => {
     <section class="card" id="pt-card" data-nav="同行财报追踪" hidden></section>${runwayCard(s)}
     ${layerTitle("layer-bg", "背景：现状、估值与业务", "帮助理解为什么涨跌、处在什么状态；对 1–3 个月涨跌没有直接预测力")}
     ${howto(STOCK_HOWTO)}${briefCard(t, briefRow, [...earningsInsights(s), ...metricInsights(s), ...profitInsights(sc), ...valuationInsights(s), ...stockInsights(s, t), ...segInsights(sc, t)], reports)}
-    ${swingsStockCard(s)}${metricsCard(s)}${valuationCard(s)}
+    ${swingsStockCard(s)}${metricsCard(s)}${valuationCard(s)}${xsValCard(s)}
     <section class="card" id="qp-card" data-nav="质量画像" hidden></section>
     <section class="card" id="iss-card" data-nav="股本变化" hidden></section>
     <section class="card" id="inst-card" data-nav="机构持仓" hidden></section>

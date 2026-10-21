@@ -362,6 +362,59 @@ function valuationCard(s) {
       <p class="muted">另外：公司业务转型后（如英伟达从游戏显卡转向数据中心、西部数据分拆闪迪后），过去几年的估值区间可比性会变差。</p></div></details>
     <p class="muted">市盈率 = 实际股价 ÷ 近 4 季 EPS 之和（EPS 与分析师预期同口径，每季只在财报公布后才计入）；亏损期间不显示${v.pe && peCap(v.pe) ? `；市盈率栏纵轴截断在 ${num(peCap(v.pe), 0)}（历史最高 ${num(v.pe.max, 0)}，出现在盈利接近 0 的时期；悬停可看真实值）` : ""}。P/S、FCF 收益率按 SEC 季度财报（近 4 季合计，每季在提交 10-Q / 10-K 之后才计入）与稀释股本计算，当前值已与 Yahoo 核对；最新一季财报提交前会滞后一个季度。利润率、ROIC 来自 SEC 财报（公司合计，按季末后约 45 天、即财报公布时计入；用最新报告的数据，含重述）；净利润率、ROIC 的分位 = 当前值在自身近 5 年各季中的百分位（与 P/E、P/S 一致）；ROIC 的税率取近 4 季实际税率（限 0–35%，税前亏损时按 21%），没有营业利润科目的公司用税前利润近似。股价为实际价格（不含分红）。${v.targets_hist ? `机构目标价历史由 yfinance 逐机构评级记录重建（每周取各机构近 ${v.targets_hist.window_days} 天内最新的目标价，按拆股换算到当前口径；同时有效不足 ${v.targets_hist.min_firms} 家的时期不画），记录覆盖不如付费数据全；最新重建中位数 ${num(v.targets_hist.median.filter(isNum).at(-1), 2)} 与 Yahoo 共识中位数 ${num(v.targets_hist.yahoo_median, 2)} 相差 ${pct(v.targets_hist.diff, 0, true)}。` : ""}</p></section>`;
 }
+// ---------------- 全市场估值比较（M102：stocks/<t>.json 的 val_xs，run_valuation_model.py）----------------
+// 主读数 = 隐含营业利润率（现价相当于市场按多少利润率定价）；辅读数 = 相对基本面相似公司的 P/S 偏离
+const XS_CONTRIB = ["行业", "增长", "毛利率", "营业利润率", "FCF 利润率"];
+function xsHeadline(x) {
+  const om = x.om, im = x.implied_om, hi = x.meta.om_hi;
+  const omTxt = `${pct(om, 0)}${x.om_src === "net" ? "（净利润率代替）" : ""}`;
+  if (x.implied_state === "above") return { big: `> ${pct(hi, 0)}`, tone: "neg",
+    text: `即使营业利润率达到 ${pct(hi, 0)}（参照池最高一档），基本面相似的公司通常也只值 P/S ${num(x.fair_ps, 1)}；现价 P/S ${num(x.ps, 1)} 包含了利润率以外的预期（长期增长、行业地位、平台价值或题材）。实际营业利润率 ${omTxt}。` };
+  if (x.implied_state === "below") return { big: "< 0%", tone: "pos",
+    text: `即使按 0% 营业利润率算，基本面相似的公司通常也值 P/S ${num(x.fair_ps, 1)} 以上；现价 P/S ${num(x.ps, 1)} 相当于市场按亏损或周期谷底的盈利定价——市场不认为当前利润率（${omTxt}）能维持。` };
+  if (!isNum(im)) return null;
+  const gap = im - om;
+  const text = Math.abs(gap) <= 0.05
+    ? `市场给的价格与当前营业利润率（${omTxt}）基本一致：没有押注利润率明显改善，也没有预期明显回落。`
+    : gap < 0
+      ? `市场按营业利润率约 ${pct(im, 0)} 给这只股票定价，低于实际的 ${omTxt}：市场预期利润率会回落（周期高点、竞争或一次性因素），或不认为它能持续。若利润率真能维持，现价偏便宜；若回落到 ${pct(im, 0)} 附近，现价也不算贵。`
+      : `要配得上现价，营业利润率需要从 ${omTxt} 提高到约 ${pct(im, 0)}：价格已经包含利润率大幅改善的预期，改善慢于预期时容易被重新定价。`;
+  return { big: pct(im, 0), tone: Math.abs(gap) <= 0.05 ? "" : gap < 0 ? "pos" : "neg", text };
+}
+function xsValueNote(bt) {
+  if (!bt) return "尚未做历史检验（回测进行中）：在结果出来之前，只把这里当作描述性参考——它说明“市场在为什么定价”，不说明股价接下来会怎么走。";
+  return (bt.lines || []).join(" ");
+}
+function xsValCard(s) {
+  const x = s.val_xs;
+  if (!x) return "";
+  const M = x.meta || {};
+  if (x.skip) return `<section class="card" id="xsv-card" data-nav="全市场估值比较"><h3>全市场估值比较（按基本面） ${badge("derived")}</h3>${empty(`未计算：${x.skip}`)}</section>`;
+  const h = xsHeadline(x);
+  const band = isNum(M.resid_sd) ? Math.round(Math.expm1(M.resid_sd) * 100) : null;
+  const mult = (v) => (isNum(v) ? `×${num(Math.exp(v), 2)}` : "–");
+  const cyc = s.valuation?.cyclicality?.tier;
+  const cycNote = (cyc === "strong" || cyc === "medium") && isNum(x.implied_om) && x.implied_om < x.om - 0.05 || (cyc && x.implied_state === "below")
+    ? `<p>💡 这是一只${cyc === "strong" ? "强" : "中等"}周期股：市场按低于当前的利润率定价是周期股的常态（按整个周期的平均盈利定价），“隐含利润率低于实际”在这里更多说明市场认为现在处在景气高处，而不是明显低估。</p>` : "";
+  const sim = (x.similar || []).map((r) => `<tr><td><b>${esc(r.ticker)}</b> <span class="muted small">${esc(r.name || "")}</span></td><td class="small">${esc(r.industry || "")}</td>
+    <td class="num">${num(r.ps, 1)}</td><td class="num">${num(r.fair_ps, 1)}</td><td class="num ${r.dev > 0 ? "neg" : "pos"}">${pct(r.dev, 0, true)}</td>
+    <td class="num">${pct(r.growth, 0, true)}</td><td class="num">${pct(r.gm, 0)}</td><td class="num">${pct(r.om, 0)}</td></tr>`).join("");
+  return `<section class="card" id="xsv-card" data-nav="全市场估值比较"><h3>全市场估值比较（按基本面） ${badge("derived")}</h3>
+    <p class="muted">和全市场市值 ≥ $${isNum(M.min_cap) ? num(M.min_cap / 1e9, 0) : "–"}B 的 ${M.n ?? "–"} 家公司比较：按收入增速、毛利率、营业利润率、FCF 利润率与所在行业，算出“基本面相似的公司通常给多少倍 P/S”，再看这只股票的实际价格意味着什么。</p>
+    ${h ? `<div class="xs-heads"><div><span class="muted">现价隐含的营业利润率</span><div class="big ${h.tone}">${esc(h.big)}</div><span class="muted small">实际（近 4 季）${pct(x.om, 0)}${x.om_src === "net" ? "（净利润率代替）" : ""}</span></div>
+      <div><span class="muted">相对基本面相似公司的 P/S</span><div class="big ${x.dev > 0 ? "neg" : "pos"}">${pct(x.dev, 0, true)}</div><span class="muted small">实际 ${num(x.ps, 1)} · 应有 ${num(x.fair_ps, 1)} · 全市场第 ${Math.round((x.dev_pct ?? 0) * 100)} 百分位</span></div></div>
+      <p>${esc(h.text)}</p>` : ""}
+    <p class="muted">📏 参考价值：${esc(M.backtest?.short || "尚未做历史检验，只作描述性参考。")}</p>
+    ${cycNote ? `<div class="warn-box">${cycNote}</div>` : ""}
+    <p class="muted">“应有 P/S”相对全市场中位数（${num(M.median_ps, 1)}）的构成：${XS_CONTRIB.map((k) => `${k} ${mult(x.contrib?.[k])}`).join("，")}（相乘即为应有 P/S ÷ 中位数）。</p>
+    ${sim ? `<details><summary>基本面最接近的 ${(x.similar || []).length} 家公司（先同行业，不足用同板块）</summary><div class="table-wrap"><table class="tbl small"><thead><tr><th>公司</th><th>行业</th><th class="num">P/S</th><th class="num">应有</th><th class="num">偏离</th><th class="num">收入增速</th><th class="num">毛利率</th><th class="num">营业利润率</th></tr></thead><tbody>${sim}</tbody></table></div></details>` : ""}
+    <details class="howto"><summary>怎么读、参考价值与口径</summary><div class="val-guide">
+      <p><b>主读数：隐含营业利润率</b>。增速、毛利率等其他条件不变，营业利润率取多少时“应有 P/S”恰好等于现价。低于实际 = 市场预期利润率回落或不可持续（常见于周期高点）；高于实际 = 价格里已经包含利润率提升的预期；显示“> ${pct(M.om_hi, 0)}”= 贵在利润率以外的因素；“< 0%”= 市场按亏损或谷底盈利定价。它把“贵 / 便宜”翻译成一个可以和财报对照的数字：之后几个季度的实际利润率比隐含值高，说明市场当初低估了；比隐含值低，说明价格还偏贵。</p>
+      <p><b>辅读数：偏离</b> = 实际 P/S 比“基本面相似的公司通常的 P/S”高或低多少（本股不参与估计自己的“应有”值）。模型只能解释全市场 P/S 差异的约 ${pct(M.r2, 0)}（只看行业 ${pct(M.r2_group_only, 0)}），剩下的部分来自增长持续性、竞争格局、管理层、题材等无法量化的因素，所以 ±${band ?? "–"}% 以内的偏离很常见，不代表错误定价；偏离越极端，越要先找原因（如 TSLA 不按车企定价）。</p>
+      <p><b>参考价值</b>：${esc(xsValueNote(M.backtest))}</p>
+      <p class="muted">口径：收入、利润、现金流来自 SEC 季报近 4 季合计（财报截至 ${esc(x.end || "–")}；SEC companyfacts 漏收的近期 10-Q 已用 frames 补上，现金流补不了时用早一季的数据）；市值来自 Yahoo（${esc(M.asof || "–")}）。营业利润率 > ${pct(M.om_hi, 0)} 的部分按 ${pct(M.om_hi, 0)} 计（避免线性外推）。银行、保险、REIT（收入不是合适的估值基数）与没有 SEC 美元季报的外国公司不在参照池中。行业分类用 Yahoo（Morningstar）口径。</p>
+    </div></details></section>`;
+}
 // FCF 栏辅助：金额（美元）、悬停文字、SEC 与 Yahoo 对比表（2026-10-14）
 const usdB = (x) => (!isNum(x) ? "–" : Math.abs(x) >= 1e9 ? `${x < 0 ? "−" : ""}$${num(Math.abs(x) / 1e9, 2)}B` : `${x < 0 ? "−" : ""}$${num(Math.abs(x) / 1e6, 0)}M`);
 const FCF_KIND = { q: "单季", ttm: "近 4 季", fy: "财年" };

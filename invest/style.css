@@ -591,3 +591,7 @@ ul.plain { list-style: none; padding-left: 0; margin: 4px 0; } ul.plain li { mar
 .se-cbar { position: relative; display: block; height: 10px; background: linear-gradient(90deg, transparent calc(50% - 0.5px), var(--border) calc(50% - 0.5px), var(--border) calc(50% + 0.5px), transparent calc(50% + 0.5px)); }
 .se-cbar > span { position: absolute; top: 0; height: 10px; border-radius: 2px; }
 .pos-bg { background: var(--good); } .neg-bg { background: var(--bad); }
+
+/* 全市场估值比较（M102）：两个主读数并排，窄屏换行 */
+.xs-heads { display: flex; flex-wrap: wrap; gap: 12px 40px; margin: 8px 0; }
+.xs-heads .big { font-size: 1.7em; font-weight: 600; line-height: 1.3; }
