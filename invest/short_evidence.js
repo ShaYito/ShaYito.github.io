@@ -280,12 +280,12 @@ async function fillQualityCard(t) {
   el.hidden = false;
   const verdict = (k) => { const x = d.tests?.[k]?.["52"]; return x ? `12 个月 IC ${x.ic >= 0 ? "+" : ""}${num(x.ic, 3)}（t ${num(x.t, 1)}）` : "–"; };
   el.innerHTML = `<h3>质量画像（同板块比较） ${badge("derived")}</h3>
-    <p class="small muted">在${esc(sectorZh(r.sector))}的大盘股（当时市值 ≥ $10B）中的位置。<b>这些指标经检验对之后 6–12 个月的相对收益没有显著预测力</b>，只用来了解公司的盈利能力、稳定性与资产负债结构。</p>
+    <p class="small muted">在${esc(sectorZh(r.sector))}的大盘股（当时市值 ≥ $10B）中的位置。<b>这些指标对之后 6–12 个月相对收益的预测力很弱或不稳定</b>，目前只用来了解公司的盈利能力、稳定性与资产负债结构。</p>
     <div class="table-wrap"><table class="tbl"><tbody>${Object.entries(QP_ITEMS).map(([k, [n, f, good, tip]]) => { const it = r.items[k] || {};
       return `<tr title="${esc(tip)}"><td style="width:24%">${n} <span class="muted small">（${good === "high" ? "越高越好" : "越低越好"}）</span></td><td class="num" style="width:16%"><b>${isNum(it.raw) ? f(it.raw) : "–"}</b></td>
         <td style="width:22%">${seBar(it.pct)}</td><td class="muted small" style="white-space:normal">${isNum(it.pct) ? `同板块第 ${num(it.pct, 0)} 分位` : "无数据"} · 检验 ${verdict(k)}</td></tr>`; }).join("")}</tbody></table></div>
     <details class="small"><summary>检验与局限</summary>
-      <p>检验（当时市值 ≥ $10B 的美股，2012 年起每周，同板块内比较；事先标准同短期证据）：五项与等权综合都未通过。利润率稳定性最接近（12 个月 t 约 3，但分组不单调、科技股中很弱）；负债率方向与预期相反（负债高的之后反而更好）；质量综合 t 约 1.4。≥ $2B 的股票中结果相同。</p>
+      <p>检验（当时市值 ≥ $10B 的美股，2012 年起每周，同板块内比较；事先标准同短期证据）：2026-10-20 修复市值数据（此前约 3% 的大公司被错误排除在参照池外）后重测，毛利 ÷ 总资产（12 个月 t 2.1）与利润率稳定性（t 3.3）按事先标准达到“有用”，但五等分不单调、科技股中很弱，且 ≥ $2B 的股票中都不成立（修复前两项也都未通过），结论不稳定；应计无效；负债率方向与预期相反（负债高的之后反而更好）；质量综合未通过（t 1.8）。</p>
       <p>数据：资产负债表与年度毛利来自 SEC XBRL frames（返回最后申报值，可能经修订），一律按期末后 90 天才计入；利润与现金流为首次披露口径。约一半公司不披露毛利科目（用收入 − 营业成本补），外国公司与银行保险不计算。数据截至 ${esc(d.asof)}，每周日自动更新（SEC 财务数据约每月刷新一次）。</p>
     </details>`;
 }
