@@ -241,18 +241,47 @@ const SCORE_DEFS = {
     value: ["低–中", "文献支持，本系统尚未检验（已进入证据前瞻账本）"] },
 };
 Object.assign(CMP_EXTRA_DEFS, SCORE_DEFS, {
-  risk_pct: { name: "价格风险分位", fmt: "num0", better: "low", def: "近 1 年波动、近 1 年最大回撤、下行 β 三项在当前市值 ≥ $10B 美股中的综合分位（0 = 最稳，100 = 波动最大）。",
-    read: "检验：与之后 3 个月实际波动的排序相关约 0.7、与之后半年最大回撤约 0.5（2012 年起，前后稳定）。", use: "决定仓位大小与能承受的波动；不预测涨跌。",
+  risk_pct: { name: "价格风险分位", fmt: "num0", better: "low", def: "近 1 年波动、近 3 个月波动、近 1 年最大回撤、下行 β 四项在当前市值 ≥ $10B 美股中的综合分位（0 = 最稳，100 = 波动最大；2026-10-20 起加入近 3 个月波动）。",
+    read: "检验：与之后 3 个月实际波动的排序相关约 0.77、与之后半年最大回撤约 0.52（2012 年起，前后稳定）。", use: "决定仓位大小与能承受的波动；不预测涨跌。",
     value: ["高（风险）", "预测之后的波动与回撤很可靠（波动有很强的持续性）；不预测方向"] },
+  risk_vol3m: { name: "近 3 个月波动", fmt: "pct0", better: "low", def: "近 63 个交易日日收益的标准差（年化）；价格风险的一项。", read: "比近 1 年波动反应更快：近期波动更能反映接下来的风险。",
+    use: "与近 1 年波动对照：明显更高说明最近波动在放大。", value: ["高（风险）", "价格风险的组成部分，加入后对之后波动的预测提高（M97 检验通过）"] },
+  risk_dbeta: { name: "下行 β", fmt: "num2", better: "low", def: "只用大盘下跌的日子估计的 β（近 1 年）：大盘跌 1% 时它平均跌多少。", read: "> 1 表示大盘下跌时跌得更多（Ang, Chen & Xing 2006）。",
+    use: "评估回调时的损失；价格风险的一项。", value: ["中–高（风险）", "价格风险的组成部分"] },
+  crowd_pct: { name: "拥挤度分位", fmt: "num0", better: "low", def: "MAX（近 1 月最大 5 日涨幅）、特质波动、近 1 月换手率等按显著度加权，在当前市值 ≥ $10B 美股中的分位（金融股只有四项价格类、等权）。",
+    read: "最拥挤的 20% 之后半年大跌的概率约为同等价格风险股票的 1.35 倍（2019 年起样本外），未达事先 1.5 倍标准；对涨跌没有预测力。", use: "了解是否像“彩票股”一样被追捧、资金是否涌入；只作参考。",
+    value: ["低–中", "回撤提示显著但未达事先标准，只作参考"] },
+  crowd_ivol: { name: "特质波动（日）", fmt: "pct", better: "low", def: "近 63 日剔除大盘后的日收益波动（Ang et al. 2006）；拥挤度权重最大的两项之一。",
+    read: "有相当一部分只是近期波动更大与板块共同波动（M97）；单项回撤提示较强但为事后挑出，只报告。", use: "与近 3 个月波动一起看。", value: ["低–中", "单项数值达标但为事后挑选，不作判定"] },
+  crowd_turn: { name: "近 1 月日均换手率", fmt: "pct", better: "low", def: "近 21 日日均成交额 ÷ 市值（Datar, Naik & Radcliffe 1998）；拥挤度的一项。", read: "换手越高，资金进出越频繁。",
+    use: "了解交易是否异常活跃。", value: ["低", "单项未通过检验"] },
+  inst_io: { name: "机构持股（13F）", fmt: "pct0", better: "", def: "13F 申报机构（管理资产 ≥ $100M）合计持股市值 ÷ 季末市值（截断在 100%）。", read: "大盘股多在 60–90%。季末后约 45 天才公开。",
+    use: "了解机构持有程度；对之后涨跌与大跌都没有预测力（M99）。", value: ["低", "检验未通过，只作描述"] },
+  inst_sto: { name: "短线资金持股（13F）", fmt: "pct", better: "low", def: "近 4 个季度换手率最高三分之一的机构（含对冲基金与高换手的主动基金）合计持股 ÷ 季末市值。",
+    read: "最高 20% 的股票在价格风险与拥挤度之外，之后半年大跌的概率约为 1.13 倍，未达 1.5 倍标准（M99）。", use: "了解是否被短线资金集中持有；只作描述。", value: ["低", "检验未通过，只作描述"] },
+  inst_dsto: { name: "短线资金持股季度变化", fmt: "pp", better: "", def: "短线资金持股比例较上一季度的变化（个百分点）。", read: "正值 = 短线资金在流入。", use: "只作描述。", value: ["低", "检验未通过，只作描述"] },
+  inst_dholders: { name: "机构家数季度变化", fmt: "pp", better: "high", def: "持有它的 13F 机构家数较上一季度的变化（Chen, Hong & Stein 2002 的持股广度）。", read: "家数增加 = 关注的机构变多。",
+    use: "只作描述；大盘股中对之后涨跌没有预测力。", value: ["低", "检验未通过，只作描述"] },
+  buyback_pct: { name: "回购程度分位", fmt: "num0", better: "high", def: "近 1 年股本变化在同板块大盘股中的位置（100 = 回购最多，0 = 增发最多；SEC 季报股本）。",
+    read: "检验：股本减少多的之后 6–12 个月相对表现更好（大盘股中 26 / 52 周均通过事先标准）。", use: "与个股页“股本变化”卡片一起看。", value: ["中", "已验证（6–12 个月）"] },
+  q_gpa: { name: "毛利 ÷ 总资产（同板块分位）", fmt: "num0", better: "high", def: "近一个财年毛利 ÷ 总资产在同板块大盘股中的分位（Novy-Marx 2013）。", read: "大盘股中 12 个月 t 2.1 刚过事先标准，但 ≥ $2B 中不成立、分组不单调。",
+    use: "了解盈利能力；只作描述。", value: ["低–中", "刚过线但不稳定，只作描述"] },
+  q_opa: { name: "营业利润 ÷ 总资产（同板块分位）", fmt: "num0", better: "high", def: "近 4 季营业利润 ÷ 总资产在同板块大盘股中的分位。", read: "检验未通过。", use: "只作描述。", value: ["低", "检验未通过，只作描述"] },
+  q_mstd: { name: "利润率波动（同板块分位）", fmt: "num0", better: "low", def: "近 12 季营业利润率的标准差在同板块大盘股中的分位（越低越稳定；与个股页“质量画像”同一口径）。",
+    read: "低波动的之后略好：大盘股中 12 个月 t 3.3 过事先标准，但 ≥ $2B 与科技股中不成立。", use: "了解经营稳定性；只作描述。", value: ["低–中", "刚过线但不稳定，只作描述"] },
+  q_accr: { name: "应计（同板块分位）", fmt: "num0", better: "low", def: "（净利润 − 经营现金流）÷ 总资产在同板块中的分位（越高说明利润中没变成现金的部分越多；Sloan 1996）。", read: "检验无效。", use: "只作描述。", value: ["低", "检验未通过，只作描述"] },
+  q_lev: { name: "负债率（同板块分位）", fmt: "num0", better: "low", def: "总负债 ÷ 总资产在同板块中的分位。", read: "方向与预期相反（负债高的之后反而更好，可能与回购推高负债率有关）。", use: "只作描述。", value: ["低", "检验方向相反，只作描述"] },
 });
 const CMP_GROUPS = [
   ["score", "短期综合得分", ["score_1w", "score_4w", "score_4w_mom", "score_4w_rev", "score_4w_lit"]],
   ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
-  ["traits", "经营特征", ["op_leverage", "share_change", "cash_conversion", "capex_intensity"]],
+  ["traits", "经营特征", ["op_leverage", "share_change", "buyback_pct", "cash_conversion", "capex_intensity"]],
   ["fcf_phase", "FCF 收益率上升期", ["fcf_stage_code", "fcf_kind_code", "fcf_z", "fcf_y_chg", "fcf_ps_chg", "fcf_px_chg", "fcf_y_pct"]],
   ["growth", "增长与盈利", ["revenue_growth", "earnings_growth", "eps_fwd_growth", "gross_margin", "op_margin", "net_margin", "roe", "roa"]],
   ["health", "财务健康", ["net_cash_pct", "debt_to_equity", "current_ratio", "payout"]],
-  ["price", "价格与风险", ["risk_pct", "price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
+  ["price", "价格与风险", ["risk_pct", "risk_vol3m", "risk_dbeta", "price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
+  ["crowd", "拥挤度与机构持仓", ["crowd_pct", "crowd_ivol", "crowd_turn", "inst_sto", "inst_dsto", "inst_io", "inst_dholders"]],
+  ["quality", "质量画像（同板块）", ["q_gpa", "q_mstd", "q_opa", "q_accr", "q_lev"]],
   ["expect", "市场预期", ["median_target", "median_upside", "moves_up", "moves_down", "weighted_target", "weighted_upside", "analysts", "rec_mean", "short_pct_float", "short_change", "days_to_cover", "insiders_pct", "institutions_pct", "next_earnings"]],
 ];
 /* 本页表格共用的表头排序：s = { sort, dir }（dir 1 = 从低到高 / A→Z，−1 = 从高到低）；只有当前排序列显示 ▲ / ▼；
@@ -328,12 +357,20 @@ async function cmpAllTable(sel) {
   const data = await load("compare_metrics.json").catch(() => null);
   if (!data) { host.innerHTML = empty("暂无数据"); return; }
   const se = await load("short_evidence.json").catch(() => null); // M88：并入短期综合得分
-  const rk = await load("risk_scores.json").catch(() => null); // M91：价格风险分位
+  const rk = await load("risk_scores.json").catch(() => null); // M91：价格风险分位（M92 / M98 拥挤度在同一文件）
+  const [qp, iss, inst] = await Promise.all(["quality_profile.json", "issuance.json", "inst13f.json"].map((f) => load(f).catch(() => null)));
   for (const r of data.rows) {
     const sc = se?.scores?.[r.ticker] || {};
     const w4 = sc["4"], w1 = sc["1"];
+    const rs = rk?.stocks?.[r.ticker] || {}, cw = rs.crowd || {};
+    const q = qp?.stocks?.[r.ticker]?.items || {}, ins = inst?.stocks?.[r.ticker] || {};
     Object.assign(r, { score_4w: w4?.total, score_1w: w1?.total, score_4w_mom: w4?.momentum, score_4w_rev: w4?.reversal,
-      score_4w_lit: w4 ? w4.total - w4.price : null, risk_pct: rk?.stocks?.[r.ticker]?.score_pct });
+      score_4w_lit: w4 ? w4.total - w4.price : null, risk_pct: rs.score_pct, risk_vol3m: rs.raw?.vol3m, risk_dbeta: rs.raw?.dbeta,
+      crowd_pct: isNum(cw.scorew_pct) ? cw.scorew_pct : cw.score_pct, crowd_ivol: cw.raw?.ivol,
+      crowd_turn: isNum(cw.raw?.turn) ? Math.exp(cw.raw.turn) : null,
+      inst_io: ins.io, inst_sto: ins.sto, inst_dsto: ins.d_sto, inst_dholders: isNum(ins.d_holders) ? Math.exp(ins.d_holders) - 1 : null,
+      buyback_pct: iss?.stocks?.[r.ticker]?.buyback_pct,
+      q_gpa: q.gpa?.pct, q_opa: q.opa?.pct, q_mstd: q.mstd?.pct, q_accr: q.accr?.pct, q_lev: q.lev?.pct }); // 质量各项分位为原始方向（与个股页一致）
   }
   const draw = () => {
     const keys = cmpGroups().find(([g]) => g === CMP_ALL.group)[2];
