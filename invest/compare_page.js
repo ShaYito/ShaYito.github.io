@@ -121,6 +121,7 @@ PAGES.compare = async (r) => {
   const i0 = perN === "ytd" ? Math.max(0, dates.findIndex((d) => d >= `${dates[end].slice(0, 4)}-01-01`) - 1) : Math.max(0, end - perN);
   const sel = st.t.filter((t) => raw.close[t]);
   const color = Object.fromEntries(sel.map((t, i) => [t, cmpColor(i)]));
+  const rwList = sel.length ? sel : META.universe.map((u) => u.ticker).filter((t) => raw.close[t]); // 剔除 β 表：未勾选时显示全部个股
   const myW = cmpMyWeights(raw);
   // 快捷选择
   const held = [...new Set([...(META.etfs || []).map((e) => e.ticker), ...META.universe.map((u) => u.ticker)])].filter((t) => holdingsMode() === "mine" && isHeld(t));
@@ -143,8 +144,8 @@ PAGES.compare = async (r) => {
       ${sel.length ? `<p>${sel.map((t) => `<span class="chip" style="border-color:${color[t]}"><span class="dot" style="background:${color[t]}"></span>${esc(t)} ${esc(META.names_zh?.[t] || "")} <a href="#" class="cmp-x" data-t="${t}" title="移除">×</a></span>`).join("")} <a href="#" id="cmp-go-sw" class="cmp-jump">↓ 上涨 / 下跌折线图</a></p>` : ""}</section>
     ${howto(CMP_HOWTO)}
     ${parts ? parts.ins : ""}
-    ${sel.length ? `<section class="card" id="cmp-rw">${cmpResidWin(st, raw, sel, color)}</section>` : ""}
     <section class="card" id="cmp-all"><h3>全部股票指标对比 ${valueChip("中–高")}${badge("fact")}${badge("derived")}</h3><div id="cmp-all-body">${empty("加载中…")}</div></section>
+    <section class="card" id="cmp-rw">${cmpResidWin(st, raw, rwList, color, !sel.length)}</section>
     <section class="card" id="cmp-cyc"><h3>周期性 ${valueChip("中–高")}${badge("fact")}${badge("derived")}</h3><div id="cmp-cyc-body">${empty("加载中…")}</div></section>
     ${sel.length >= 2 ? `<section class="card"><div class="row"><span class="muted">区间</span>${seg("cmp-p", CMP_PERIODS.map(([k, , n]) => [k, n]), st.p)}
       <span class="muted">走势</span>${seg("cmp-m", [["raw", "原始"], ["rel", "相对大盘"], ["resid", "剔除 β"]], st.m)}
@@ -180,7 +181,7 @@ PAGES.compare = async (r) => {
   document.querySelectorAll("#cmp-m button").forEach((b) => (b.onclick = () => apply({ m: b.dataset.v })));
   document.querySelectorAll("#cmp-b button").forEach((b) => (b.onclick = () => apply({ b: b.dataset.v })));
   byId("cmp-log")?.addEventListener("change", (e) => apply({ log: e.target.checked }));
-  cmpResidWinBind(st, raw, sel, color, apply);
+  cmpResidWinBind(st, raw, rwList, color, apply, !sel.length);
   if (sel.length >= 2) cmpDraw(st, raw, sel, i0, end, color, apply);
   cmpAllTable(sel);
   cmpFillFcf().catch((e) => console.error(e));
@@ -523,7 +524,7 @@ function cmpRwCell(resid, end, n, earnIdx, exclude) {
   const v = ex ? exE : raw, band = sd ? sd * Math.sqrt(n - (ex ? ev.length : 0)) : null;
   return { v, raw, exE, z: band ? v / band : null, band, ev: ev.map((i) => ({ i, r: resid[i] })) };
 }
-function cmpResidWin(st, raw, sel, color) {
+function cmpResidWin(st, raw, sel, color, all = false) {
   const end = raw.dates.length - 1;
   const bench = Object.fromEntries(sel.map((t) => [t, cmpBench(t, st.b, raw)]));
   const skip = sel.filter((t) => bench[t] === t);
@@ -550,7 +551,7 @@ function cmpResidWin(st, raw, sel, color) {
     if (k) ok.sort((a, b) => cmpSortCmp(val(a), val(b), CMP_RW_SORT.dir));
     const th = (key, label, tip) => cmpSortTh(CMP_RW_SORT, key, label, { tip, num: key !== "ticker" });
     return `<div class="table-wrap"><table><thead><tr>${th("ticker", "标的", "按股票代码字母排序")}${th("beta", "β", `当前 β（${nm}日收益估计）`)}${CMP_RW.map(([n, nm2]) => th(String(n), `近 ${nm2}`, `最近 ${n} 个交易日`)).join("")}</tr></thead><tbody>
-      ${ok.map((r) => `<tr><td class="nowrap"><span class="dot" style="background:${color[r.t]}"></span><a href="#/stock/${esc(r.t)}"><b>${esc(r.t)}</b></a>${r.bt !== "SPY" ? ` <span class="muted">vs ${esc(r.bt)}</span>` : ""}</td><td class="num">${isNum(r.beta) ? num(r.beta, 2) : "–"}</td>${CMP_RW.map(([n]) => sigCell(r.t, r.c[n])).join("")}</tr>`).join("")}
+      ${ok.map((r) => `<tr><td class="nowrap">${color[r.t] ? `<span class="dot" style="background:${color[r.t]}"></span>` : ""}<a href="#/stock/${esc(r.t)}"><b>${esc(r.t)}</b></a>${r.bt !== "SPY" ? ` <span class="muted">vs ${esc(r.bt)}</span>` : ""}</td><td class="num">${isNum(r.beta) ? num(r.beta, 2) : "–"}</td>${CMP_RW.map(([n]) => sigCell(r.t, r.c[n])).join("")}</tr>`).join("")}
       ${ok.length >= 2 ? `<tr class="total"><td><b>平均</b> <span class="muted">（${ok.length} 只等权）</span></td><td class="num">${num(mean(ok.map((r) => r.beta)), 2)}</td>${CMP_RW.map(([n]) => cell(mean(ok.map((r) => r.v[n])))).join("")}</tr>` : ""}
     </tbody></table></div>`;
   };
@@ -558,16 +559,16 @@ function cmpResidWin(st, raw, sel, color) {
     <div class="row"><span class="muted">基准</span><div class="seg" id="cmp-rb">${[["spy", "SPY"], ["theme", "各自主题基准"]].map(([k, n]) => `<button type="button" data-v="${k}" class="${st.b === k ? "on" : ""}">${n}</button>`).join("")}</div>
       <span class="muted">β 估计用</span><div class="seg" id="cmp-rbw">${CMP_RW_BETA.map(([w, , nm]) => `<button type="button" data-v="${w}" class="${CMP_RW_BW === w ? "on" : ""}" title="滚动 ${w} 个交易日">${nm}</button>`).join("")}</div>
       <label title="勾选后，窗口内有财报的格子直接显示不计财报反应日的累计（排序、平均、倍数都按此计算）"><input type="checkbox" id="cmp-rexe" ${CMP_RW_EXE ? "checked" : ""}> 剔除财报日</label>
-      <span class="muted">点表头排序</span></div>
+      <span class="muted">点表头排序${all ? `；未勾选股票：显示全部 ${sel.length} 只个股，勾选后只显示所选` : ""}</span></div>
     <p class="muted small">颜色深浅按“超出正常波动多少”：<b class="pos">加粗</b> = 超过 ${CMP_RW_SIG[1]} 倍正常波动（明显）；正常颜色 = ${CMP_RW_SIG[0]}–${CMP_RW_SIG[1]} 倍；<span class="rw-weak">灰色</span> = 不到 ${CMP_RW_SIG[0]} 倍（基本是噪声）。<sup class="rw-earn">财</sup> = 窗口内有财报${CMP_RW_EXE ? "（已剔除财报反应日，显示的是不计这些日子的值）" : ""}。鼠标悬停看倍数、财报当天涨跌和含 / 不含财报的值。</p>
     ${table(CMP_RW_BETA.find(([w]) => w === CMP_RW_BW))}
     <p class="muted">${rich("每格 = 最近 N 个交易日内，每天的涨跌减去 [[beta|β]] × 基准涨跌后按日复利累计：正数 = 去掉大盘 / 板块带动的部分后，公司自身因素让它跑赢。β 每天滚动重估，只用当天之前的日收益（不用未来数据）；上方按钮切换估计 β 用多长的历史：1 年最稳定，半年更贴近近期，1 个月反应最快但噪声大（只有约 21 个数据点，一两天的大涨大跌就会明显改变 β）。正常波动 = 这只股票此前一年（窗口开始之前）剔除 β 后的每日波动 × √N，代表“没有特别事件时，N 天里随机波动的典型幅度”；倍数只说明是否异常；本系统检验（2,568 只美股，2012 年起）：近 1 周剔除 β 的倍数越高，之后 1–4 周相对表现倾向越弱（明显上涨倾向部分回吐、明显下跌倾向部分回补），13 周后不再有差别；近 3 个月剔除 β 累计对之后没有预测力。效果很小，只是倾向（见个股页“短期证据”）。财报反应日：盘后公布算下一个交易日；勾选“剔除财报日”时，累计跳过窗口内的财报反应日，正常波动也用不含财报日的日波动、按剩余天数计算。“平均”一行是所选股票的等权平均（不做倍数判断）。数据不足（上市时间短、缺失超过两成、β 估计不出）显示“–”。截至 ")}${esc(raw.dates[end])}。${skip.length ? `${skip.map(esc).join("、")} 本身就是基准，不列出。` : ""}</p>`;
 }
-function cmpResidWinBind(st, raw, sel, color, apply) {
+function cmpResidWinBind(st, raw, sel, color, apply, all = false) {
   const host = byId("cmp-rw");
   if (!host) return;
   host.querySelectorAll("#cmp-rb button").forEach((b) => (b.onclick = () => apply({ b: b.dataset.v })));
-  const redraw = () => { host.innerHTML = cmpResidWin(st, raw, sel, color); cmpResidWinBind(st, raw, sel, color, apply); };
+  const redraw = () => { host.innerHTML = cmpResidWin(st, raw, sel, color, all); cmpResidWinBind(st, raw, sel, color, apply, all); };
   host.querySelectorAll("#cmp-rbw button").forEach((b) => (b.onclick = () => { CMP_RW_BW = +b.dataset.v; redraw(); }));
   byId("cmp-rexe")?.addEventListener("change", (e) => { CMP_RW_EXE = e.target.checked; redraw(); });
   cmpSortBind(host, CMP_RW_SORT, (key) => (key === "ticker" ? 1 : -1), redraw);
