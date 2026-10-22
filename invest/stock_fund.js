@@ -426,6 +426,30 @@ const AI_AUX_HINT = { asset_turn: "每 $1 总资产带来多少收入；越低�
   ppe_rev: "不含经营租赁的固定资产 / 收入", gm: "硬件 / 制造通常 30–60%，软件 70–90%", rnd_rev: "轻资产公司常把投入放在研发（费用化，不进固定资产）",
   inv_days: "库存够卖多少天；硬件 / 制造业的库存周期风险" };
 const AI_DEP_SRC = { dep: "单独的折旧科目", net: "折旧摊销合计 − 无形资产摊销", dna: "只有折旧摊销合计（可能含部分摊销，偏高）" };
+const AI_GAP = 20; // 投入分位与存量分位相差 ≥ 此值时给出解读（全市场分差标准差约 18，±20 约为两端各 10%）
+const AI_EXPAND = 2; // 分差不大但资本开支 ≥ 折旧的此倍数时，仍提示扩张中
+// 投入（资本开支 / 收入，流量）vs 存量（固定资产占用两项的平均分位）
+function aiFlowStock(x) {
+  const f = x.capex_rev_pct, st = [x.fixed_rev_pct, x.ppe_assets_pct].filter(isNum);
+  if (!isNum(f) || !st.length) return "";
+  const s = st.reduce((a, b) => a + b, 0) / st.length, gap = f - s, cd = x.capex_dep;
+  const bar = (p) => `${num(p, 0)} <span class="metric-bar" style="width:${Math.round(p * 0.6)}px"></span>`;
+  const cdTxt = isNum(cd) ? `资本开支是折旧的 ${num(cd, 1)} 倍` : "没有可用的折旧数据";
+  const read = gap >= AI_GAP
+    ? (isNum(cd) && cd >= 1.5
+      ? `投入远高于存量：正在变重（${cdTxt}）。存量指标反应慢，资本开支先动；这批新资产几年后能否带来相应的收入和利润，是判断“值不值”的关键。`
+      : `投入高于存量，但${cdTxt}、不像在大建：资本开支里可能有不形成自有固定资产的部分（资本化的软件开发、租给客户的设备等），或固定资产被减值 / 出售。`)
+    : gap <= -AI_GAP
+      ? (isNum(cd) && cd >= 1.5
+        ? `存量高于投入，但${cdTxt}：按收入算的投入比例低，绝对量仍在扩张。收入规模很大、毛利低的公司（如零售）常见这种情况。`
+        : `存量高于投入：已经很重，但现在投得不多（${cdTxt}）——产能已建好、以维持为主（收获期）${isNum(cd) && cd < 1 ? "；资本开支低于折旧，若持续，可能投资不足、将来需要补投" : ""}。`)
+      : isNum(cd) && cd >= AI_EXPAND
+        ? `投入与存量的分位相差不大（${num(gap, 0, true)} 分），但${cdTxt}：存量正在快速增加，扩张中。`
+        : `投入与存量大致一致（相差 ${num(Math.abs(gap), 0)} 分）：当前的投资节奏与已有的资产规模相称。`;
+  return `<div class="xs-heads"><div><span class="muted">投入（资本开支 / 收入）</span><div>${bar(f)}</div><span class="muted small">全市场百分位，流量：每年投多少</span></div>
+    <div><span class="muted">存量（固定资产占用）</span><div>${bar(s)}</div><span class="muted small">两项存量指标的平均分位：已经压着多少</span></div></div>
+    <p>${Math.abs(gap) >= AI_GAP || (isNum(cd) && cd >= AI_EXPAND) ? "💡 " : ""}${esc(read)}</p>`;
+}
 const aiTier = (v) => (v >= 80 ? ["重资产", "neg"] : v >= 60 ? ["偏重", "neg"] : v >= 40 ? ["中等", ""] : v >= 20 ? ["偏轻", "pos"] : ["轻资产", "pos"]);
 function assetCard(s) {
   const x = s.asset_xs;
@@ -451,10 +475,12 @@ function assetCard(s) {
     <p class="muted">做 $1 生意要占用多少厂房、设备、数据中心，每年要投入多少资本开支。和全市场市值 ≥ $2B 的 ${M.n ?? "–"} 家公司（不含银行、保险、REIT）比较：4 项各自在全市场的百分位取平均，0–100，越高越重。只作画像，不是买卖信号。</p>
     <div class="xs-heads"><div><span class="muted">重资产得分</span><div class="big ${tone}">${num(x.score, 0)} · ${tier}</div><span class="muted small">比全市场 ${num(x.score_pct, 0)}% 的公司更重</span></div>${grp(ind, "行业")}${grp(sec, "板块")}</div>
     <div class="table-wrap"><table class="tbl small"><thead><tr><th>组成</th><th class="num">本股</th><th class="num">同板块中位数</th><th class="num">全市场中位数</th><th class="num">全市场百分位</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <h4>投入 vs 存量</h4>${aiFlowStock(x)}
     ${notes.length ? `<div class="warn-box">${notes.map((n) => `<p>💡 ${esc(n)}</p>`).join("")}</div>` : ""}
     <details><summary>辅助画像（不计入得分）：资产周转、扩张程度、软件 / 硬件特征</summary><div class="table-wrap"><table class="tbl small"><thead><tr><th>指标</th><th class="num">本股</th><th class="num">同板块中位数</th><th class="num">全市场中位数</th></tr></thead><tbody>${aux}</tbody></table></div></details>
     <details class="howto"><summary>怎么读与口径</summary><div class="val-guide">
       <p><b>重资产本身不是好坏</b>：关键是投进去的钱回报够不够（看上方 ROIC）。重资产 + 高 ROIC = 资本开支成了护城河（对手跟不上）；重资产 + 低 ROIC = 投入在消耗价值。重资产公司利润里能变成现金的比例更低（折旧、资本开支大），增长要先花钱，周期性也更强：行业一起扩产后容易供给过剩。估值时 EV/EBITDA 会让重资产公司显得便宜（EBITDA 不扣资本开支），应看 FCF。</p>
+      <p><b>投入 vs 存量</b>：重资产看“存量”（身上压着多少固定资产，时点快照），资本密集度看“流量”（每年投多少，一段时间的累计）。长期两者相关（全市场相关系数 0.7–0.8），但会错开：投入远高于存量 = 正在变重（扩张期，如前两年的云厂商）；存量高于投入 = 收获期或投资不足；投入高但不在大建 = 资本开支里装的不是厂房。</p>
       <p><b>几种常见的误读</b>：收入暴增时（如存储周期高点），按收入算的 3 项会被摊薄、显得变轻，资本开支因此用近 ${M.capex_years ?? 3} 年平均；产能放在合资工厂（权益法投资）的公司（如 SNDK 与 Kioxia），工厂不计入自身固定资产，会显得偏轻；靠研发而不是厂房投入的公司（芯片设计、软件），投入记在费用里，见辅助画像的“研发 / 收入”。</p>
       <p class="muted">口径：SEC 季报近 4 季合计（财报截至 ${esc(x.end || "–")}）；固定资产优先用含融资租赁资产的科目，没有净值科目时用原值 − 累计折旧；折旧来源：${esc(AI_DEP_SRC[x.dep_src] || "缺失")}。4 项之间的一致性：第一主成分解释 ${pct(M.consistency?.pc1_share, 0)}，Cronbach α ${num(M.consistency?.cronbach_alpha, 2)}（测的是同一件事）。行业分类用 Yahoo（Morningstar）口径。数据日期 ${esc(M.asof || "–")}，每周日更新。</p>
     </div></details></section>`;
