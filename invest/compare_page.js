@@ -16,6 +16,7 @@ const CMP_HOWTO = [
   "走势对比：每只从区间起点归一为 100（[[index100|指数化]]），直接比涨幅；打开“相对 SPY”后，线高于 100 表示区间内跑赢大盘；区间较长时可打开“对数坐标”：每往上一条横线代表翻一倍，相同斜率 = 相同的涨幅速度，不会被涨得最多的那只把其他线压扁。价格为复权价（含分红）。",
   "相关性矩阵：两两之间日收益率的[[correlation|相关系数]]（−1 ~ 1）。越接近 1 越同涨同跌，接近 0 表示关系不大，负值表示常常反向。几只持仓两两相关都很高，意味着它们其实押在同一件事上，分散效果有限。点矩阵中任意一格，下方显示这两只的滚动 60 天相关性变化。",
   "走势切换：“相对大盘”= 每天涨跌减去基准涨跌后累计（线在 0 以上 = 跑赢）；“剔除 β”= 减去 [[beta|β]] × 基准涨跌后累计，去掉大盘 / 板块带动的部分，只看公司自身因素（β 用此前一年日收益估计，不用未来数据）。基准可选 SPY 或各自的主题基准（行业 ETF）。",
+  "全部股票指标对比：指标按描述角度分四大类——价格与风险（短期得分、价格位置、风险水平、风险来源）、估值（倍数、全市场估值比较、FCF 收益率上升期）、基本面（增长与盈利、质量、重资产与资本投入、经营与资本配置、财务健康）、资金与预期（分析师预期、持仓结构与拥挤度）；组内从概览到细项排列，与个股页对应卡片同一口径。每组下方的说明表列出含义、用法与参考价值。",
   "汇总表：区间收益、年化[[volatility|波动]]、区间最大[[drawdown|回撤]]、相对 SPY 的 [[beta|Beta]]（大盘涨跌 1% 时它平均涨跌多少）和与 SPY 的相关系数，都按所选区间计算；“相对基准”“剔除 β 后”按上方所选基准计算区间累计。",
 ];
 
@@ -272,17 +273,60 @@ Object.assign(CMP_EXTRA_DEFS, SCORE_DEFS, {
   q_accr: { name: "应计（同板块分位）", fmt: "num0", better: "low", def: "（净利润 − 经营现金流）÷ 总资产在同板块中的分位（越高说明利润中没变成现金的部分越多；Sloan 1996）。", read: "检验无效。", use: "只作描述。", value: ["低", "检验未通过，只作描述"] },
   q_lev: { name: "负债率（同板块分位）", fmt: "num0", better: "low", def: "总负债 ÷ 总资产在同板块中的分位。", read: "方向与预期相反（负债高的之后反而更好，可能与回购推高负债率有关）。", use: "只作描述。", value: ["低", "检验方向相反，只作描述"] },
 });
+// ---- 个股页新增卡片的读数（M102 全市场估值比较、M103 重资产程度、M104 风险面板；compare_metrics.json，与个股页同一份数据）----
+const XS_VALUE = ["中（预示利润率）", "回测：隐含与实际利润率之差预示之后 12 个月利润率变化（秩相关 +0.17，t 8.1）；对股价涨跌本身没有预测力"];
+const XS_DEV_VALUE = ["低", "对之后 13–52 周涨跌没有预测力（IC ≈ 0）；最贵 20% 之后大跌的发生率是其他股票的 1.27 倍，未达 1.5 倍标准"];
+const AI_VALUE = ["低", "描述性画像，未检验预测力；帮助理解商业模式（多少钱压在厂房设备上）"];
+const RP_VALUE = ["低", "描述性：近 1 年波动来自哪一层；未检验对涨跌的预测力"];
+Object.assign(CMP_EXTRA_DEFS, {
+  rp_dd30: { name: "半年内跌超 30% 频率", fmt: "pct0", better: "low", def: "按价格风险分位所在的十分组，同组大盘股 2022 年以来半年内最大跌幅超过 30% 的实际频率（与个股页“风险面板”同一口径）。",
+    read: "是同组股票的历史频率，不是对这只股票的单独预测；十组从低到高严格递增（已验证），水平随市场环境变化。", use: "把价格风险分位翻译成直观的“大跌有多常见”，用来决定仓位大小。", value: ["高（风险）", "排序已验证（十组严格递增）；水平随环境变化"] },
+  earn_move: { name: "财报日波动（中位数）", fmt: "pct", better: "low", def: "近 8 次财报后一个交易日相对大盘的绝对涨跌幅中位数。",
+    read: "财报波动有持续性：过去波动大的，下次通常也大。", use: "估计下次财报可能带来的单日波动，财报前决定是否减仓。", value: ["中", "已验证：过去的财报波动对下次财报波动的秩相关 0.32"] },
+  rp_mkt: { name: "大盘层占比", fmt: "pct0", better: null, def: "近 1 年总波动（方差）中由大盘涨跌带来的比例（四层合计 100%）。", read: "高 = 主要跟着大盘走。", use: "了解这只股票的风险从哪里来。", value: RP_VALUE },
+  rp_ai: { name: "AI 主题层占比", fmt: "pct0", better: null, def: "近 1 年总波动中由 AI 股相对大盘的强弱带来的比例。", read: "高 = AI 板块一起涨跌是主要驱动（持有多只这类股票时风险会叠加）。", use: "判断与 AI 主题的绑定程度。", value: RP_VALUE },
+  rp_ind: { name: "行业层占比", fmt: "pct0", better: null, def: "近 1 年总波动中由所在行业（同行等权）相对大盘与 AI 主题的强弱带来的比例。", read: "高 = 行业景气是主要驱动。", use: "了解行业因素的影响。", value: RP_VALUE },
+  rp_idio: { name: "个股层占比", fmt: "pct0", better: null, def: "近 1 年总波动中公司自身因素（扣除大盘、AI 主题、行业后剩下的部分）的比例。", read: "高 = 走势主要由公司自己的消息决定，分散作用更好，但也更难预判。", use: "高时更要关注公司自身事件（财报、产品、管理层）。", value: RP_VALUE },
+  rp_earn: { name: "个股层中财报日占比", fmt: "pct0", better: null, def: "个股层波动中发生在财报后一个交易日的比例。", read: "高 = 公司自身的风险集中在财报日。", use: "高时财报前后的仓位管理最重要。", value: RP_VALUE },
+  rp_beta_mkt: { name: "大盘 β（四层模型）", fmt: "num2", better: null, def: "四层拆分回归中对大盘的 β（近 1 年周收益）。", read: "与“Beta”列口径不同（这里同时控制了 AI 主题与行业）。", use: "了解剔除主题与行业后对大盘的敏感度。", value: RP_VALUE },
+  rp_beta_ai: { name: "AI 主题 β", fmt: "num2", better: null, def: "对 AI 股相对大盘强弱的 β（近 1 年周收益）。", read: "> 0 = 随 AI 股相对强弱同向；< 0 = 反向。", use: "判断 AI 板块回调时它会怎样。", value: RP_VALUE },
+  xs_implied_om: { name: "现价隐含营业利润率", fmt: "impom", better: null, def: "按全市场 ≥ $2B 公司的横截面回归（增速、毛利率、营业利润率、FCF 利润率、行业），营业利润率取多少时“应有 P/S”恰好等于现价（与个股页“全市场估值比较”同一口径）。",
+    read: "低于实际 = 市场预期利润率回落（周期高点常见）；高于实际 = 价格已含利润率提升的预期；“> 50%”= 贵在利润率以外的因素；“< 0%”= 按亏损或谷底盈利定价。", use: "和之后几个季度的实际利润率对照。", value: XS_VALUE },
+  xs_om: { name: "实际营业利润率（近 4 季）", fmt: "pct0", better: null, def: "SEC 季报近 4 季营业利润 ÷ 收入（没有营业利润科目时用净利润率）。", read: "和隐含值对照。", use: "—", value: XS_VALUE },
+  xs_gap: { name: "隐含 − 实际", fmt: "pp", better: null, def: "现价隐含营业利润率减实际营业利润率（百分点）；超出可解范围时为空。", read: "正 = 市场预期利润率还会提高；负 = 预期回落。", use: "按此排序找“市场预期利润率大幅回落”的股票（多为周期高点）。", value: XS_VALUE },
+  xs_fair_ps: { name: "应有 P/S", fmt: "x", better: null, def: "基本面相似公司（全市场回归）通常给的 P/S；本股不参与估计自己的值。", read: "与“市销率 P/S”列对照。", use: "—", value: XS_DEV_VALUE },
+  xs_dev: { name: "相对相似公司的 P/S", fmt: "pp", better: "low", def: "实际 P/S 比应有 P/S 高（正）或低（负）多少。", read: "模型只解释全市场 P/S 差异的约 70%，±80% 以内都很常见，不代表错误定价。", use: "偏离极端时先找原因。", value: XS_DEV_VALUE },
+  xs_dev_pct: { name: "偏离的全市场分位", fmt: "num0", better: "low", def: "偏离在全市场 ≥ $2B 公司中的分位（100 = 最贵）。", read: "同上。", use: "—", value: XS_DEV_VALUE },
+  ai_score: { name: "重资产得分", fmt: "num0", better: null, def: "资本开支 / 收入（近 3 年）、折旧 / 收入、（固定资产 + 经营租赁资产）/ 收入、固定资产 / 总资产四项在全市场 ≥ $2B 公司中的分位平均（0–100，越高越重；与个股页“重资产程度”同一口径）。",
+    read: "≥ 80 重资产（公用事业、能源、云厂商），< 20 轻资产（软件、芯片设计）。重资产本身不是好坏，要和 ROIC 一起看。", use: "了解商业模式：增长要不要先花大钱、周期性强不强。", value: AI_VALUE },
+  ai_capex_rev: { name: "资本开支 / 收入（近 3 年）", fmt: "pct", better: null, def: "近 3 年资本开支合计 ÷ 同期收入合计（流量：每年投多少）。", read: "与“资本密集度”（近 4 季）口径相近，3 年平均更稳。", use: "—", value: AI_VALUE },
+  ai_dep_rev: { name: "折旧 / 收入", fmt: "pct", better: null, def: "近 4 季折旧（不含并购无形资产摊销）÷ 收入。", read: "过去投下的固定资产每年消耗多少。", use: "—", value: AI_VALUE },
+  ai_fixed_rev: { name: "固定资产 / 收入", fmt: "num2", better: null, def: "（固定资产 + 经营租赁资产）÷ 近 4 季收入：每 $1 收入占用多少实物资产（存量）。", read: "含租来的门店 / 机房。", use: "—", value: AI_VALUE },
+  ai_ppe_assets: { name: "固定资产 / 总资产", fmt: "pct0", better: null, def: "固定资产净值 ÷ 总资产。", read: "资产里有多少是厂房、设备、数据中心。", use: "—", value: AI_VALUE },
+  ai_flow_gap: { name: "投入 − 存量（分位差）", fmt: "num0", better: null, def: "资本开支 / 收入的全市场分位减去两项存量指标的平均分位。",
+    read: "≥ +20 = 投入远高于存量（正在变重或资本开支含非实物）；≤ −20 = 存量高于投入（收获期，或收入规模大）。全市场标准差约 18。", use: "结合“资本开支 / 折旧”判断是不是在扩张。", value: AI_VALUE },
+  ai_capex_dep: { name: "资本开支 / 折旧", fmt: "x", better: null, def: "近 4 季资本开支 ÷ 折旧。", read: "> 1.5 扩张；≈ 1 维持；< 1 收缩或投资不足。扩张期之后几年折旧会上升、压低利润率。", use: "—", value: AI_VALUE },
+  ai_asset_turn: { name: "资产周转率", fmt: "num2", better: null, def: "近 4 季收入 ÷ 总资产。", read: "越低越重；看趋势判断新资产有没有带来收入。", use: "—", value: AI_VALUE },
+  ai_rnd_rev: { name: "研发 / 收入", fmt: "pct", better: null, def: "近 4 季研发费用 ÷ 收入。", read: "轻资产公司的投入常在研发（费用化，不进固定资产）。", use: "和资本开支一起看总投入。", value: AI_VALUE },
+  ai_inv_days: { name: "存货周转天数", fmt: "days", better: null, def: "最新存货 ÷ 近 4 季销售成本 × 365。", read: "硬件 / 制造业的库存周期风险；上升过快常是需求放缓的早期迹象。", use: "—", value: AI_VALUE },
+});
+// 分组：先按描述角度分大类，组内列按逻辑顺序（概览 → 细项）；大类与组的顺序即按钮顺序（2026-10-22 重排）
+const CMP_CATS = [["risk", "价格与风险"], ["value", "估值"], ["fund", "基本面"], ["flow", "资金与预期"]];
 const CMP_GROUPS = [
-  ["score", "短期综合得分", ["score_1w", "score_4w", "score_4w_mom", "score_4w_rev", "score_4w_lit"]],
-  ["valuation", "估值", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"]],
-  ["traits", "经营特征", ["op_leverage", "share_change", "buyback_pct", "cash_conversion", "capex_intensity"]],
-  ["fcf_phase", "FCF 收益率上升期", ["fcf_stage_code", "fcf_kind_code", "fcf_z", "fcf_y_chg", "fcf_ps_chg", "fcf_px_chg", "fcf_y_pct"]],
-  ["growth", "增长与盈利", ["revenue_growth", "earnings_growth", "eps_fwd_growth", "gross_margin", "op_margin", "net_margin", "roe", "roa"]],
-  ["health", "财务健康", ["net_cash_pct", "debt_to_equity", "current_ratio", "payout"]],
-  ["price", "价格与风险", ["risk_pct", "risk_vol3m", "risk_dbeta", "price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200", "vol_1y", "max_dd_1y", "beta"]],
-  ["crowd", "拥挤度与机构持仓", ["crowd_pct", "crowd_ivol", "crowd_turn", "inst_sto", "inst_dsto", "inst_io", "inst_dholders"]],
-  ["quality", "质量画像（同板块）", ["q_gpa", "q_mstd", "q_opa", "q_accr", "q_lev"]],
-  ["expect", "市场预期", ["median_target", "median_upside", "moves_up", "moves_down", "weighted_target", "weighted_upside", "analysts", "rec_mean", "short_pct_float", "short_change", "days_to_cover", "insiders_pct", "institutions_pct", "next_earnings"]],
+  ["score", "短期综合得分", ["score_1w", "score_4w", "score_4w_mom", "score_4w_rev", "score_4w_lit"], "risk"],
+  ["price", "价格位置与涨跌", ["price", "ret_1m", "ret_ytd", "ret_1y", "pos_52w", "from_high", "vs_ma200"], "risk"],
+  ["risk", "风险水平", ["risk_pct", "rp_dd30", "vol_1y", "risk_vol3m", "max_dd_1y", "beta", "risk_dbeta", "earn_move", "next_earnings"], "risk"],
+  ["risksrc", "风险来源（四层拆分）", ["rp_mkt", "rp_ai", "rp_ind", "rp_idio", "rp_earn", "rp_beta_mkt", "rp_beta_ai"], "risk"],
+  ["valuation", "估值倍数", ["market_cap", "pe_ttm", "pe_fwd", "peg", "ps", "ev_ebitda", "pb", "fcf_yield", "dividend_yield"], "value"],
+  ["xsval", "全市场估值比较", ["xs_implied_om", "xs_om", "xs_gap", "ps", "xs_fair_ps", "xs_dev", "xs_dev_pct"], "value"],
+  ["fcf_phase", "FCF 收益率上升期", ["fcf_stage_code", "fcf_kind_code", "fcf_z", "fcf_y_chg", "fcf_ps_chg", "fcf_px_chg", "fcf_y_pct"], "value"],
+  ["growth", "增长与盈利", ["revenue_growth", "earnings_growth", "eps_fwd_growth", "gross_margin", "op_margin", "net_margin", "roic", "roe", "roa"], "fund"],
+  ["quality", "质量画像（同板块）", ["q_gpa", "q_opa", "q_mstd", "q_accr", "q_lev"], "fund"],
+  ["asset", "重资产与资本投入", ["ai_score", "ai_capex_rev", "capex_intensity", "ai_dep_rev", "ai_fixed_rev", "ai_ppe_assets", "ai_flow_gap", "ai_capex_dep", "ai_asset_turn"], "fund"],
+  ["ops", "经营特征与资本配置", ["op_leverage", "cash_conversion", "ai_rnd_rev", "ai_inv_days", "share_change", "buyback_pct"], "fund"],
+  ["health", "财务健康", ["net_cash_pct", "debt_to_equity", "current_ratio", "payout"], "fund"],
+  ["expect", "分析师与市场预期", ["rec_mean", "analysts", "median_target", "median_upside", "weighted_target", "weighted_upside", "moves_up", "moves_down"], "flow"],
+  ["holders", "持仓结构与拥挤度", ["crowd_pct", "crowd_ivol", "crowd_turn", "short_pct_float", "short_change", "days_to_cover", "inst_io", "inst_sto", "inst_dsto", "inst_dholders", "insiders_pct", "institutions_pct"], "flow"],
 ];
 /* 本页表格共用的表头排序：s = { sort, dir }（dir 1 = 从低到高 / A→Z，−1 = 从高到低）；只有当前排序列显示 ▲ / ▼；
    点新列按 firstDir(key) 定方向，再点同一列反向。“ticker”列按代码字母排序；缺数据的行始终排在最后。 */
@@ -305,24 +349,17 @@ function cmpSortBind(host, s, firstDir, redraw) {
   }));
 }
 const CMP_ALL = { group: null, sort: null, dir: 1, theme: "", tag: "" };
-function cmpDef(k) { return CMP_EXTRA_DEFS[k] || METRIC_DEFS[k] || { name: k, fmt: "num2" }; }
-// 参考价值评级 → 分数（取评级文字开头，如“中–高”“高（风险）”“低（科技）/ 中（银行）”取“低”）
-const VALUE_SCORE = { "高": 5, "中–高": 4, "中": 3, "低–中": 2, "低": 1 };
-function valueScore(k) {
-  const v = (cmpDef(k).value || [""])[0].split(/[（(/ ]/)[0].trim();
-  return VALUE_SCORE[v] ?? 0;
+// 同组里有相近指标时，本页改用更明确的列名（说明文字不变）
+const CMP_NAME = { institutions_pct: "机构持股（Yahoo）", capex_intensity: "资本开支 / 收入（近 4 季）" };
+function cmpDef(k) {
+  const d = CMP_EXTRA_DEFS[k] || METRIC_DEFS[k] || { name: k, fmt: "num2" };
+  return CMP_NAME[k] ? { ...d, name: CMP_NAME[k] } : d;
 }
-/* 按参考价值排序：组内指标按评级从高到低；组按组内最高三项的平均评级从高到低（同分按全组平均） */
+/* 2026-10-22 起按描述角度固定顺序（CMP_GROUPS），不再按参考价值自动排序；参考价值评级仍显示在每组的说明表里 */
 let CMP_SORTED = null;
 function cmpGroups() {
   if (CMP_SORTED) return CMP_SORTED;
-  const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
-  const groups = CMP_GROUPS.map(([g, n, ks]) => {
-    const keys = [...ks].sort((a, b) => valueScore(b) - valueScore(a));
-    const sc = keys.map(valueScore);
-    return [g, n, keys, avg(sc.slice(0, 3)), avg(sc)];
-  }).sort((a, b) => (b[0] === "score") - (a[0] === "score") || b[3] - a[3] || b[4] - a[4]); // M88：短期综合得分固定放第一组
-  CMP_SORTED = groups.map(([g, n, ks]) => [g, n, ks]);
+  CMP_SORTED = CMP_GROUPS.map(([g, n, ks, cat]) => [g, n, ks, cat]);
   if (!CMP_ALL.group) { CMP_ALL.group = CMP_SORTED[0][0]; CMP_ALL.sort = CMP_SORTED[0][2][0]; CMP_ALL.dir = cmpDef(CMP_ALL.sort).better === "high" ? -1 : 1; }
   return CMP_SORTED;
 }
@@ -333,6 +370,8 @@ function cmpFmt(v, f) {
   if (f === "fcfstage") return isNum(v) ? FCF_STAGE_ZH[v] : "–";
   if (f === "fcfkind") return isNum(v) ? FCF_KIND_ZH[v] : "–";
   if (f === "pct2s") return isNum(v) ? pct(v, 2, true) : "–";
+  if (f === "impom") return !isNum(v) ? "–" : v <= -1 ? "< 0%" : v >= 9 ? "> 50%" : pct(v, 0); // −1 / 9 = 超出可解范围（build.py 编码）
+  if (f === "days") return isNum(v) ? `${num(v, 0)} 天` : "–";
   return fmtMetric(v, f);
 }
 // 汇总表的“FCF 收益率上升期”一栏（compare_metrics.json；与个股页卡片同一份数据）
@@ -370,7 +409,8 @@ async function cmpAllTable(sel) {
       crowd_turn: isNum(cw.raw?.turn) ? Math.exp(cw.raw.turn) : null,
       inst_io: ins.io, inst_sto: ins.sto, inst_dsto: ins.d_sto, inst_dholders: isNum(ins.d_holders) ? Math.exp(ins.d_holders) - 1 : null,
       buyback_pct: iss?.stocks?.[r.ticker]?.buyback_pct,
-      q_gpa: q.gpa?.pct, q_opa: q.opa?.pct, q_mstd: q.mstd?.pct, q_accr: q.accr?.pct, q_lev: q.lev?.pct }); // 质量各项分位为原始方向（与个股页一致）
+      q_gpa: q.gpa?.pct, q_opa: q.opa?.pct, q_mstd: q.mstd?.pct, q_accr: q.accr?.pct, q_lev: q.lev?.pct, // 质量各项分位为原始方向（与个股页一致）
+      rp_dd30: isNum(rs.score_pct) ? (rk?.calibration?.recent || []).find((x) => x.bin === Math.min(10, Math.max(1, Math.ceil(rs.score_pct / 10))))?.dd30 : null }); // M104 风险面板同口径
   }
   const draw = () => {
     const keys = cmpGroups().find(([g]) => g === CMP_ALL.group)[2];
@@ -384,7 +424,9 @@ async function cmpAllTable(sel) {
     });
     const med = (key) => { const xs = rows.map((r) => r[key]).filter(isNum).sort((a, b) => a - b); return xs.length ? xs[Math.floor((xs.length - 1) / 2)] : null; };
     const th = (key) => { const d = cmpDef(key); return cmpSortTh(CMP_ALL, key, esc(d.name), { tip: `${d.name}：${d.def || ""}${d.read ? ` 如何理解：${d.read}` : ""}` }); };
-    host.innerHTML = `<div class="row"><div class="seg" id="ca-g">${cmpGroups().map(([g, n]) => `<button type="button" data-g="${g}" class="${g === CMP_ALL.group ? "on" : ""}">${n}</button>`).join("")}</div>
+    const btn = ([g, n]) => `<button type="button" data-g="${g}" class="${g === CMP_ALL.group ? "on" : ""}">${n}</button>`;
+    host.innerHTML = `<div class="cmp-cats">${CMP_CATS.map(([c, cn]) => `<div class="row"><span class="muted cmp-cat">${cn}</span><div class="seg">${cmpGroups().filter((x) => x[3] === c).map(btn).join("")}</div></div>`).join("")}</div>
+      <div class="row">
       <select id="ca-theme"><option value="">全部主题</option>${META.themes.map((t) => `<option value="${t.key}" ${t.key === CMP_ALL.theme ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>
       <select id="ca-tag"><option value="">全部业务</option>${usedTags().map((k) => `<option value="${k}" ${k === CMP_ALL.tag ? "selected" : ""}>${esc(META.tags[k].short)} ${esc(META.tags[k].name)}</option>`).join("")}</select>
       <span class="muted">点表头排序；悬停表头看指标说明；已选股票（${sel.length}）高亮并排在最前</span></div>
@@ -394,7 +436,7 @@ async function cmpAllTable(sel) {
       <tr class="total"><td><b>中位数</b></td>${keys.map((key) => `<td class="num">${key === "next_earnings" ? "" : cmpFmt(med(key), cmpDef(key).fmt)}</td>`).join("")}</tr></tbody></table></div>
       <details class="howto" open><summary>本组指标的含义、用法与参考价值</summary>${metricDocTable(keys, cmpDef)}<p class="muted">${esc(METRIC_VALUE_NOTE)}</p></details>
       <p class="muted">公司数据来自 yfinance（${esc(data.asof)}），价格类按最新收盘计算；“–”表示该公司不适用或暂无数据（如银行没有毛利率、EV/EBITDA）。ETF 与黄金没有这些公司指标，不列入。† = 财报以外币计（如台积电 TWD、ASML EUR）：总额类比率已按汇率换算，P/B 与 EV/EBITDA 不显示，P/E 可能有约一成的汇率口径偏差。每个指标的含义与用法见个股页“关键指标”。</p>`;
-    host.querySelectorAll("#ca-g button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = cmpGroups().find(([g]) => g === CMP_ALL.group)[2]; if (CMP_ALL.sort !== "ticker" && !ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
+    host.querySelectorAll(".cmp-cats button").forEach((b) => (b.onclick = () => { CMP_ALL.group = b.dataset.g; const ks = cmpGroups().find(([g]) => g === CMP_ALL.group)[2]; if (CMP_ALL.sort !== "ticker" && !ks.includes(CMP_ALL.sort)) { CMP_ALL.sort = ks[1] || ks[0]; CMP_ALL.dir = 1; } draw(); }));
     byId("ca-theme").onchange = (e) => { CMP_ALL.theme = e.target.value; draw(); };
     byId("ca-tag").onchange = (e) => { CMP_ALL.tag = e.target.value; draw(); };
     cmpSortBind(host, CMP_ALL, (key) => (key === "ticker" ? 1 : cmpDef(key).better === "high" ? -1 : 1), draw);
