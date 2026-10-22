@@ -165,7 +165,10 @@ PAGES.compare = async (r) => {
     apply({ t: META.universe.filter((u) => (u.tags || []).includes(b.dataset.k)).map((u) => u.ticker).filter((t) => raw.close[t]).slice(0, CMP_MAX), pair: [] });
   }));
   document.querySelectorAll(".cmp-x").forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); apply({ t: sel.filter((x) => x !== a.dataset.t), pair: [] }); }));
-  byId("cmp-clear")?.addEventListener("click", () => apply({ t: [], pair: [] }));
+  byId("cmp-clear")?.addEventListener("click", () => {
+    CMP_ALL.tag = ""; CMP_ALL.theme = ""; // 按业务快捷按钮会同步筛选下方“全部股票指标”，清空时一并恢复显示全部
+    apply({ t: [], pair: [] });
+  });
   // 快捷选择栏吸顶：紧贴顶部导航栏下方（导航栏换行时高度会变）；跳到折线图时让出两个吸顶栏的高度（直接跳转，不用动画）
   const qk = byId("cmp-quick"), tb = document.querySelector(".topbar");
   if (qk && tb) qk.style.top = `${tb.offsetHeight}px`;
