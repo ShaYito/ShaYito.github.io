@@ -466,21 +466,108 @@ async function fillDiversityCard(t) {
 }
 
 // ---------- 个股页“股本变化（回购 / 增发）”（M93）：大盘股中按事先标准通过的资本配置指标（期限 6–12 个月）----------
+// M109：加三种股本口径、近 12 个月股本事件（AI 从 SEC 申报摘录、逐字校验）与尚未转换的潜在稀释（描述性）
+const ISS_KIND = {
+  offering: ["公开增发", true], atm: ["按市价增发（ATM）", true], private: ["定向增发 / 战略入股", true],
+  warrant: ["认股权证行权", true], conversion: ["可转债 / 优先股转股", false], acquisition: ["收购换股", false],
+  comp: ["大额股权奖励", false], resale: ["股东转售（不发新股）", false], other: ["其他", false],
+};
+const ISS_INST = {
+  convertible_notes: "可转债", convertible_preferred: "可转换优先股", mandatory_convertible: "强制可转换优先股",
+  warrants: "认股权证", unvested_award: "尚未归属的限制性股票", other: "其他",
+};
+const issM = (v) => (isNum(v) ? `${num(v, v >= 100 ? 0 : v >= 10 ? 1 : 2)}M` : "–");
+const issShare = (m, base) => (isNum(m) && isNum(base) && base > 0 ? `（约 ${pct(m / base, m / base >= 0.1 ? 0 : 1)}）` : "");
+const issSrc = (x) => (x?.src ? `<a href="${esc(x.src.url)}" target="_blank" rel="noopener">${esc(x.src.form)} ${esc(x.src.filed)}</a>` : "");
+
+function issCounts(x, r) {
+  const c = x.counts || {}, cov = c.cover, b = c.basic, d = c.diluted;
+  if (!cov && !b && !d) return "";
+  const per = (w) => (!w ? "" : w.dur === "q" ? `季度，期末 ${esc(w.end)}` : `财年，截至 ${esc(w.end)}`);
+  const ch = (v) => (isNum(v) ? `<b class="${v > 0.02 ? "neg" : v < -0.005 ? "pos" : ""}">${pct(v, 1, true)}</b>` : "–");
+  const coverYoy = r && isNum(r.raw) ? Math.expm1(r.raw) : cov?.yoy_raw;
+  const row = (name, now, prev, chg, note) => `<tr><td>${name}</td><td class="num">${now}</td><td class="num">${prev}</td><td class="num">${chg}</td><td class="muted small" style="white-space:normal">${note}</td></tr>`;
+  const rows = [
+    cov && row("封面流通股", `${issM(cov.value / 1e6)}<div class="muted small">${esc(cov.date)}</div>`, "–", ch(coverYoy),
+      "10-Q / 10-K 首页的实际流通股（申报日附近）：已发行的都算，包括尚未归属、不计入 EPS 的限制性股票；近 1 年变化按拆股调整，即上方检验用的口径"),
+    b && row("基本加权股本", `${issM(b.cur / 1e6)}<div class="muted small">${per(b)}</div>`, isNum(b.prior) ? `${issM(b.prior / 1e6)}<div class="muted small">${esc(b.prior_end)}</div>` : "–", ch(b.yoy),
+      "期内平均流通股，算每股收益（EPS）的分母；本期与上年同期取自同一份申报（口径一致）"),
+    d && row("稀释加权股本", `${issM(d.cur / 1e6)}<div class="muted small">${per(d)}</div>`, isNum(d.prior) ? `${issM(d.prior / 1e6)}<div class="muted small">${esc(d.prior_end)}</div>` : "–", ch(d.yoy),
+      "另含期权、限制性股票单位、可转债等“如果转换”的股数，最接近每股价值被摊薄的程度；亏损期间这些股数不计入，与基本口径相同"),
+  ].filter(Boolean).join("");
+  const notes = [];
+  if (isNum(c.gap) && Math.abs(c.gap) >= 0.03)
+    notes.push(`封面流通股比本期基本加权股本${c.gap > 0 ? "多" : "少"} <b>${pct(Math.abs(c.gap), 0)}</b>：${c.gap > 0 ? "多为期末之后新发行的股票，或已发行但尚未归属、不计入 EPS 的限制性股票（见下方潜在稀释）——这部分会抬高“股本变化”读数，但不一定已经摊薄每股收益" : "多为期末之后的回购或注销"}。`);
+  if (isNum(coverYoy) && isNum(d?.yoy) && Math.abs(coverYoy - d.yoy) >= 0.05)
+    notes.push(`封面口径（${pct(coverYoy, 1, true)}）与稀释口径（${pct(d.yoy, 1, true)}）相差较大：${coverYoy > d.yoy ? "常见原因是可转债 / 优先股转股（转股前已计入稀释股本）、尚未归属的特别股权奖励，或期末之后的发行" : "常见原因是期末之后的回购，或亏损期间稀释股数不计入"}，看下方事件表找具体原因。`);
+  return `<h4>三种股本口径</h4><div class="table-wrap"><table class="tbl small"><thead><tr><th>口径</th><th class="num">最新</th><th class="num">上年同期</th><th class="num">变化</th><th>含义</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${notes.length ? `<p class="small">${notes.join("<br>")}</p>` : ""}`;
+}
+
+function issEvents(x, meta) {
+  const ev = x.events || [], base = x.summary?.base_m;
+  const since = meta?.since ? `${esc(meta.since)} 起` : "近 12 个月";
+  if (!ev.length) return `<h4>股本事件（${since}）</h4><p class="muted small">已读的申报中没有找到增发、定向增发、转股、收购换股或大额股权奖励（常规员工激励不列）。</p>`;
+  const s = x.summary || {};
+  const parts = [
+    s.cash > 0 && `带来新现金的发行 <b class="neg">${issM(s.cash)} 股</b>${issShare(s.cash, base)}${s.proceeds_m > 0 ? `，公司收到约 <b>${usdAmt(s.proceeds_m * 1e6)}</b>` : ""}`,
+    s.conversion > 0 && `可转债 / 优先股转股 ${issM(s.conversion)} 股${issShare(s.conversion, base)}（没有新现金，多数转股前已计入稀释股本）`,
+    s.acquisition > 0 && `收购换股 ${issM(s.acquisition)} 股${issShare(s.acquisition, base)}（换来了一家公司）`,
+    s.comp > 0 && `大额股权奖励 ${issM(s.comp)} 股${issShare(s.comp, base)}`,
+    s.other > 0 && `其他 ${issM(s.other)} 股`,
+  ].filter(Boolean);
+  const rows = ev.map((e) => {
+    const [k, cash] = ISS_KIND[e.kind] || [e.kind, false];
+    const tag = e.kind === "resale" ? '<span class="chip">不发新股</span>' : cash ? '<span class="chip warn">新现金</span>' : '<span class="chip">无新现金</span>';
+    return `<tr><td class="nowrap">${esc(e.date)}${e.date_approx ? "<span class=\"muted\">（约）</span>" : ""}</td><td>${esc(k)} ${tag}</td>
+      <td class="num">${issM(e.shares_m)}<div class="muted small">${issShare(e.shares_m, base).replace(/[（）]/g, "")}</div></td>
+      <td class="num">${isNum(e.price) ? `$${num(e.price, 2)}` : "–"}</td><td class="num">${isNum(e.proceeds_m) ? usdAmt(e.proceeds_m * 1e6) : "–"}</td>
+      <td>${esc(e.counterparty || "")}</td><td style="white-space:normal" title="${esc(e.quote)}">${esc(e.text)}</td><td class="nowrap small">${issSrc(e)}</td></tr>`;
+  }).join("");
+  return `<h4>股本事件（${since}）</h4>
+    ${parts.length ? `<p>${parts.join("；")}。</p>` : ""}
+    <div class="table-wrap"><table class="tbl small"><thead><tr><th>日期</th><th>类型</th><th class="num">股数（占股本）</th><th class="num">每股价格</th><th class="num">公司收到</th><th>对方</th><th>说明（悬停看原文）</th><th>来源</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted small">“占股本”按最新封面流通股计算。带来新现金的发行要看钱用来做什么、发行价与现价的关系；转股与收购换股没有新现金，前者多半早已计入稀释股本，后者换来了资产。日期标“约”的是原文只写了期间，取期末。</p>`;
+}
+
+function issInstruments(x) {
+  const ins = x.instruments || [], base = x.summary?.base_m;
+  if (!ins.length) return "";
+  const rows = ins.map((i) => `<tr><td>${esc(ISS_INST[i.kind] || i.kind)}</td><td style="white-space:normal" title="${esc(i.quote)}">${esc(i.name)}<div class="muted small">${esc(i.text)}</div></td>
+    <td class="num">${isNum(i.principal_m) ? usdAmt(i.principal_m * 1e6) : "–"}</td><td class="num">${isNum(i.shares_m) ? `${issM(i.shares_m)}<div class="muted small">${issShare(i.shares_m, base).replace(/[（）]/g, "")}</div>` : "–"}</td>
+    <td class="num">${isNum(i.conv_price) ? `$${num(i.conv_price, 2)}` : "–"}</td><td class="nowrap">${esc(i.maturity || "–")}</td><td class="nowrap small">${issSrc(i)}</td></tr>`).join("");
+  return `<h4>尚未转换的潜在稀释</h4>
+    <div class="table-wrap"><table class="tbl small"><thead><tr><th>类型</th><th>名称（悬停看原文）</th><th class="num">未偿本金 / 优先额</th><th class="num">对应股数</th><th class="num">转换 / 行权价</th><th>到期 / 转换</th><th>来源</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted small">取最新一份 10-Q / 10-K，加上之后 8-K / 招股书中新出现的。“对应股数”只在原文写明时列出；可转债常有上限认购（capped call）或部分用现金结算，实际新增股数可能更少；股价低于转换价时多半不会转股。</p>`;
+}
+
 async function fillIssueCard(t) {
   const el = byId("iss-card");
   const d = await load("issuance.json").catch(() => null);
-  const r = d?.available ? d.stocks?.[t] : null;
-  if (!el || !r) return;
+  const s = d?.available ? d.stocks?.[t] : null;
+  if (!el || !s) return;
+  const r = isNum(s.raw) ? s : null, x = s.detail;
   el.hidden = false;
   const e26 = d.evidence?.["26"], q = e26?.quintiles || [];
-  const p = r.buyback_pct;
+  const p = r?.buyback_pct;
   const lv = !isNum(p) ? "" : p >= 80 ? '<b class="pos">回购力度在同板块前 20%</b>' : p <= 20 ? '<b class="neg">增发 / 稀释在同板块前 20%</b>' : "处于同板块中间";
-  el.innerHTML = `<h3>股本变化（回购 / 增发） ${badge("derived")}</h3>
-    <p>近 1 年股本 <b class="${r.raw < 0 ? "pos" : r.raw > 0.01 ? "neg" : ""}">${pct(Math.expm1(r.raw), 1, true)}</b>（按拆股调整；负数 = 净回购）${isNum(p) ? `，回购程度在${esc(sectorZh(r.sector))}的大盘股中排第 <b>${num(p, 0)}</b> 分位 ${seBar(p)}` : ""}。${lv}。</p>
-    <p class="small">检验（当时市值 ≥ $10B 的美股，2012 年起，同板块比较；事先标准同短期证据）：股本变化越少，之后 6 个月相对表现越好，IC ${e26 ? `${num(e26.ic, 3)}（t ${num(e26.t, 1)}）` : "–"}，按事先标准有用；≥ $2B 中 6 个月与 12 个月都有用。效应集中在回购最多的五分之一（之后 6 个月平均约 ${q.length ? pct(q[4], 1, true) : "+1.5%"}，其余各组差别小）。</p>
+  const head = r ? `<p>近 1 年股本 <b class="${r.raw < 0 ? "pos" : r.raw > 0.01 ? "neg" : ""}">${pct(Math.expm1(r.raw), 1, true)}</b>（封面流通股，按拆股调整；负数 = 净回购）${isNum(p) ? `，回购程度在${esc(sectorZh(r.sector))}的大盘股中排第 <b>${num(p, 0)}</b> 分位 ${seBar(p)}` : ""}。${lv}。</p>
+    <p class="small">检验（当时市值 ≥ $10B 的美股，2012 年起，同板块比较；事先标准同短期证据）：股本变化越少，之后 6 个月相对表现越好，IC ${e26 ? `${num(e26.ic, 3)}（t ${num(e26.t, 1)}）` : "–"}，按事先标准有用；≥ $2B 中 6 个月与 12 个月都有用。效应集中在回购最多的五分之一（之后 6 个月平均约 ${q.length ? pct(q[4], 1, true) : "+1.5%"}，其余各组差别小）。</p>`
+    : `<p class="muted">未参与检验排名（市值低于 $10B、外国公司或缺少 SEC 股本数据）；下方为描述性明细。</p>`;
+  const cover = !x ? "" : x.coverage === "foreign" ? `<p class="muted small">外国公司（20-F / 6-K）没有 10-Q / 10-K，股本事件与潜在稀释未覆盖。</p>`
+    : x.coverage === "no_sec" ? `<p class="muted small">不在 SEC 公司列表中，股本事件未覆盖。</p>` : "";
+  const ok = x && x.coverage === "ok";
+  const read = ok ? (x.read || []).map((f) => `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.form)} ${esc(f.filed)}</a>${f.skipped ? `（跳过：${esc(f.skipped)}）` : ""}`).join("、") : "";
+  const unread = ok && (x.unread || []).length ? `<p class="small neg">还有 ${x.unread.length} 份申报暂未读取（AI 暂不可用），下次更新时补读：${x.unread.map((f) => `${esc(f.form)} ${esc(f.filed)}`).join("、")}。</p>` : "";
+  el.innerHTML = `<h3>股本变化（回购 / 增发） ${badge("derived")}${ok ? badge("model") : ""}</h3>
+    ${head}
+    ${x ? issCounts(x, r) : ""}${cover}
+    ${ok ? issEvents(x, d.events_meta) + issInstruments(x) + unread : ""}
     <details class="small"><summary>依据与局限</summary>
       <p>依据：公司增发后股价往往偏弱、回购后偏强（Pontiff & Woodgate 2008；Daniel & Titman 2006；Ikenberry, Lakonishok & Vermaelen 1995）——管理层倾向在股价高估时增发、低估时回购。本系统检验了总资产增速、资本支出强度与资本配置综合，都未通过，只有这一项通过。</p>
-      <p>局限：期限是 6–12 个月，不适合 1–4 周的判断；员工股票激励会持续增加股本（回购部分抵消）；并购换股会让股本突然增加；股本来自 SEC 申报（按拆股调整），外国公司与部分多类股公司没有数据。数据截至 ${esc(d.asof)}，每周日自动更新（SEC 财务数据约每月刷新一次）。</p>
+      <p>局限：期限是 6–12 个月，不适合 1–4 周的判断；员工股票激励会持续增加股本（回购部分抵消）；并购换股会让股本突然增加；股本来自 SEC 申报（按拆股调整），外国公司与部分多类股公司没有数据。检验数据截至 ${esc(d.asof || "–")}，每周日自动更新（SEC 财务数据约每月刷新一次）。</p>
+      ${ok ? `<p>三种口径、事件与潜在稀释（描述性，未做收益检验）：股本口径来自 SEC companyfacts；事件与潜在稀释由 ${term("model", "AI")} 从 8-K（未注册发行股票 / 完成收购）、正式招股书（424B5 / 424B4 / 424B7）与最近几份 10-Q / 10-K 中与股本相关的句子摘录，引用原文必须逐字出现、股数必须出现在引用中，不通过的丢弃；同一事件在多份申报中出现时只保留一次。可能遗漏：只写在表格里的发行、只发布新闻稿未提交 8-K 的交易；常规员工期权 / RSU 不列。数据截至 ${esc(d.events_meta?.asof || "–")}，每周日更新，已读的申报不再重复读取。</p>
+      <p>本次读取的申报：${read || "–"}</p>` : ""}
     </details>`;
 }
 
